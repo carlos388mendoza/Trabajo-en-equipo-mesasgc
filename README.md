@@ -106,4 +106,64 @@ Aplicación en tiempo real para el manejo de listas de espera de clientes en res
   1. El frontend envía el evento de asignación al servidor (sin actualizar la UI todavía).
   2. El servidor valida si la mesa ya tiene cliente asignado.
   3. Si está libre, la asigna y emite el evento a todos los conectados a esa sala.
-  4. Si ya fue tomada, rechaza y avisa solo al que falló ("Esta mesa ya fue asignada").
+   4. Si ya fue tomada, rechaza y avisa solo al que falló ("Esta mesa ya fue asignada").
+
+---
+
+## 7. Esquema de la base de datos
+
+Definido en `lib/db/schema.ts` (Drizzle + Turso). Los conjuntos cerrados de
+valores viven en `lib/db/enums.ts`, que es la única fuente de verdad: el schema
+solo usa tipos y la UI compara contra esas constantes.
+
+```
+restaurants ──┬── table_layouts ──── tables ──┐
+              │        (zonas/vistas)   ▲     │
+              │                        │     │
+              ├── waitlist_entries ────┴─────┘  (assigned_table_id)
+              └── user
+element_types ──── tables  (element_type_id)
+
+user / session / account / verification   (Better Auth)
+```
+
+| Tabla | Para qué |
+|---|---|
+| `restaurants` | Los locales. `slug` para la URL. |
+| `table_layouts` | Zonas/vistas del local (comedor, terraza). Es la unidad sobre la que trabaja el editor y la galería. `version` sube en cada guardado. |
+| `element_types` | Catálogo de los 5 tipos (mesa-sillas, mesa-butacas, area-juegos, bano, caja) con color, ícono y tamaño. Editable sin deploy. |
+| `tables` | Mesas **y** baños/cajas/áreas: en el canvas se comportan igual, y `element_type_id` los distingue. Lleva la geometría (`x`, `y`, `width`, `height`, `rotation`). |
+| `waitlist_entries` | Clientes en la lista. `party_size` lo necesitan las estadísticas. |
+| `user`, `session`, `account`, `verification` | Las que espera Better Auth. `role` y `restaurant_id` son columnas de `user`. |
+
+### Decisiones que conviene no deshacer sin pensarlo
+
+- **Una sola tabla `tables` para mesas, baños, cajas y áreas de juegos.** En el
+  canvas se mueven y se pintan igual; separarlas serían cinco tablas repetidas.
+- **`tables.current_entry_id` es el puntero de "quién está en esta mesa".** Es
+  lo que hace posible el manejo de conflictos: la asignación es un único
+  `UPDATE ... WHERE current_entry_id IS NULL`, y si afecta 0 filas es que otro
+  host se adelantó. `waitlist_entries.assigned_table_id` es el lazo inverso.
+- **Roles como columna, no como tabla.** Son tres valores cerrados; una tabla
+  `roles` solo añadiría un join en cada verificación de permisos.
+- **Los valores en la base de datos están en español** (`libre`, `esperando`,
+  `mesa-sillas`) y la interfaz también.
+- **Sin `check()` constraints**: Turso/libSQL no los soporta en Drizzle. Los
+  valores se validan en el servidor con Zod.
+
+### Puesta en marcha de la base de datos
+
+```bash
+cp .env.example .env.local   # y llenar TURSO_DATABASE_URL / TURSO_AUTH_TOKEN
+npm install
+npm run db:push              # aplica el esquema
+npm run db:seed              # tipos de elemento + 2 restaurantes de ejemplo
+```
+
+`npm run db:push` va a través de `scripts/db-push.mjs` y no llama a drizzle-kit
+directo, porque en la versión 0.20 el subcomando `push:sqlite` ignora el campo
+`schema` de `drizzle.config.ts` y aborta. El script arma los flags que pide.
+
+Otros scripts: `db:generate` (genera SQL en `drizzle/`), `db:studio`,
+`seed:reset` (borra los datos de layout y vuelve a sembrar; **no** toca las
+cuentas de usuario).
