@@ -1,7 +1,12 @@
-// TODO(auth): validar la sesión Better Auth y limitar los datos analíticos al acceso del usuario.
+// Permisos: "asistente:usar" (admin y analitica), que ven los datos de todos
+// los restaurantes. Sin sesión, 401; sin permiso, 403.
+//
+// El límite de preguntas cuenta POR USUARIO: antes contaba por IP, y se podía
+// saltar cambiando la cabecera X-Forwarded-For.
 import { asc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
+import { guardApi } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { restaurants, waitlistEntries } from "@/lib/db/schema";
 
@@ -12,12 +17,16 @@ const MAX_QUESTIONS_PER_MINUTE = 10;
 const RATE_WINDOW_MS = 60_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const questionRequestsByIp = new Map<string, { count: number; expiresAt: number }>();
+const questionRequestsByUser = new Map<string, { count: number; expiresAt: number }>();
 
 type DailyStats = { day: string; groups: number; minutes: number };
 type RestaurantStats = { name: string; groups: number; minutes: number };
 
 export async function POST(request: Request) {
+  // Antes que nada: sin sesión no se lee ni el cuerpo.
+  const guard = await guardApi(request, "asistente:usar");
+  if (!guard.ok) return guard.response;
+
   const contentLength = Number(request.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTES) {
     return tooLargeResponse();
@@ -51,8 +60,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "La pregunta no puede superar 500 caracteres." }, { status: 400 });
   }
 
-  const ip = getClientIp(request);
-  if (!allowQuestion(ip)) {
+  if (!allowQuestion(guard.user.id)) {
     return NextResponse.json(
       { error: "Demasiadas preguntas, espera un minuto" },
       { status: 429 },
@@ -114,21 +122,14 @@ function tooLargeResponse() {
   );
 }
 
-function getClientIp(request: Request) {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  return forwardedFor?.split(",")[0]?.trim()
-    || request.headers.get("x-real-ip")?.trim()
-    || "unknown";
-}
-
-function allowQuestion(ip: string, now = Date.now()) {
-  for (const [key, limit] of questionRequestsByIp) {
-    if (limit.expiresAt <= now) questionRequestsByIp.delete(key);
+function allowQuestion(userId: string, now = Date.now()) {
+  for (const [key, limit] of questionRequestsByUser) {
+    if (limit.expiresAt <= now) questionRequestsByUser.delete(key);
   }
 
-  const current = questionRequestsByIp.get(ip);
+  const current = questionRequestsByUser.get(userId);
   if (!current || current.expiresAt <= now) {
-    questionRequestsByIp.set(ip, { count: 1, expiresAt: now + RATE_WINDOW_MS });
+    questionRequestsByUser.set(userId, { count: 1, expiresAt: now + RATE_WINDOW_MS });
     return true;
   }
   if (current.count >= MAX_QUESTIONS_PER_MINUTE) return false;

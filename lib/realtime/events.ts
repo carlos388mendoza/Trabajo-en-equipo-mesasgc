@@ -97,6 +97,6 @@ export interface ServerToClientEvents {
 export type SocketData = {
   /** Restaurante cuya room ocupa el socket; null hasta el primer join. */
   restaurantId: string | null;
-  /** Usuario de la sesión. Null hasta que el handshake use Better Auth. */
-  userId: string | null;
+  /** Usuario de la sesión, comprobado en el handshake con Better Auth. */
+  userId: string;
 };

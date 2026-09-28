@@ -16,7 +16,7 @@ import { Server } from "socket.io";
 import { restaurantExists } from "@/lib/db/queries/layouts";
 import { assignTable, releaseTable } from "@/lib/tables/assign";
 
-import { canJoinRestaurant, identifySocket } from "./auth";
+import { canAssignTables, canJoinRestaurant, identifySocket } from "./auth";
 import {
   type Ack,
   assignTableSchema,
@@ -36,7 +36,8 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
     destroyUpgrade: false,
   });
 
-  // Identificación en el handshake: si no hay usuario, no hay conexión.
+  // Identificación en el handshake: sin sesión de Better Auth válida (cookie),
+  // no hay conexión.
   io.use(async (socket, next) => {
     try {
       const identity = await identifySocket(socket.handshake);
@@ -85,6 +86,11 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
       await respond(ack, async () => {
         const restaurantId = socket.data.restaurantId;
         if (!restaurantId) return fail("Primero entra en un restaurante.");
+        // Se vuelve a comprobar en CADA evento: el permiso pudo cambiar desde
+        // que entró en la room (un admin le quitó el restaurante).
+        if (!(await canAssignTables({ userId: socket.data.userId }, restaurantId))) {
+          return fail("No tienes permiso para sentar ni liberar mesas en este restaurante.");
+        }
         const parsed = assignTableSchema.safeParse(raw);
         if (!parsed.success) return fail("Datos de la asignación no válidos.");
 
@@ -105,6 +111,11 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
       await respond(ack, async () => {
         const restaurantId = socket.data.restaurantId;
         if (!restaurantId) return fail("Primero entra en un restaurante.");
+        // Se vuelve a comprobar en CADA evento: el permiso pudo cambiar desde
+        // que entró en la room (un admin le quitó el restaurante).
+        if (!(await canAssignTables({ userId: socket.data.userId }, restaurantId))) {
+          return fail("No tienes permiso para sentar ni liberar mesas en este restaurante.");
+        }
         const parsed = releaseTableSchema.safeParse(raw);
         if (!parsed.success) return fail("Datos de la mesa no válidos.");
 

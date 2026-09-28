@@ -9,7 +9,7 @@
 // Esta capa solo hace lo que es de HTTP:
 //
 //   1. Validar el payload con Zod.
-//   2. Comprobar permisos.
+//   2. Comprobar sesión y permiso (`guardAction`, que usa `lib/auth/rbac.ts`).
 //   3. Delegar la escritura en `applyLayoutStructure`.
 //   4. Revalidar la caché de la ruta.
 //
@@ -17,17 +17,20 @@
 // no son impostores, no pisar la ocupación, no borrar mesas ocupadas) están en
 // `lib/layout/save.ts`, junto a las consultas.
 //
-// TODO (Ambos): cuando Better Auth esté montado, sustituir
-// `assertCanEditRestaurant` por la comprobación de sesión y rol. La función
-// está aislada para que ese cambio sea de un solo sitio. Ojo a lo que dice la
-// documentación de esta versión de Next: que solo renderizar el formulario a
-// usuarios autenticados NO es una barrera de seguridad, porque la petición se
-// puede enviar sin pasar por la UI.
+// El permiso se comprueba AQUÍ, en cada action, y no solo en la página: una
+// server action se puede llamar con un `fetch` a mano sin pasar por la UI
+// (lo advierte la guía de Next), y el proxy solo mira si hay cookie.
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { eq } from "drizzle-orm";
+
+import { guardAction } from "@/lib/auth/session";
+import { restaurantsAllowed } from "@/lib/auth/rbac";
+import { db } from "@/lib/db";
 import { getTableOccupant } from "@/lib/db/queries/layouts";
+import { tableLayouts } from "@/lib/db/schema";
 import { emitToRestaurant } from "@/lib/realtime/registry";
 import { applyLayoutStructure } from "@/lib/layout/save";
 import type { SaveResult } from "@/lib/layout/save";
@@ -54,7 +57,8 @@ export async function saveLayoutStructure(raw: unknown): Promise<SaveResult> {
 
   const input = parsed.data;
 
-  assertCanEditRestaurant(input.restaurantId);
+  const guard = await guardAction("editor:guardar", input.restaurantId);
+  if (!guard.ok) return guard;
 
   const result = await applyLayoutStructure(input);
 
@@ -92,8 +96,12 @@ export async function copyStructureToRestaurant(
     return { ok: false, error: "Los datos de la copia no son válidos." };
   }
 
-  assertCanEditRestaurant(parsed.data.sourceRestaurantId);
-  assertCanEditRestaurant(parsed.data.targetRestaurantId);
+  // Hay que poder editar los DOS: leer el origen no basta para escribir en
+  // el destino.
+  for (const restaurantId of [parsed.data.sourceRestaurantId, parsed.data.targetRestaurantId]) {
+    const guard = await guardAction("editor:guardar", restaurantId);
+    if (!guard.ok) return guard;
+  }
 
   const result = await copyLayoutToRestaurant(parsed.data);
 
@@ -118,7 +126,17 @@ export async function copyZoneIntoAnother(
     return { ok: false, error: "Los datos de la copia no son válidos." };
   }
 
-  assertCanEditRestaurant(parsed.data.sourceRestaurantId);
+  // La zona de destino puede ser de otro restaurante: se comprueba el suyo,
+  // no el que dice el payload.
+  const [target] = await db
+    .select({ restaurantId: tableLayouts.restaurantId })
+    .from(tableLayouts)
+    .where(eq(tableLayouts.id, parsed.data.targetLayoutId))
+    .limit(1);
+  for (const restaurantId of [parsed.data.sourceRestaurantId, target?.restaurantId ?? ""]) {
+    const guard = await guardAction("editor:guardar", restaurantId);
+    if (!guard.ok) return guard;
+  }
 
   const result = await copyZoneIntoLayout(parsed.data);
   if (result.ok) {
@@ -152,23 +170,24 @@ export async function getTableOccupantInfo(
 ): Promise<{ entryId: string; occupantName: string; seatedAt: number | null } | null> {
   const parsed = occupantInputSchema.safeParse(raw);
   if (!parsed.success) return null;
-  assertCanEditRestaurant(parsed.data.restaurantId);
+  const guard = await guardAction("editor:ver", parsed.data.restaurantId);
+  if (!guard.ok) return null;
   return getTableOccupant(parsed.data.restaurantId, parsed.data.tableId);
 }
 
-/** Restaurantes a los que ofrecer la copia, con lo que tienen dentro. */
+/**
+ * Restaurantes a los que ofrecer la copia, con lo que tienen dentro. Solo
+ * los que este usuario puede editar: a un host no se le ofrecen locales
+ * ajenos.
+ */
 export async function listCopyTargets(
   sourceRestaurantId: string,
 ): Promise<RestaurantOption[]> {
-  assertCanEditRestaurant(sourceRestaurantId);
-  return getRestaurantsWithoutLayout(sourceRestaurantId);
-}
-
-// TODO (Ambos): `await auth.api.getSession({ headers: await headers() })` y
-// comprobar el rol contra `restaurants.ownerId`. Hoy es un placeholder
-// deliberado: la comprobación de permisos del editor se hará en la tarea de
-// Better Auth, y hasta entonces el control real lo dan las reglas de
-// integridad de la base de datos.
-function assertCanEditRestaurant(restaurantId: string): void {
-  void restaurantId;
+  const guard = await guardAction("editor:ver", sourceRestaurantId);
+  if (!guard.ok) return [];
+  return restaurantsAllowed(
+    guard.user,
+    "editor:guardar",
+    await getRestaurantsWithoutLayout(sourceRestaurantId),
+  );
 }

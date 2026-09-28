@@ -1,8 +1,10 @@
-// TODO(auth): validar la sesión de Better Auth y que el usuario tenga acceso a este restaurante.
+// Permisos: "rapido:modificar" sobre ESTE restaurante. Sin sesión, 401; sin
+// permiso, 403.
 import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { guardApi } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { ACTIVE_WAITLIST_STATUSES } from "@/lib/db/enums";
 import { waitlistEntries } from "@/lib/db/schema";
@@ -12,6 +14,8 @@ const updateSchema = z.object({ status: z.enum(["listo", "ausente"]) });
 
 export async function PATCH(request: Request, { params }: Context) {
   const { id, clienteId } = await params;
+  const guard = await guardApi(request, "rapido:modificar", id);
+  if (!guard.ok) return guard.response;
   let body: unknown;
   try {
     body = await request.json();

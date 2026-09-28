@@ -1,37 +1,60 @@
 // Permisos de las conexiones de tiempo real.
 //
-// Es el ÚNICO sitio que hay que cambiar cuando Better Auth esté montado. Todo
-// lo demás (join, asignar, liberar) pasa por aquí.
+// El handshake lee la sesión de Better Auth desde la cookie que el navegador
+// manda al abrir el socket (mismo origen, así que viaja sola). Sin sesión
+// válida, o con el usuario desactivado, la conexión se rechaza.
 //
-// TODO (Ambos / Better Auth): en `identifySocket`, leer la sesión desde la
-// cookie del handshake, algo como
-// `await auth.api.getSession({ headers: new Headers(handshake.headers) })`,
-// y devolver `null` si no hay sesión (la conexión se rechaza). En
-// `canJoinRestaurant`, usar `canAccessRestaurant(role, user.restaurantId, id)`
-// de `lib/db/enums.ts`. Hasta entonces es un placeholder deliberado, igual
-// que `assertCanEditRestaurant` en las actions del editor: deja pasar a todos,
-// y la integridad la dan las reglas de `lib/tables/assign.ts`.
+// Cada evento vuelve a leer al usuario de la base: si un admin le quita un
+// restaurante o lo desactiva con el socket abierto, el siguiente evento ya se
+// rechaza. Las reglas son las de `lib/auth/rbac.ts`, como en el resto de la
+// app.
 
 import type { IncomingHttpHeaders } from "node:http";
 
+import { getAuth } from "@/lib/auth/auth";
+import { can } from "@/lib/auth/rbac";
+import { loadAuthUser } from "@/lib/auth/users";
+
 export type SocketIdentity = {
-  userId: string | null;
+  userId: string;
 };
+
+function toHeaders(incoming: IncomingHttpHeaders): Headers {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(incoming)) {
+    if (typeof value === "string") headers.set(name, value);
+    else if (Array.isArray(value)) headers.set(name, value.join(", "));
+  }
+  return headers;
+}
 
 /** Quién abre la conexión. `null` = rechazarla. */
 export async function identifySocket(handshake: {
   headers: IncomingHttpHeaders;
 }): Promise<SocketIdentity | null> {
-  void handshake;
-  return { userId: null };
+  const result = await getAuth().api.getSession({ headers: toHeaders(handshake.headers) });
+  if (!result) return null;
+  const current = await loadAuthUser(result.user.id);
+  if (!current || !current.active) return null;
+  return { userId: current.id };
 }
 
-/** ¿Puede este usuario entrar en la room de este restaurante? */
+/**
+ * ¿Puede entrar en la room de este restaurante? Quien ve el editor o el modo
+ * rápido de ese restaurante; analitica no, porque no edita en vivo.
+ */
 export async function canJoinRestaurant(
   identity: SocketIdentity,
   restaurantId: string,
 ): Promise<boolean> {
-  void identity;
-  void restaurantId;
-  return true;
+  const current = await loadAuthUser(identity.userId);
+  return can(current, "editor:ver", restaurantId) || can(current, "rapido:ver", restaurantId);
+}
+
+/** ¿Puede sentar o liberar mesas en este restaurante? */
+export async function canAssignTables(
+  identity: SocketIdentity,
+  restaurantId: string,
+): Promise<boolean> {
+  return can(await loadAuthUser(identity.userId), "mesas:asignar", restaurantId);
 }

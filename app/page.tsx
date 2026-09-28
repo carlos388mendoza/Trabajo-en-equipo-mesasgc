@@ -1,9 +1,8 @@
+import { redirect } from "next/navigation";
+
+// La portada no tiene contenido propio: sin sesión el proxy ya manda a
+// /login; con sesión, /inicio decide a dónde va cada usuario según su rol.
+
 export default function HomePage() {
-  return (
-    <div>
-      <h1 className="text-2xl font-bold">Bienvenido a Table Waitlist</h1>
-      <p>Inicia sesión para continuar.</p>
-      {/* TODO (Ambos): si no hay sesión activa, redirigir a /login */}
-    </div>
-  );
+  redirect("/inicio");
 }
