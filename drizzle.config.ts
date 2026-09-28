@@ -11,6 +11,9 @@ export default {
   dialect: "turso",
   dbCredentials: {
     url: process.env.TURSO_DATABASE_URL!,
-    authToken: process.env.TURSO_AUTH_TOKEN,
+    // `|| undefined`: en local `.env.local` trae `TURSO_AUTH_TOKEN=` vacío (así
+    // viene en `.env.example`), y drizzle-kit rechaza la cadena vacía con
+    // "Please provide required params" en lugar de tratarla como "sin token".
+    authToken: process.env.TURSO_AUTH_TOKEN || undefined,
   },
 } satisfies Config;
