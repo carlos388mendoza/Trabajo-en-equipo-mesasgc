@@ -38,8 +38,9 @@ let instance: Database | null = null;
  * credenciales en el entorno de build, que es justo lo que pasa en un entorno
  * de despliegue si alguien olvida las variables.
  *
- * En el servidor, que es el único sitio desde el que se usa (este archivo
- * importa `server-only` abajo), la resolución es un `new Proxy`: coste nulo.
+ * El proxy solo se resuelve en el servidor. Este módulo no debe importarse
+ * desde un Client Component: si alguna vez hace falta, añadir `server-only`
+ * como dependencia para que el error salte en build y no en producción.
  */
 export const db: Database = new Proxy({} as Database, {
   get(_target, prop) {

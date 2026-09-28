@@ -160,10 +160,6 @@ npm run db:push              # aplica el esquema
 npm run db:seed              # tipos de elemento + 2 restaurantes de ejemplo
 ```
 
-`npm run db:push` va a través de `scripts/db-push.mjs` y no llama a drizzle-kit
-directo, porque en la versión 0.20 el subcomando `push:sqlite` ignora el campo
-`schema` de `drizzle.config.ts` y aborta. El script arma los flags que pide.
-
 Otros scripts: `db:generate` (genera SQL en `drizzle/`), `db:studio`,
 `seed:reset` (borra los datos de layout y vuelve a sembrar; **no** toca las
-cuentas de usuario).
+cuentas de usuario), `lint`, `typecheck`.
