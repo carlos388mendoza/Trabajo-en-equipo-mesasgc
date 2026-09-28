@@ -1,3 +1,4 @@
+// TODO(auth): validar la sesión Better Auth y limitar los datos analíticos al acceso del usuario.
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -7,8 +8,11 @@ export async function POST(request: Request) {
   try { body = await request.json(); }
   catch { return NextResponse.json({ error: "La solicitud no tiene un formato válido." }, { status: 400 }); }
 
-  if (typeof body.question !== "string" || !body.question.trim() || body.question.length > 500) {
-    return NextResponse.json({ error: "Escribe una pregunta de hasta 500 caracteres." }, { status: 400 });
+  if (typeof body.question !== "string" || !body.question.trim()) {
+    return NextResponse.json({ error: "Escribe una pregunta." }, { status: 400 });
+  }
+  if (body.question.length > 500) {
+    return NextResponse.json({ error: "La pregunta no puede superar 500 caracteres." }, { status: 400 });
   }
 
   const apiKey = process.env.OPENROUTER_API_KEY;

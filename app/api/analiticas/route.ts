@@ -1,3 +1,4 @@
+// TODO(auth): validar sesión Better Auth y filtrar estadísticas por permisos del usuario.
 import { asc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
