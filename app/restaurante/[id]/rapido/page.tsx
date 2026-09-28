@@ -156,13 +156,13 @@ export default function ModoRapidoPage({
     <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[.18em] text-emerald-700">
+          <p className="text-sm font-semibold uppercase tracking-[.18em] text-accent">
             Servicio en vivo · Local {restaurantId}
           </p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-app-text">
             Modo sencillo
           </h1>
-          <p className="mt-1 text-slate-500">Gestiona la fila en unos pocos toques.</p>
+          <p className="mt-1 text-app-muted">Gestiona la fila en unos pocos toques.</p>
         </div>
         <div className="rounded-2xl bg-white px-5 py-3 shadow-sm ring-1 ring-slate-200">
           <span className="text-2xl font-bold text-slate-900">{waiting.length}</span>
@@ -317,7 +317,7 @@ export default function ModoRapidoPage({
           </div>
         </section>
       </div>
-      <p className="mt-5 text-center text-xs text-slate-400">La lista se guarda en Turso para este restaurante.</p>
+      <p className="mt-5 text-center text-xs text-app-muted">La lista se guarda en Turso para este restaurante.</p>
     </main>
   );
 }
