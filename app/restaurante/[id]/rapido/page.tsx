@@ -1,6 +1,11 @@
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Check, Plus, Undo2, UserRoundPlus } from "lucide-react";
+
+import { createRealtimeClient, type RealtimeClient } from "@/lib/realtime/client";
+import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
+import type { WaitlistUndoState } from "@/lib/realtime/events";
 
 type Guest = {
   id: string;
@@ -33,22 +38,53 @@ export default function ModoRapidoPage({
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [undoing, setUndoing] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [undoState, setUndoState] = useState<WaitlistUndoState>(null);
   const [error, setError] = useState("");
   const touchStart = useRef<number | null>(null);
+  const socketRef = useRef<RealtimeClient | null>(null);
+  const loadVersion = useRef(0);
   const waiting = useMemo(
     () => guests.filter((guest) => guest.status === "waiting"),
     [guests],
   );
   const current = waiting[0];
 
+  function fromSnapshot(entry: WaitlistEntrySnapshot): Guest {
+    return {
+      id: entry.id,
+      name: entry.customerName,
+      party: entry.partySize,
+      arrived: entry.arrivedAt,
+      note: entry.notes ?? "",
+      status:
+        entry.status === "esperando"
+          ? "waiting"
+          : entry.status === "listo"
+            ? "ready"
+            : entry.status === "sentado"
+              ? "seated"
+              : "absent",
+    };
+  }
+
+  function mergeEntry(entry: WaitlistEntrySnapshot) {
+    const guest = fromSnapshot(entry);
+    setGuests((items) => [...items.filter((item) => item.id !== guest.id), guest]
+      .sort((a, b) => a.arrived - b.arrived));
+  }
+
   async function loadGuests() {
+    const requestVersion = ++loadVersion.current;
     try {
       const response = await fetch(`/api/restaurante/${restaurantId}/clientes`, {
         cache: "no-store",
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudo leer la lista.");
-      setGuests(
+      if (requestVersion === loadVersion.current) setGuests(
         (data.entries as ApiEntry[]).map((entry) => ({
           id: entry.id,
           name: entry.customerName,
@@ -65,18 +101,54 @@ export default function ModoRapidoPage({
                   : "absent",
         })),
       );
-      setError("");
+      if (requestVersion === loadVersion.current) setError("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Error al conectar con Turso.");
+      if (requestVersion === loadVersion.current) {
+        setError(cause instanceof Error ? cause.message : "Error al conectar con Turso.");
+      }
     } finally {
-      setLoading(false);
+      if (requestVersion === loadVersion.current) setLoading(false);
     }
   }
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void loadGuests(), 0);
-    // The restaurant id scopes this list; reload when navigation changes it.
-    return () => window.clearTimeout(timer);
+    const socket = createRealtimeClient();
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      void socket.timeout(5000)
+        .emitWithAck("restaurant:join", { restaurantId })
+        .then((result) => {
+          if (!result.ok) {
+            setError(result.error);
+            return;
+          }
+          setConnected(true);
+          void loadGuests();
+        })
+        .catch(() => setError("No se pudo entrar al restaurante en tiempo real."));
+    });
+    socket.on("disconnect", () => setConnected(false));
+    socket.on("connect_error", () => {
+      setConnected(false);
+      setError("No se pudo conectar al servidor en tiempo real.");
+    });
+    socket.on("waitlist:undo-state", setUndoState);
+    socket.on("waitlist:changed", ({ action, entry, undo }) => {
+      loadVersion.current += 1;
+      if (action === "removed") {
+        setGuests((items) => items.filter((guest) => guest.id !== entry.id));
+      } else {
+        mergeEntry(entry);
+      }
+      setUndoState(undo);
+    });
+    socket.connect();
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurantId]);
 
@@ -86,29 +158,15 @@ export default function ModoRapidoPage({
     setSaving(true);
     setError("");
     try {
-      const response = await fetch(`/api/restaurante/${restaurantId}/clientes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const socket = socketRef.current;
+      if (!socket?.connected) throw new Error("Esperando la conexión en tiempo real.");
+      const result = await socket.timeout(5000).emitWithAck("waitlist:add", {
           customerName: name.trim(),
           partySize: Number(party),
           notes: note.trim(),
-        }),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "No se pudo guardar el cliente.");
-      const entry = data.entry as ApiEntry;
-      setGuests((items) => [
-        ...items,
-        {
-          id: entry.id,
-          name: entry.customerName,
-          party: entry.partySize,
-          arrived: entry.arrivedAt,
-          note: entry.notes ?? "",
-          status: "waiting",
-        },
-      ]);
+      if (!result.ok) throw new Error(result.error);
+      mergeEntry(result.entry);
       setName("");
       setParty("2");
       setNote("");
@@ -121,34 +179,55 @@ export default function ModoRapidoPage({
     }
   }
 
-  async function mark(status: "ready" | "absent") {
-    if (!current) return;
-    const previous = guests;
+  async function mark(status: "listo" | "ausente") {
+    if (!current || resolving) return;
+    const socket = socketRef.current;
+    if (!socket?.connected) {
+      setError("Esperando la conexión en tiempo real.");
+      return;
+    }
+    setResolving(true);
     setError("");
-    setGuests((items) =>
-      items.map((guest) =>
-        guest.id === current.id ? { ...guest, status } : guest,
-      ),
-    );
     try {
-      const response = await fetch(
-        `/api/restaurante/${restaurantId}/clientes/${current.id}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: status === "ready" ? "listo" : "ausente" }),
-        },
-      );
-      const data = await response.json();
-      if (response.status === 409) {
+      const result = await socket.timeout(5000).emitWithAck("waitlist:resolve", {
+        entryId: current.id,
+        status,
+      });
+      if (!result.ok) {
         await loadGuests();
-        setError(data.error || "Este cliente ya fue atendido por otro dispositivo");
-        return;
+        throw new Error(result.error);
       }
-      if (!response.ok) throw new Error(data.error || "No se pudo actualizar el cliente.");
+      mergeEntry(result.entry);
     } catch (cause) {
-      setGuests(previous);
       setError(cause instanceof Error ? cause.message : "Error al actualizar Turso.");
+    } finally {
+      setResolving(false);
+    }
+  }
+
+  async function undoLastAction() {
+    if (!undoState || undoing) return;
+    const socket = socketRef.current;
+    if (!socket?.connected) {
+      setError("Esperando la conexión en tiempo real.");
+      return;
+    }
+    setUndoing(true);
+    setError("");
+    try {
+      const result = await socket.timeout(5000).emitWithAck("waitlist:undo", {
+        actionId: undoState.actionId,
+      });
+      if (!result.ok) throw new Error(result.error);
+      if (result.action === "removed") {
+        setGuests((items) => items.filter((guest) => guest.id !== result.entry.id));
+      } else {
+        mergeEntry(result.entry);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se pudo deshacer la acción.");
+    } finally {
+      setUndoing(false);
     }
   }
 
@@ -183,6 +262,8 @@ export default function ModoRapidoPage({
               SIGUIENTE EN LA FILA
             </span>
             <span className="text-sm text-slate-300">
+              {connected ? "En vivo" : "Reconectando"}
+              <span className="mx-2">·</span>
               {current ? `#${guests.filter((guest) => guest.status !== "waiting").length + 1}` : "—"}
             </span>
           </div>
@@ -196,8 +277,8 @@ export default function ModoRapidoPage({
               onTouchEnd={(event) => {
                 if (touchStart.current === null) return;
                 const delta = event.changedTouches[0].clientX - touchStart.current;
-                if (delta > 65) void mark("ready");
-                else if (delta < -65) void mark("absent");
+                if (delta > 65) void mark("listo");
+                else if (delta < -65) void mark("ausente");
                 touchStart.current = null;
               }}
               className="mt-8 touch-pan-y"
@@ -214,14 +295,17 @@ export default function ModoRapidoPage({
               )}
               <div className="mt-10 grid grid-cols-2 gap-3">
                 <button
-                  onClick={() => void mark("ready")}
-                  className="rounded-2xl bg-emerald-400 px-4 py-4 font-bold text-emerald-950 transition hover:bg-emerald-300"
+                  disabled={resolving || !connected}
+                  onClick={() => void mark("listo")}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-400 px-4 py-4 font-bold text-emerald-950 transition hover:bg-emerald-300 disabled:opacity-60"
                 >
-                  ✓ Marcar listo
+                  <Check aria-hidden size={18} />
+                  Marcar listo
                 </button>
                 <button
-                  onClick={() => void mark("absent")}
-                  className="rounded-2xl border border-white/20 px-4 py-4 font-semibold text-white transition hover:bg-white/10"
+                  disabled={resolving || !connected}
+                  onClick={() => void mark("ausente")}
+                  className="rounded-2xl border border-white/20 px-4 py-4 font-semibold text-white transition hover:bg-white/10 disabled:opacity-60"
                 >
                   Marcar ausente
                 </button>
@@ -249,7 +333,9 @@ export default function ModoRapidoPage({
 
         <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200 sm:p-8">
           <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-2xl bg-emerald-50 text-xl">＋</span>
+            <span className="grid h-10 w-10 place-items-center rounded-2xl bg-emerald-50 text-emerald-700">
+              <UserRoundPlus aria-hidden size={20} />
+            </span>
             <div>
               <h2 className="font-bold text-slate-900">Agregar cliente</h2>
               <p className="text-sm text-slate-500">Registro rápido, sin pasos extra</p>
@@ -292,20 +378,34 @@ export default function ModoRapidoPage({
               </label>
             </div>
             <button
-              disabled={saving}
+              disabled={saving || !connected}
               className="w-full rounded-xl bg-emerald-700 px-4 py-3.5 font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-60"
             >
-              {saving ? "Guardando…" : "Agregar a la fila"}
+              <span className="inline-flex items-center justify-center gap-2">
+                <Plus aria-hidden size={18} />
+                {saving ? "Guardando…" : "Agregar a la fila"}
+              </span>
             </button>
             {message && <p role="status" className="text-center text-sm font-medium text-emerald-700">{message}</p>}
           </form>
           <div className="mt-7 border-t border-slate-100 pt-5">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-800">Actividad de hoy</h3>
-              <button onClick={() => void loadGuests()} className="text-xs font-medium text-emerald-700 hover:underline">
+              <button type="button" onClick={() => void loadGuests()} className="text-xs font-medium text-emerald-700 hover:underline">
                 Actualizar
               </button>
             </div>
+            {undoState && (
+              <button
+                type="button"
+                disabled={undoing || !connected}
+                onClick={() => void undoLastAction()}
+                className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                <Undo2 aria-hidden size={17} />
+                {undoing ? "Deshaciendo…" : `Deshacer · ${undoState.label}`}
+              </button>
+            )}
             <div className="mt-3 flex gap-3 text-sm text-slate-500">
               <span className="text-emerald-600">●</span>
               <p>
