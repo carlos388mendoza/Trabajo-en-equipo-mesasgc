@@ -24,7 +24,7 @@
 //  4. Los ids son nuevos. `onConflictDoNothing` por si un uuid choca de verdad.
 //  5. No se escribe `status` ni `current_entry_id`: nacen libres.
 
-import { and, eq, inArray, isNull, not } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, not, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { restaurants, tableLayouts, tables } from "@/lib/db/schema";
@@ -378,22 +378,42 @@ export async function getStructureCounts(restaurantId: string) {
   return { zones: ids.length, ...(await countElements(ids)) };
 }
 
-/** Tiendas de un restaurante que aún no tienen zona, para "crear y copiar". */
+/** Los demás restaurantes, con lo que tienen, para ofrecerlos como destino. */
 export async function getRestaurantsWithoutLayout(excludeId: string) {
   const all = await db
     .select({ id: restaurants.id, name: restaurants.name })
     .from(restaurants)
     .where(not(eq(restaurants.id, excludeId)));
 
-  const out: {
-    id: string;
-    name: string;
-    zones: number;
-    elements: number;
-    ocupadas: number;
-  }[] = [];
-  for (const r of all) {
-    out.push({ id: r.id, name: r.name, ...(await getStructureCounts(r.id)) });
-  }
-  return out;
+  if (all.length === 0) return [];
+
+  // Recuento con `group by` en vez de una consulta por restaurante. Con dos
+  // restaurantes da igual, pero esto se ejecuta en CADA carga del editor y a
+  // partir de unos cuantos locales se nota.
+  const zoneRows = await db
+    .select({ restaurantId: tableLayouts.restaurantId, n: count() })
+    .from(tableLayouts)
+    .where(not(eq(tableLayouts.restaurantId, excludeId)))
+    .groupBy(tableLayouts.restaurantId);
+
+  const elementRows = await db
+    .select({
+      restaurantId: tables.restaurantId,
+      n: count(),
+      ocupadas: sql<number>`sum(case when ${tables.currentEntryId} is not null then 1 else 0 end)`,
+    })
+    .from(tables)
+    .where(not(eq(tables.restaurantId, excludeId)))
+    .groupBy(tables.restaurantId);
+
+  const zonesBy = new Map(zoneRows.map((r) => [r.restaurantId, r.n]));
+  const elemsBy = new Map(elementRows.map((r) => [r.restaurantId, r]));
+
+  return all.map((r) => ({
+    id: r.id,
+    name: r.name,
+    zones: zonesBy.get(r.id) ?? 0,
+    elements: elemsBy.get(r.id)?.n ?? 0,
+    ocupadas: elemsBy.get(r.id)?.ocupadas ?? 0,
+  }));
 }
