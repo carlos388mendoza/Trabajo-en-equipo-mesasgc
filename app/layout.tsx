@@ -1,4 +1,5 @@
 import "./globals.css";
+import Link from "next/link";
 
 export const metadata = {
   title: "Table Waitlist",
@@ -17,10 +18,10 @@ export default function RootLayout({
           Solo afecta a los atributos de este elemento, no a sus hijos. */}
       <body suppressHydrationWarning>
         <header className="flex items-center justify-between p-4 border-b">
-          <span className="font-bold text-lg">Table Waitlist</span>
+          <Link href="/" className="text-lg font-bold tracking-tight text-slate-900">Table<span className="text-emerald-700">Waitlist</span></Link>
           {/* TODO (Ambos): nombre del usuario logueado + botón de logout, viene de Better Auth */}
         </header>
-        <main className="p-4">{children}</main>
+        <main className="min-h-[calc(100vh-65px)] bg-slate-50">{children}</main>
       </body>
     </html>
   );
