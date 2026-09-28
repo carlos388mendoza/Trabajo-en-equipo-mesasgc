@@ -60,6 +60,10 @@ type Props = {
   /** Giro de la vista en grados: 0, 90, 180 o 270. No se guarda. */
   viewRotation: number;
   elements: LayoutElement[];
+  /** Contador por mesa que cambia con cada evento en vivo: dispara el pulso. */
+  pulses: Record<string, number>;
+  /** Hora actual en ms. La avanza el editor para el contador de minutos. */
+  now: number;
   typesById: Map<string, ElementTypeInfo>;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
@@ -79,6 +83,16 @@ type Props = {
   controllerRef: RefObject<CanvasHandle | null>;
 };
 
+/**
+ * Minutos que lleva sentado el cliente, o null si la mesa está libre o no se
+ * sabe la hora. Solo las mesas ocupadas reciben un número: así el `memo` de
+ * las demás no se rompe cada vez que avanza el reloj.
+ */
+function minutesSeated(element: LayoutElement, now: number): number | null {
+  if (!element.currentEntryId || element.seatedAt === null) return null;
+  return Math.max(0, Math.floor((now - element.seatedAt) / 60_000));
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -89,6 +103,8 @@ export function KonvaCanvas({
   height,
   viewRotation,
   elements,
+  pulses,
+  now,
   typesById,
   selectedId,
   onSelect,
@@ -449,9 +465,9 @@ export function KonvaCanvas({
                     element={element}
                     type={type}
                     selected={element.id === selectedId}
-                    occupantName={null}
-                    minutes={null}
-                    pulse={0}
+                    occupantName={element.currentEntryId ? element.occupantName : null}
+                    minutes={minutesSeated(element, now)}
+                    pulse={pulses[element.id] ?? 0}
                     onSelect={onSelect}
                     onDragStart={() => setDragging(true)}
                     onDragMove={onMove}

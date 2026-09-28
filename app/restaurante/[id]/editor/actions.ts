@@ -25,7 +25,9 @@
 // puede enviar sin pasar por la UI.
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
+import { getTableOccupant } from "@/lib/db/queries/layouts";
 import { emitToRestaurant } from "@/lib/realtime/registry";
 import { applyLayoutStructure } from "@/lib/layout/save";
 import type { SaveResult } from "@/lib/layout/save";
@@ -133,6 +135,26 @@ export type RestaurantOption = {
   /** Mesas con clientes: avisa de que la sustitución se va a rechazar. */
   ocupadas: number;
 };
+
+const occupantInputSchema = z.object({
+  restaurantId: z.string().min(1).max(64),
+  tableId: z.string().min(1).max(64),
+});
+
+/**
+ * Nombre y hora del cliente sentado en una mesa. SOLO LECTURA.
+ *
+ * El editor la llama al recibir `table:assigned`: el evento dice qué cliente
+ * es, pero no cómo se llama, y así no hace falta cambiar el evento.
+ */
+export async function getTableOccupantInfo(
+  raw: unknown,
+): Promise<{ entryId: string; occupantName: string; seatedAt: number | null } | null> {
+  const parsed = occupantInputSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  assertCanEditRestaurant(parsed.data.restaurantId);
+  return getTableOccupant(parsed.data.restaurantId, parsed.data.tableId);
+}
 
 /** Restaurantes a los que ofrecer la copia, con lo que tienen dentro. */
 export async function listCopyTargets(

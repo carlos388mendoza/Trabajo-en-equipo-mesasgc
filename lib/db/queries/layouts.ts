@@ -6,7 +6,13 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { elementTypes, restaurants, tableLayouts, tables } from "@/lib/db/schema";
+import {
+  elementTypes,
+  restaurants,
+  tableLayouts,
+  tables,
+  waitlistEntries,
+} from "@/lib/db/schema";
 import type { ElementTypeInfo, LayoutPayload, LayoutSummary } from "@/lib/layout/types";
 
 /** Catálogo completo de tipos: alimenta la paleta del editor. */
@@ -60,7 +66,13 @@ export async function getLayout(
       eq(tableLayouts.id, layoutId),
       eq(tableLayouts.restaurantId, restaurantId),
     ),
-    with: { tables: true },
+    // El cliente sentado viaja con la mesa para pintar su nombre y los minutos
+    // que lleva. Es solo lectura: el guardado del editor no lo manda.
+    with: {
+      tables: {
+        with: { currentEntry: { columns: { customerName: true, seatedAt: true } } },
+      },
+    },
   });
 
   if (!layout) return null;
@@ -84,7 +96,47 @@ export async function getLayout(
       capacity: t.capacity,
       status: t.status,
       currentEntryId: t.currentEntryId,
+      ...occupantOf(t.currentEntryId ? t.currentEntry : null),
     })),
+  };
+}
+
+function occupantOf(
+  entry: { customerName: string; seatedAt: Date | null } | null | undefined,
+): { occupantName: string | null; seatedAt: number | null } {
+  return {
+    occupantName: entry?.customerName ?? null,
+    // En milisegundos: los datos que van al Client Component son JSON plano.
+    seatedAt: entry?.seatedAt ? entry.seatedAt.getTime() : null,
+  };
+}
+
+/**
+ * Quién está sentado en una mesa ahora mismo.
+ *
+ * La usa el editor cuando un evento en vivo avisa de una asignación: el aviso
+ * dice qué cliente es, no cómo se llama. Devuelve null si la mesa no es de
+ * ese restaurante o está libre.
+ */
+export async function getTableOccupant(
+  restaurantId: string,
+  tableId: string,
+): Promise<{ entryId: string; occupantName: string; seatedAt: number | null } | null> {
+  const [row] = await db
+    .select({
+      entryId: waitlistEntries.id,
+      customerName: waitlistEntries.customerName,
+      seatedAt: waitlistEntries.seatedAt,
+    })
+    .from(tables)
+    .innerJoin(waitlistEntries, eq(waitlistEntries.id, tables.currentEntryId))
+    .where(and(eq(tables.id, tableId), eq(tables.restaurantId, restaurantId)))
+    .limit(1);
+  if (!row) return null;
+  return {
+    entryId: row.entryId,
+    occupantName: row.customerName,
+    seatedAt: row.seatedAt ? row.seatedAt.getTime() : null,
   };
 }
 

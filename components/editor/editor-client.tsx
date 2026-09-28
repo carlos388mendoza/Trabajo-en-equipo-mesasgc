@@ -32,6 +32,7 @@ import type { ElementTypeInfo, LayoutElement, LayoutSummary } from "@/lib/layout
 // editor la importa por el alias en vez de por una ruta relativa que
 // saltaría de `components/` a `app/`.
 import {
+  getTableOccupantInfo,
   saveLayoutStructure,
   type RestaurantOption,
 } from "@/app/restaurante/[id]/editor/actions";
@@ -122,6 +123,20 @@ export function EditorClient({
     [],
   );
 
+  // Un contador por mesa: cada evento en vivo lo sube y la mesa hace su pulso.
+  const [pulses, setPulses] = useState<Record<string, number>>({});
+  const pulse = useCallback((tableId: string) => {
+    setPulses((prev) => ({ ...prev, [tableId]: (prev[tableId] ?? 0) + 1 }));
+  }, []);
+
+  // Un solo reloj para todos los contadores de minutos del mapa. Cada 30 s
+  // basta: el contador muestra minutos enteros.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   // Tiempo real. La ocupación se aplica directamente: `status` y
   // `currentEntryId` no los edita el editor ni los manda al guardar, así que
   // actualizarlos no crea cambios sin guardar.
@@ -129,11 +144,27 @@ export function EditorClient({
   // La estructura NO se recarga sola: pisaría lo que el usuario esté moviendo
   // en ese momento. Se avisa y él decide.
   const realtime = useRestaurantSocket(restaurantId, {
-    "table:assigned": ({ table }) => {
+    "table:assigned": ({ table, entryId }) => {
       if (table.layoutId !== layoutId) return;
+      // La hora del aviso sirve de hora provisional hasta que llegue la real.
       patchElement(table.tableId, {
         status: table.status,
         currentEntryId: table.currentEntryId,
+        occupantName: null,
+        seatedAt: Date.now(),
+      });
+      pulse(table.tableId);
+      // El aviso trae el id del cliente, no su nombre: se pide aparte, solo
+      // lectura. Si mientras tanto la mesa cambió otra vez, se descarta.
+      void getTableOccupantInfo({ restaurantId, tableId: table.tableId }).then((info) => {
+        if (!info || info.entryId !== entryId) return;
+        setElements((prev) =>
+          prev.map((e) =>
+            e.id === table.tableId && e.currentEntryId === info.entryId
+              ? { ...e, occupantName: info.occupantName, seatedAt: info.seatedAt ?? e.seatedAt }
+              : e,
+          ),
+        );
       });
     },
     "table:released": ({ table }) => {
@@ -141,7 +172,10 @@ export function EditorClient({
       patchElement(table.tableId, {
         status: table.status,
         currentEntryId: table.currentEntryId,
+        occupantName: null,
+        seatedAt: null,
       });
+      pulse(table.tableId);
     },
     "layout:updated": (update) => {
       if (update.layoutId !== layoutId) return;
@@ -179,6 +213,8 @@ export function EditorClient({
         // Una mesa nueva nace libre; la ocupación la cambia el paso 6.
         status: "libre" satisfies TableStatus,
         currentEntryId: null,
+        occupantName: null,
+        seatedAt: null,
       };
 
       setElements((prev) => [...prev, element]);
@@ -475,6 +511,8 @@ export function EditorClient({
             height={height}
             viewRotation={viewRotation}
             elements={elements}
+            pulses={pulses}
+            now={now}
             typesById={typesById}
             selectedId={selectedId}
             onSelect={setSelectedId}
