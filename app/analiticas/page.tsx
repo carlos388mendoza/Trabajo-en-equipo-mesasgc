@@ -1,9 +1,35 @@
+"use client";
+
+import { FormEvent, useState } from "react";
+
+const daily = [{day:"Lun",groups:18,minutes:22},{day:"Mar",groups:24,minutes:19},{day:"Mié",groups:21,minutes:25},{day:"Jue",groups:29,minutes:17},{day:"Vie",groups:36,minutes:28},{day:"Sáb",groups:44,minutes:32},{day:"Dom",groups:31,minutes:24}];
+const restaurants = [{name:"Casa Verde",guests:183,wait:21,change:"+12%"},{name:"La Terraza",guests:156,wait:18,change:"+8%"},{name:"Mercado 21",guests:142,wait:26,change:"+5%"}];
+const summary = "Esta semana atendiste 184 grupos, un 9% más que la anterior. El jueves fue el día más rápido, con una espera promedio de 17 minutos. El sábado tuvo mayor demanda y una espera promedio de 32 minutos.";
+
 export default function AnaliticasPage() {
-  return (
-    <div>
-      <h1 className="text-xl font-semibold">Estadísticas generales</h1>
-      <p>Vista de estadísticas de todos los restaurantes/marcas.</p>
-      {/* TODO [MIEMBRO B]: dashboard con recharts + asistente de IA */}
+  const [question,setQuestion]=useState("");
+  const [answer,setAnswer]=useState("");
+  const [loading,setLoading]=useState(false);
+  async function ask(event:FormEvent<HTMLFormElement>){
+    event.preventDefault(); if(!question.trim())return;
+    setLoading(true);setAnswer("");
+    try {const response=await fetch("/api/assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({question,summary,daily,restaurants})});const data=await response.json();setAnswer(data.answer||data.error||"No pude generar una respuesta.");}
+    catch {setAnswer("No se pudo conectar con el asistente. Revisa tu conexión e inténtalo de nuevo.");}
+    finally{setLoading(false);}
+  }
+  return <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+    <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[.18em] text-emerald-700">Panel de rendimiento</p><h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">Estadísticas</h1><p className="mt-1 text-slate-500">Una vista clara de cómo va tu servicio.</p></div><select aria-label="Periodo" className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700"><option>Últimos 7 días</option><option>Últimos 30 días</option></select></div>
+    <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{[{label:"Grupos atendidos",value:"184",detail:"↑ 9% vs. semana pasada",icon:"♧"},{label:"Espera promedio",value:"23 min",detail:"↓ 4 min esta semana",icon:"◷"},{label:"Día más rápido",value:"Jueves",detail:"17 min de espera",icon:"↗"},{label:"Satisfacción",value:"94%",detail:"Según clientes atendidos",icon:"♡"}].map(card=><article key={card.label} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><div className="flex items-center justify-between"><span className="text-sm font-medium text-slate-500">{card.label}</span><span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-50 text-lg text-emerald-700">{card.icon}</span></div><p className="mt-4 text-3xl font-bold text-slate-900">{card.value}</p><p className="mt-1 text-xs font-medium text-emerald-700">{card.detail}</p></article>)}</div>
+    <div className="mt-5 grid gap-5 lg:grid-cols-[1.4fr_.8fr]">
+      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold text-slate-900">Volumen y tiempo de espera</h2><p className="mt-1 text-sm text-slate-500">Grupos atendidos y minutos promedio</p></div><div className="flex gap-4 text-xs text-slate-500"><span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-emerald-600"/>Grupos</span><span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-amber-400"/>Espera (min)</span></div></div>
+        <div className="mt-7 flex h-52 items-end justify-between gap-2 border-b border-l border-slate-100 px-3">{daily.map(d=><div key={d.day} className="flex h-full flex-1 flex-col items-center justify-end gap-2"><div className="flex h-[85%] items-end gap-1"><div title={`${d.groups} grupos`} className="w-3 rounded-t-md bg-emerald-600 sm:w-6" style={{height:`${d.groups/50*100}%`}}/><div title={`${d.minutes} minutos`} className="w-3 rounded-t-md bg-amber-400 sm:w-6" style={{height:`${d.minutes/40*100}%`}}/></div><span className="-mb-6 text-xs text-slate-400">{d.day}</span></div>)}</div>
+        <p className="mt-9 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900"><strong>Buen ritmo:</strong> el jueves atendiste más grupos con la menor espera promedio.</p>
+      </section>
+      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 className="font-bold text-slate-900">Por restaurante</h2><p className="mt-1 text-sm text-slate-500">Comparativa de esta semana</p><div className="mt-5 space-y-5">{restaurants.map(r=><div key={r.name}><div className="flex justify-between text-sm"><span className="font-semibold text-slate-800">{r.name}</span><span className="text-emerald-700">{r.change}</span></div><div className="mt-2 h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-emerald-600" style={{width:`${r.guests/200*100}%`}}/></div><p className="mt-1.5 text-xs text-slate-500">{r.guests} grupos <span className="mx-1">·</span>{r.wait} min promedio</p></div>)}</div></section>
     </div>
-  );
+    <section className="mt-5 overflow-hidden rounded-2xl bg-slate-900 text-white shadow-sm"><div className="grid gap-5 p-6 md:grid-cols-[.8fr_1.2fr] md:p-7"><div><span className="inline-flex rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-semibold text-emerald-300">✦ ASISTENTE IA</span><h2 className="mt-3 text-xl font-bold">Pregunta sobre tu servicio</h2><p className="mt-1 text-sm leading-6 text-slate-300">Consulta tus números en lenguaje natural y recibe respuestas basadas en estas estadísticas.</p><div className="mt-5 rounded-xl bg-white/5 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Resumen de la semana</p><p className="mt-2 text-sm leading-6 text-slate-200">{summary}</p></div></div>
+      <div><form onSubmit={ask} className="flex flex-col gap-2 sm:flex-row"><input value={question} onChange={e=>setQuestion(e.target.value)} placeholder="¿Qué día tuvimos menos espera?" className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-400 focus:border-emerald-400"/><button disabled={loading} className="rounded-xl bg-emerald-400 px-5 py-3 text-sm font-bold text-emerald-950 transition hover:bg-emerald-300 disabled:opacity-60">{loading?"Consultando…":"Preguntar"}</button></form><div className="mt-4 flex flex-wrap gap-2">{["Compara viernes y sábado","¿Cuál fue el día más rápido?"].map(q=><button key={q} onClick={()=>setQuestion(q)} className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/10">{q}</button>)}</div>{answer&&<div aria-live="polite" className="mt-5 rounded-xl border border-white/10 bg-white/10 p-4"><p className="text-xs font-semibold text-emerald-300">RESPUESTA</p><p className="mt-2 text-sm leading-6 text-slate-100">{answer}</p></div>}</div>
+    </div></section>
+    <p className="mt-4 text-center text-xs text-slate-400">Información ilustrativa de demostración; aún no conectada a datos reales del restaurante.</p>
+  </main>;
 }

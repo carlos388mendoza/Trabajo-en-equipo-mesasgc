@@ -107,3 +107,13 @@ Aplicación en tiempo real para el manejo de listas de espera de clientes en res
   2. El servidor valida si la mesa ya tiene cliente asignado.
   3. Si está libre, la asigna y emite el evento a todos los conectados a esa sala.
   4. Si ya fue tomada, rechaza y avisa solo al que falló ("Esta mesa ya fue asignada").
+
+---
+
+## Modo sencillo, estadísticas y asistente
+
+- `/restaurante/1/rapido` lee y guarda grupos en Turso, permite agregar nombre, cantidad de personas y nota, y marcar el grupo actual como sentado o ausente. En una pantalla táctil se puede deslizar a la derecha para sentar o a la izquierda para marcar ausente.
+- `/analiticas` muestra indicadores y gráficos semanales de demostración, además de un resumen y una caja para preguntas en lenguaje natural.
+- Para respuestas generadas por IA, configura `OPENROUTER_API_KEY` y opcionalmente `OPENROUTER_MODEL` en `.env.local` (puedes partir de `.env.example`). Sin una clave configurada, el asistente responde consultas básicas de velocidad y volumen con los datos semanales de demostración.
+- Los gráficos de analíticas siguen usando datos locales de demostración; aún deben conectarse a consultas de Turso. La lista de espera sí se guarda en Turso.
+- Antes de publicar, añade autenticación y autorización a las rutas `/api/restaurante/.../clientes`; actualmente están pensadas para el desarrollo local y no verifican sesiones de usuario.

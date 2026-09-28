@@ -25,6 +25,8 @@ export const waitlistEntries = sqliteTable("waitlist_entries", {
   id: text("id").primaryKey(),
   restaurantId: text("restaurant_id").notNull(),
   customerName: text("customer_name").notNull(),
+  partySize: integer("party_size").notNull().default(2),
+  note: text("note").notNull().default(""),
   status: text("status").notNull(), // "esperando" | "listo" | "ausente"
   arrivedAt: integer("arrived_at").notNull(),
   seatedAt: integer("seated_at"),
