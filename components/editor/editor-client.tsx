@@ -24,6 +24,8 @@ import { useRouter } from "next/navigation";
 import type { CanvasHandle } from "./konva-canvas";
 import { DND_MIME, ElementPalette } from "./element-palette";
 import { CopyLayoutDialog } from "./copy-layout-dialog";
+import { useRestaurantSocket } from "@/components/realtime/use-restaurant-socket";
+import type { TableStatus } from "@/lib/db/enums";
 import { nextLabel } from "@/lib/layout/element-style";
 import type { ElementTypeInfo, LayoutElement, LayoutSummary } from "@/lib/layout/types";
 // La action vive en la ruta (convención de Next para "use server"), y el
@@ -88,6 +90,11 @@ export function EditorClient({
   const [zoom, setZoom] = useState(100);
   const [feedback, setFeedback] = useState<Feedback>({ kind: "idle" });
   const [copyOpen, setCopyOpen] = useState(false);
+  // Versión de la zona que tiene este editor, y la última que otro
+  // dispositivo anunció. Si la de fuera es mayor, lo de la pantalla es viejo.
+  const [savedVersion, setSavedVersion] = useState(version);
+  const [remoteVersion, setRemoteVersion] = useState(version);
+  const [structureChanged, setStructureChanged] = useState(false);
 
   const typesById = useMemo(
     () => new Map(types.map((t) => [t.id, t])),
@@ -112,6 +119,40 @@ export function EditorClient({
     [],
   );
 
+  // Tiempo real. La ocupación se aplica directamente: `status` y
+  // `currentEntryId` no los edita el editor ni los manda al guardar, así que
+  // actualizarlos no crea cambios sin guardar.
+  //
+  // La estructura NO se recarga sola: pisaría lo que el usuario esté moviendo
+  // en ese momento. Se avisa y él decide.
+  const realtime = useRestaurantSocket(restaurantId, {
+    "table:assigned": ({ table }) => {
+      if (table.layoutId !== layoutId) return;
+      patchElement(table.tableId, {
+        status: table.status,
+        currentEntryId: table.currentEntryId,
+      });
+    },
+    "table:released": ({ table }) => {
+      if (table.layoutId !== layoutId) return;
+      patchElement(table.tableId, {
+        status: table.status,
+        currentEntryId: table.currentEntryId,
+      });
+    },
+    "layout:updated": (update) => {
+      if (update.layoutId !== layoutId) return;
+      setRemoteVersion((v) => Math.max(v, update.version));
+    },
+    "structure:changed": () => setStructureChanged(true),
+  });
+
+  // El aviso de nuestro propio guardado puede llegar antes que la respuesta
+  // de la action; mientras se guarda no se enseña, y al terminar
+  // `savedVersion` ya lo iguala.
+  const staleFromElsewhere =
+    !saving && (structureChanged || remoteVersion > savedVersion);
+
   const addElement = useCallback(
     (type: ElementTypeInfo, centerX: number, centerY: number) => {
       const id = crypto.randomUUID();
@@ -132,8 +173,8 @@ export function EditorClient({
         height: type.height,
         rotation: 0,
         capacity: type.defaultCapacity,
-        // Locales, no vienen de la base de datos: el paso 6 los actualizará.
-        status: "free",
+        // Una mesa nueva nace libre; la ocupación la cambia el paso 6.
+        status: "libre" satisfies TableStatus,
         currentEntryId: null,
       };
 
@@ -235,6 +276,7 @@ export function EditorClient({
 
     if (result.ok) {
       setDirty(false);
+      setSavedVersion(result.version);
       setFeedback({
         kind: "saved",
         text:
@@ -375,6 +417,27 @@ export function EditorClient({
         </div>
       </div>
 
+      {/* Otro dispositivo cambió la estructura que se ve aquí */}
+      {staleFromElsewhere ? (
+        <div className="flex items-center gap-3 bg-sky-50 px-3 py-1.5 text-sm text-sky-800">
+          <span>
+            {structureChanged
+              ? "La estructura de este restaurante se reemplazó desde otro dispositivo."
+              : "Otro dispositivo guardó cambios en esta zona."}{" "}
+            {dirty
+              ? "Si recargas perderás lo que no has guardado; si guardas, sobrescribirás sus cambios."
+              : "Recarga para verlos."}
+          </span>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded-md border border-sky-300 px-2 py-0.5 font-medium hover:bg-sky-100"
+          >
+            Recargar
+          </button>
+        </div>
+      ) : null}
+
       {/* Aviso de cambios sin guardar / resultado del guardado */}
       {dirty || feedback.kind !== "idle" ? (
         <div
@@ -424,8 +487,20 @@ export function EditorClient({
           />
 
           <div className="pointer-events-none absolute bottom-2 left-2 rounded bg-white/80 px-2 py-1 text-xs text-neutral-500">
-            {layoutName} · {width}×{height} · v{version} ·{" "}
-            {elements.length} elemento(s)
+            {layoutName} · {width}×{height} · v{savedVersion} ·{" "}
+            {elements.length} elemento(s) ·{" "}
+            <span
+              className={
+                realtime.status === "en-vivo" ? "text-emerald-600" : "text-neutral-400"
+              }
+              title={realtime.joinError ?? undefined}
+            >
+              {realtime.status === "en-vivo"
+                ? "● en vivo"
+                : realtime.status === "conectando"
+                  ? "conectando…"
+                  : "sin tiempo real"}
+            </span>
           </div>
         </div>
       </div>
