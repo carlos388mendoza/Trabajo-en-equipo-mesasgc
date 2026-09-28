@@ -152,7 +152,10 @@ export function destinationsFor(
       }
     }
   }
-  if (can(subject, "analiticas:ver")) {
+  // Por ROL, no por permiso: el admin también puede ver estadísticas, pero su
+  // destino es /admin. Solo quien tiene el rol analitica entra aquí directo
+  // (o lo elige, si además tiene otros roles).
+  if (subject.roles.includes(ROLES.ANALITICA) && can(subject, "analiticas:ver")) {
     out.push({
       href: "/analiticas",
       label: "Estadísticas",

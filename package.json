@@ -18,7 +18,8 @@
     "verify:realtime": "tsx scripts/verify-realtime.mts",
     "demo:host": "node scripts/demo-host.mjs",
     "db:migrate": "drizzle-kit migrate",
-    "create-admin": "tsx scripts/create-admin.mts"
+    "create-admin": "tsx scripts/create-admin.mts",
+    "verify:auth": "tsx scripts/verify-auth.mts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
