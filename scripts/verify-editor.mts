@@ -98,11 +98,11 @@ await db.insert(restaurants).values([
 ]);
 
 await db.insert(elementTypes).values([
-  { id: TYPES.mesa, key: "mesa-sillas", label: "Mesa con sillas", color: "#3b82f6", icon: "🍽️", defaultCapacity: 4, sortOrder: 0 },
-  { id: TYPES.butacas, key: "mesa-butacas", label: "Mesa con butacas", color: "#8b5cf6", icon: "🛋️", defaultCapacity: 6, sortOrder: 1 },
-  { id: TYPES.juegos, key: "area-juegos", label: "Área de juegos", color: "#22c55e", icon: "🎮", defaultCapacity: null, sortOrder: 2 },
-  { id: TYPES.bano, key: "bano", label: "Baños", color: "#06b6d4", icon: "🚻", defaultCapacity: null, sortOrder: 3 },
-  { id: TYPES.caja, key: "caja", label: "Caja", color: "#ef4444", icon: "🧾", defaultCapacity: null, sortOrder: 4 },
+  { id: TYPES.mesa, key: "mesa-sillas", label: "Mesa con sillas", color: "#3b82f6", icon: "utensils", defaultCapacity: 4, sortOrder: 0 },
+  { id: TYPES.butacas, key: "mesa-butacas", label: "Mesa con butacas", color: "#8b5cf6", icon: "sofa", defaultCapacity: 6, sortOrder: 1 },
+  { id: TYPES.juegos, key: "area-juegos", label: "Área de juegos", color: "#22c55e", icon: "puzzle", defaultCapacity: null, sortOrder: 2 },
+  { id: TYPES.bano, key: "bano", label: "Baños", color: "#06b6d4", icon: "toilet", defaultCapacity: null, sortOrder: 3 },
+  { id: TYPES.caja, key: "caja", label: "Caja", color: "#ef4444", icon: "banknote", defaultCapacity: null, sortOrder: 4 },
 ]);
 
 await db.insert(tableLayouts).values([
@@ -203,7 +203,7 @@ const typeRow = {
   key: "mesa-sillas",
   label: "Mesa con sillas",
   color: "#3b82f6",
-  icon: "🍽️",
+  icon: "utensils",
   width: 80,
   height: 80,
   defaultCapacity: 4,

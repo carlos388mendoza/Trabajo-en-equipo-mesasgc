@@ -7,7 +7,9 @@
 // normalmente quiere cambiar el destino y volver a intentarlo.
 
 import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 
+import { ICON_STROKE } from "./icons";
 import {
   copyStructureToRestaurant,
   type RestaurantOption,
@@ -113,9 +115,9 @@ export function CopyLayoutDialog({
             onClick={onClose}
             disabled={state.kind === "busy"}
             aria-label="Cerrar"
-            className="rounded px-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-40"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-40"
           >
-            ✕
+            <X aria-hidden size={20} strokeWidth={ICON_STROKE} />
           </button>
         </div>
 
