@@ -153,6 +153,20 @@ export function EditorClient({
   const [remoteVersion, setRemoteVersion] = useState(version);
   const [structureChanged, setStructureChanged] = useState(false);
 
+  // Alto real de la barra flotante. En una tablet en vertical, o con la barra
+  // en dos filas, mide distinto; el plano se encuadra debajo de lo que tapa.
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [toolbarHeight, setToolbarHeight] = useState(0);
+  useEffect(() => {
+    const node = toolbarRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setToolbarHeight(Math.ceil(entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   // --- Deshacer ------------------------------------------------------------
   //
   // Una pila de fotos de `elements` tomadas JUSTO ANTES de cada cambio. Es
@@ -479,7 +493,7 @@ export function EditorClient({
           width={width}
           height={height}
           viewRotation={viewRotation}
-          topInset={TOOLBAR_INSET}
+          topInset={toolbarHeight + TOOLBAR_MARGIN}
           elements={elements}
           pulses={pulses}
           now={now}
@@ -503,7 +517,10 @@ export function EditorClient({
             mapa; solo los paneles los reciben. */}
         <div className="pointer-events-none absolute inset-x-3 top-3 flex flex-col items-start gap-2">
           {/* Barra de herramientas */}
-          <div className={`pointer-events-auto flex w-full flex-wrap items-center gap-x-1 gap-y-2 px-3 py-2 ${FLOATING}`}>
+          <div
+            ref={toolbarRef}
+            className={`pointer-events-auto flex w-full flex-wrap items-center gap-x-1 gap-y-2 px-3 py-2 ${FLOATING}`}
+          >
             <label className="mr-2 flex flex-col text-[11px] font-medium text-panel-muted">
               Zona
               <select
@@ -727,8 +744,8 @@ export function EditorClient({
  */
 const FLOATING = "rounded-2xl bg-panel/80 text-panel-text shadow-lg ring-1 ring-app-border backdrop-blur-md";
 
-/** Alto aproximado de la barra flotante, para encuadrar el plano debajo. */
-const TOOLBAR_INSET = 92;
+/** Margen de la barra flotante (top-3) más un respiro antes del plano. */
+const TOOLBAR_MARGIN = 24;
 
 /** Botón de barra: ícono y texto corto debajo, 44 px o más para el dedo. */
 function ToolButton({

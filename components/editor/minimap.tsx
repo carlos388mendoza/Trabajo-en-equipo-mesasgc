@@ -29,8 +29,8 @@ type Props = {
   onJump: (x: number, y: number) => void;
 };
 
-const MAX_WIDTH = 190;
-const MAX_HEIGHT = 130;
+const MAX_WIDTH = 160;
+const MAX_HEIGHT = 104;
 
 export function Minimap({
   width,
