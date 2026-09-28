@@ -220,7 +220,7 @@ chunk de cliente de 330 KB que solo se descarga al abrir el editor.
   tipo no necesita migrar la base de datos.
 - **Un elemento se gira con los botones de su panel, no arrastrando.** El
   `Transformer` sigue con `rotateEnabled: false`: en una tablet, girar con el
-  dedo es impreciso. Ver la sección 11.
+  dedo es impreciso. Ver la sección 12.
 
 ### Verificación
 
@@ -416,7 +416,38 @@ npm run demo:host -- liberar tbl_c_1 wl_1         # Mesa 1 vuelve a libre
 - En Windows, `@libsql/client` necesita el *Visual C++ Redistributable*
   (`vcruntime140.dll`). Sin él, ni `server.ts` ni los `verify:*` arrancan.
 
-## 11. Aspecto del editor (tablet)
+## 11. Modo rápido, estadísticas y asistente IA
+
+El modo rápido (`/restaurante/[id]/rapido`) lee y escribe clientes de
+`waitlist_entries` en Turso. Permite registrar el nombre, tamaño del grupo y
+una nota, y marcar al grupo siguiente como listo o ausente; en pantallas
+táctiles también acepta deslizar la tarjeta a izquierda o derecha.
+
+Las estadísticas (`/analiticas`) se calculan en `/api/analiticas` sobre los
+registros reales: grupos sentados durante los últimos siete días, espera desde
+`arrived_at` hasta `seated_at`, comparación con los siete días anteriores,
+resumen diario y agrupación por restaurante. Sin registros, la interfaz indica
+que todavía no hay actividad; no presenta cifras de demostración.
+
+El asistente (`/api/assistant`) recibe ese resumen para contestar preguntas en
+español. Si se configura `OPENROUTER_API_KEY`, consulta OpenRouter; sin esa
+clave, responde localmente las preguntas comunes sobre espera y volumen. La
+clave se define solo en `.env.local` y no se envía al navegador.
+
+No se añadieron tablas ni columnas: el esquema de `testing` ya contiene lo
+necesario. `waitlist_entries.party_size` guarda cuántas personas hay en el
+grupo; `notes` guarda la observación del registro; `status` distingue
+`esperando`, `listo`, `sentado` y `ausente`; `arrived_at` mide la espera;
+`called_at` conserva cuándo se avisó que había lugar; `seated_at` registra el
+momento de sentar al grupo y permite calcular la espera real. La relación con
+`restaurants` permite filtrar y comparar la actividad por local.
+
+Los clientes marcados como `listo` todavía no cuentan en las estadísticas:
+estas solo incluyen grupos con estado `sentado` y `seated_at`. El modo rápido
+los contará cuando la asignación de mesa con `assignTable` se integre en la
+siguiente rama.
+
+## 12. Aspecto del editor (tablet)
 
 El editor está pensado para usarse con el dedo en una tablet:
 - Botones de al menos 44 px, con ícono y un texto corto debajo.
@@ -484,7 +515,7 @@ su `key` (`components/editor/icons.ts`), igual que la forma. La columna
 - El comentario de `element_types.icon` en `lib/db/schema.ts` todavía dice
   «emoji». No se tocó porque es el archivo compartido del esquema.
 
-## 12. Estilo radar y temas
+## 13. Estilo radar y temas
 
 ### El mapa
 

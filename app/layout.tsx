@@ -36,8 +36,10 @@ export default function RootLayout({
       <body suppressHydrationWarning className="min-h-screen bg-app-bg text-app-text">
         <ThemeSync />
         <header className="flex items-center justify-between border-b border-app-border bg-panel px-4 py-3 text-panel-text">
-          <Link href="/" className="text-lg font-bold">
-            Table Waitlist
+          {/* El logotipo de texto "Table" + "Waitlist" resaltado; el color
+              del resalte es el acento del tema, no un verde fijo. */}
+          <Link href="/" className="text-lg font-bold tracking-tight">
+            Table<span className="text-accent">Waitlist</span>
           </Link>
           <div className="flex items-center gap-2">
             {/* TODO (Ambos): nombre del usuario logueado + botón de logout, viene de Better Auth */}
@@ -50,7 +52,9 @@ export default function RootLayout({
             </Link>
           </div>
         </header>
-        <main className="p-4">{children}</main>
+        {/* El padding se queda aquí: sin él el editor queda pegado a los
+            bordes. El fondo lo pone el <body> con el color del tema. */}
+        <main className="min-h-[calc(100vh-65px)] p-4">{children}</main>
       </body>
     </html>
   );
