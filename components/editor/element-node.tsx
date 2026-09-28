@@ -2,30 +2,26 @@
 
 // Un elemento colocado en el mapa.
 //
-// Se dibuja como un `Group` con su propio dibujo por tipo: mesa redonda con
-// sillas, mesa con butaca en U, zona de juegos con patrón, baño y caja con su
-// ícono. El Group es lo único arrastrable, así que Konva solo mueve un
-// elemento y nunca el resto de la escena.
+// Estilo "radar" visto desde arriba: cuerpos con relleno translúcido del color
+// de su estado, bordes marcados con un brillo suave, y un marcador redondo con
+// el ícono del tipo. Todos los colores llegan en `theme` (ver
+// `lib/theme/theme.ts`), así que el mismo dibujo sirve para Claro, Oscuro y
+// Personalizado.
 //
-// El Group se posiciona por su CENTRO (`offset` = mitad del tamaño) para que
-// girar un elemento lo gire sobre sí mismo y no sobre su esquina. En la base
-// de datos `x`/`y` siguen siendo la esquina superior izquierda sin girar: la
-// conversión se hace aquí y en el Transformer del canvas.
+// El Group es lo único arrastrable, así que Konva solo mueve un elemento y
+// nunca el resto de la escena. Se posiciona por su CENTRO (`offset` = mitad del
+// tamaño) para que girar un elemento lo gire sobre sí mismo y no sobre su
+// esquina. En la base de datos `x`/`y` siguen siendo la esquina superior
+// izquierda sin girar: la conversión se hace aquí y en el Transformer.
 
 import { memo, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { Circle, Group, Rect, Text } from "react-konva";
-import type Konva from "konva";
+import Konva from "konva";
 
-import {
-  SELECTED_STROKE,
-  STATUS_COLORS,
-  elementStyle,
-  shade,
-  visibleSeats,
-  visualStatus,
-} from "@/lib/layout/element-style";
+import { elementStyle, visibleSeats, visualStatus } from "@/lib/layout/element-style";
 import type { ElementTypeInfo, LayoutElement } from "@/lib/layout/types";
+import { type Theme, withAlpha } from "@/lib/theme/theme";
 
 import { CanvasIcon } from "./canvas-icon";
 import { typeIcon } from "./icons";
@@ -35,21 +31,12 @@ export const CANVAS_FONT =
 
 const LABEL_FONT = 12;
 const LABEL_HEIGHT = 20;
-const INK = "#111827";
-
-// Sombra ligera, solo en el cuerpo del elemento: en Konva las sombras son
-// caras, y en las sillas no aportan nada.
-const SHADOW = {
-  shadowColor: "#0f172a",
-  shadowBlur: 6,
-  shadowOffsetY: 2,
-  shadowOpacity: 0.14,
-  shadowForStrokeEnabled: false,
-} as const;
+const MARKER_RADIUS = 11;
 
 type Props = {
   element: LayoutElement;
   type: ElementTypeInfo;
+  theme: Theme;
   selected: boolean;
   /** Giro de la vista del plano, para que el texto quede derecho en pantalla. */
   viewRotation: number;
@@ -59,7 +46,7 @@ type Props = {
   minutes: number | null;
   /**
    * Cambia cada vez que la mesa cambia por un evento en vivo. Cada cambio
-   * dispara el pulso; el valor en sí no importa.
+   * dispara la onda; el valor en sí no importa.
    */
   pulse: number;
   onSelect: (id: string) => void;
@@ -71,38 +58,31 @@ type Props = {
   registerNode: (id: string, node: Konva.Group | null) => void;
 };
 
-// Patrón de rayas para la zona de juegos. Un canvas pequeño por color, creado
-// la primera vez que se necesita (este archivo solo corre en el navegador).
-const patterns = new Map<string, HTMLCanvasElement>();
-
-function stripePattern(color: string): HTMLCanvasElement {
-  let canvas = patterns.get(color);
-  if (!canvas) {
-    canvas = document.createElement("canvas");
-    canvas.width = 16;
-    canvas.height = 16;
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      ctx.fillStyle = shade(color, 115);
-      ctx.fillRect(0, 0, 16, 16);
-      ctx.strokeStyle = shade(color, 70);
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(-4, 20);
-      ctx.lineTo(20, -4);
-      ctx.moveTo(-4, 4);
-      ctx.lineTo(4, -4);
-      ctx.moveTo(12, 20);
-      ctx.lineTo(20, 12);
-      ctx.stroke();
-    }
-    patterns.set(color, canvas);
-  }
-  return canvas;
+/** Brillo suave alrededor de un trazo: lo que da el aire de "radar". */
+function glow(color: string, theme: Theme, strength = 1) {
+  return {
+    shadowColor: color,
+    shadowBlur: 10 * strength,
+    shadowOpacity: (theme.dark ? 0.75 : 0.35) * strength,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
+    // Solo el trazo brilla; sin esto Konva calcula la sombra dos veces.
+    shadowForStrokeEnabled: true,
+  } as const;
 }
 
-/** Etiqueta blanca con el nombre: se lee sobre cualquier color. */
-function LabelPill({ text, width, y }: { text: string; width: number; y: number }) {
+/** Etiqueta con el nombre, del color de los paneles: se lee sobre cualquier fondo. */
+function LabelPill({
+  text,
+  width,
+  y,
+  theme,
+}: {
+  text: string;
+  width: number;
+  y: number;
+  theme: Theme;
+}) {
   return (
     <Group y={y} listening={false}>
       <Rect
@@ -111,9 +91,8 @@ function LabelPill({ text, width, y }: { text: string; width: number; y: number 
         width={width}
         height={LABEL_HEIGHT}
         cornerRadius={LABEL_HEIGHT / 2}
-        fill="#ffffff"
-        opacity={0.95}
-        stroke="#e5e7eb"
+        fill={withAlpha(theme.panel, 0.92)}
+        stroke={theme.border}
         strokeWidth={1}
       />
       <Text
@@ -125,7 +104,7 @@ function LabelPill({ text, width, y }: { text: string; width: number; y: number 
         fontSize={LABEL_FONT}
         fontStyle="bold"
         fontFamily={CANVAS_FONT}
-        fill={INK}
+        fill={theme.panelText}
         wrap="none"
         ellipsis
       />
@@ -136,6 +115,7 @@ function LabelPill({ text, width, y }: { text: string; width: number; y: number 
 function ElementNodeBase({
   element,
   type,
+  theme,
   selected,
   viewRotation,
   occupantName,
@@ -147,34 +127,47 @@ function ElementNodeBase({
   onDragEnd,
   registerNode,
 }: Props) {
-  const groupRef = useRef<Konva.Group | null>(null);
-  const haloRef = useRef<Konva.Rect | null>(null);
+  const waveRef = useRef<Konva.Circle | null>(null);
+  const echoRef = useRef<Konva.Circle | null>(null);
 
   const style = elementStyle(type);
   const { width, height } = element;
   const status = visualStatus(element);
-  const colors = STATUS_COLORS[status];
+  const colors = theme.status[status];
   const icon = typeIcon(type.key).node;
+  const baseRadius = Math.max(width, height) / 2 + 6;
 
-  // Pulso corto cuando la mesa cambia por un evento en vivo: crece un poco,
-  // vuelve, y un halo del color del nuevo estado se desvanece. Se salta el
-  // primer render (pulse = 0): solo avisa de cambios, no de lo que ya estaba.
+  // Onda expansiva cuando la mesa cambia por un evento en vivo: un anillo del
+  // color del estado nuevo que crece y se desvanece, y un eco detrás. Se salta
+  // el primer render: solo avisa de cambios, no de lo que ya estaba.
   const firstPulse = useRef(pulse);
   useEffect(() => {
     if (pulse === firstPulse.current) return;
-    const group = groupRef.current;
-    const halo = haloRef.current;
-    if (!group) return;
-    group.to({
-      scaleX: 1.08,
-      scaleY: 1.08,
-      duration: 0.14,
-      onFinish: () => group.to({ scaleX: 1, scaleY: 1, duration: 0.22 }),
-    });
-    if (halo) {
-      halo.opacity(0.6);
-      halo.to({ opacity: 0, duration: 0.7 });
+    const waves: [Konva.Circle | null, number][] = [
+      [waveRef.current, 0],
+      [echoRef.current, 0.22],
+    ];
+    const timers: number[] = [];
+    for (const [ring, delay] of waves) {
+      if (!ring) continue;
+      timers.push(
+        window.setTimeout(() => {
+          ring.radius(baseRadius);
+          ring.strokeWidth(4);
+          ring.opacity(0.9);
+          ring.to({
+            radius: baseRadius * 2.2,
+            strokeWidth: 1,
+            opacity: 0,
+            duration: 0.9,
+            easing: Konva.Easings.EaseOut,
+          });
+        }, delay * 1000),
+      );
     }
+    return () => timers.forEach((t) => window.clearTimeout(t));
+    // `baseRadius` a propósito fuera: redimensionar no debe lanzar la onda.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pulse]);
 
   const radius = Math.min(width, height) / 2;
@@ -221,9 +214,9 @@ function ElementNodeBase({
             radius={radius}
             fill={colors.fill}
             stroke={colors.stroke}
-            strokeWidth={2}
+            strokeWidth={2.5}
             listening={false}
-            {...SHADOW}
+            {...glow(colors.stroke, theme)}
           />
         </>
       );
@@ -253,9 +246,9 @@ function ElementNodeBase({
             cornerRadius={8}
             fill={colors.fill}
             stroke={colors.stroke}
-            strokeWidth={2}
+            strokeWidth={2.5}
             listening={false}
-            {...SHADOW}
+            {...glow(colors.stroke, theme)}
           />
         </>
       );
@@ -264,6 +257,7 @@ function ElementNodeBase({
     }
 
     case "zone":
+      // Zona: relleno translúcido del color del tipo y borde marcado.
       body = (
         <Rect
           x={0}
@@ -271,11 +265,12 @@ function ElementNodeBase({
           width={width}
           height={height}
           cornerRadius={16}
-          fillPatternImage={stripePattern(type.color) as unknown as HTMLImageElement}
+          fill={withAlpha(type.color, theme.dark ? 0.2 : 0.14)}
           stroke={type.color}
-          strokeWidth={2}
-          dash={[10, 6]}
+          strokeWidth={2.5}
+          dash={[12, 6]}
           listening={false}
+          {...glow(type.color, theme, 0.8)}
         />
       );
       iconY = height / 2 - 16;
@@ -283,7 +278,7 @@ function ElementNodeBase({
       break;
 
     default:
-      // Baño, caja y cualquier tipo nuevo: tarjeta con su ícono.
+      // Baño, caja y cualquier tipo nuevo: área translúcida con su ícono.
       body = (
         <Rect
           x={0}
@@ -291,11 +286,11 @@ function ElementNodeBase({
           width={width}
           height={height}
           cornerRadius={12}
-          fill={shade(type.color, 115)}
+          fill={withAlpha(type.color, theme.dark ? 0.22 : 0.16)}
           stroke={type.color}
           strokeWidth={2}
           listening={false}
-          {...SHADOW}
+          {...glow(type.color, theme, 0.7)}
         />
       );
       iconY = height / 2 - 12;
@@ -317,12 +312,17 @@ function ElementNodeBase({
         : occupantName
       : null;
 
+  // Marcador de las mesas: arriba a la derecha, sobre el borde. Las zonas,
+  // baños y cajas ya llevan su ícono en el centro.
+  const marker = style.seatable
+    ? style.shape === "circle"
+      ? { x: radius * 0.72, y: -radius * 0.72 }
+      : { x: width / 2 - 6, y: -height / 2 + 6 }
+    : null;
+
   return (
     <Group
-      ref={(node) => {
-        groupRef.current = node;
-        registerNode(element.id, node);
-      }}
+      ref={(node) => registerNode(element.id, node)}
       id={element.id}
       name="table-element"
       x={element.x + width / 2}
@@ -355,15 +355,24 @@ function ElementNodeBase({
       }}
       onDragEnd={onDragEnd}
     >
-      {/* Halo del pulso en vivo. Invisible salvo durante la animación. */}
-      <Rect
-        ref={haloRef}
-        x={-10}
-        y={-10}
-        width={width + 20}
-        height={height + 20}
-        cornerRadius={style.shape === "circle" ? (Math.min(width, height) + 20) / 2 : 18}
-        fill={colors.stroke}
+      {/* Ondas del pulso en vivo. Invisibles salvo durante la animación. */}
+      <Circle
+        ref={waveRef}
+        x={width / 2}
+        y={height / 2}
+        radius={baseRadius}
+        stroke={colors.stroke}
+        strokeWidth={4}
+        opacity={0}
+        listening={false}
+      />
+      <Circle
+        ref={echoRef}
+        x={width / 2}
+        y={height / 2}
+        radius={baseRadius}
+        stroke={colors.stroke}
+        strokeWidth={4}
         opacity={0}
         listening={false}
       />
@@ -382,8 +391,9 @@ function ElementNodeBase({
 
       {body}
 
-      {/* Nombre, ícono y cliente van en un grupo que contrarresta el giro del
-          elemento Y el de la vista: la mesa gira, el texto sigue derecho. */}
+      {/* Nombre, ícono, marcador y cliente van en un grupo que contrarresta el
+          giro del elemento Y el de la vista: la mesa gira, el texto sigue
+          derecho. */}
       <Group
         x={width / 2}
         y={height / 2}
@@ -391,16 +401,23 @@ function ElementNodeBase({
         listening={false}
       >
         {showIcon && iconY !== null ? (
-          <CanvasIcon
-            node={icon}
-            color={type.color}
-            size={24}
-            x={0}
-            y={iconY - height / 2}
-          />
+          <CanvasIcon node={icon} color={type.color} size={24} x={0} y={iconY - height / 2} />
         ) : null}
 
-        <LabelPill text={element.label} width={labelWidth} y={labelY - height / 2} />
+        <LabelPill text={element.label} width={labelWidth} y={labelY - height / 2} theme={theme} />
+
+        {marker ? (
+          <Group x={marker.x} y={marker.y}>
+            <Circle
+              radius={MARKER_RADIUS}
+              fill={colors.stroke}
+              stroke={theme.mapBg}
+              strokeWidth={2}
+              {...glow(colors.stroke, theme, 0.8)}
+            />
+            <CanvasIcon node={icon} color={colors.onStroke} size={13} x={0} y={0} />
+          </Group>
+        ) : null}
 
         {occupantText ? (
           <Group y={height / 2 + (seats > 0 ? 34 : 16)}>
@@ -410,7 +427,8 @@ function ElementNodeBase({
               width={Math.max(labelWidth, 120)}
               height={22}
               cornerRadius={11}
-              fill={STATUS_COLORS.ocupada.stroke}
+              fill={theme.status.ocupada.stroke}
+              {...glow(theme.status.ocupada.stroke, theme, 0.6)}
             />
             <Text
               x={-Math.max(labelWidth, 120) / 2 + 8}
@@ -421,7 +439,7 @@ function ElementNodeBase({
               fontSize={11}
               fontStyle="bold"
               fontFamily={CANVAS_FONT}
-              fill="#ffffff"
+              fill={theme.status.ocupada.onStroke}
               wrap="none"
               ellipsis
             />
@@ -435,7 +453,7 @@ function ElementNodeBase({
           y={-6}
           width={width + 12}
           height={height + 12}
-          stroke={SELECTED_STROKE}
+          stroke={theme.accent}
           strokeWidth={2}
           dash={[6, 4]}
           cornerRadius={style.shape === "circle" ? (Math.min(width, height) + 12) / 2 : 16}

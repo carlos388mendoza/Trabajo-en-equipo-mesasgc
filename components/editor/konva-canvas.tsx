@@ -27,7 +27,10 @@ import { Group, Layer, Line, Rect, Stage, Transformer } from "react-konva";
 import Konva from "konva";
 
 import { ElementNode } from "./element-node";
-import { STATUS_COLORS, STATUS_ORDER } from "@/lib/layout/element-style";
+import { Minimap, type ViewPolygon } from "./minimap";
+import { STATUS_LABELS, STATUS_ORDER } from "@/lib/layout/element-style";
+import type { Theme } from "@/lib/theme/theme";
+import { useResolvedTheme } from "@/lib/theme/use-theme";
 import type { ElementTypeInfo, LayoutElement } from "@/lib/layout/types";
 
 export const MIN_SCALE = 0.2;
@@ -59,6 +62,8 @@ type Props = {
   height: number;
   /** Giro de la vista en grados: 0, 90, 180 o 270. No se guarda. */
   viewRotation: number;
+  /** Alto que tapan los paneles flotantes de arriba, para encuadrar debajo. */
+  topInset?: number;
   elements: LayoutElement[];
   /** Contador por mesa que cambia con cada evento en vivo: dispara el pulso. */
   pulses: Record<string, number>;
@@ -104,6 +109,7 @@ export function KonvaCanvas({
   width,
   height,
   viewRotation,
+  topInset = 0,
   elements,
   pulses,
   now,
@@ -134,6 +140,74 @@ export function KonvaCanvas({
     if (node) nodesRef.current.set(id, node);
     else nodesRef.current.delete(id);
   }, []);
+
+  const theme = useResolvedTheme();
+
+  // --- Parte visible, para el minimapa --------------------------------------
+  //
+  // La vista vive en Konva (ver cabecera), así que el minimapa no puede leerla
+  // de un estado de React. Se publica aquí: las 4 esquinas de la pantalla
+  // pasadas a coordenadas del plano, como mucho una vez por fotograma, y solo
+  // el minimapa se suscribe. Panear no re-renderiza el editor.
+  const viewRef = useRef<ViewPolygon>(null);
+  const viewListeners = useRef(new Set<() => void>());
+  const viewFrame = useRef<number | null>(null);
+
+  const subscribeView = useCallback((listener: () => void) => {
+    viewListeners.current.add(listener);
+    return () => {
+      viewListeners.current.delete(listener);
+    };
+  }, []);
+  const getView = useCallback(() => viewRef.current, []);
+
+  const emitView = useCallback(() => {
+    if (viewFrame.current !== null) return;
+    viewFrame.current = window.requestAnimationFrame(() => {
+      viewFrame.current = null;
+      const content = contentRef.current;
+      const node = containerRef.current;
+      if (!content || !node) return;
+      const inverse = content.getAbsoluteTransform().copy().invert();
+      const w = node.clientWidth;
+      const h = node.clientHeight;
+      viewRef.current = [
+        inverse.point({ x: 0, y: 0 }),
+        inverse.point({ x: w, y: 0 }),
+        inverse.point({ x: w, y: h }),
+        inverse.point({ x: 0, y: h }),
+      ];
+      viewListeners.current.forEach((listener) => listener());
+    });
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (viewFrame.current !== null) window.cancelAnimationFrame(viewFrame.current);
+      // Sin esto, tras el desmontaje y remontaje de Strict Mode el ref se
+      // quedaba con el id del fotograma cancelado y `emitView` creía que ya
+      // había uno en camino: el minimapa no volvía a enterarse de nada.
+      viewFrame.current = null;
+    },
+    [],
+  );
+
+  /** Lleva la vista para que ese punto del plano quede en el centro. */
+  const centerOn = useCallback(
+    (x: number, y: number) => {
+      const stage = stageRef.current;
+      const content = contentRef.current;
+      const node = containerRef.current;
+      if (!stage || !content || !node) return;
+      const onScreen = content.getAbsoluteTransform().point({ x, y });
+      stage.position({
+        x: stage.x() + node.clientWidth / 2 - onScreen.x,
+        y: stage.y() + node.clientHeight / 2 - onScreen.y,
+      });
+      emitView();
+    },
+    [emitView],
+  );
 
   // El Stage ocupa el hueco disponible. Sin esto habría que adivinar un alto
   // fijo y el mapa se descuadra en cuanto cambia el layout de la página.
@@ -182,8 +256,9 @@ export function KonvaCanvas({
         y: offsetY - pointerInStage.y * newScale,
       });
       onZoomChange(Math.round(newScale * 100));
+      emitView();
     },
-    [onZoomChange],
+    [emitView, onZoomChange],
   );
 
   const handleWheel = useCallback(
@@ -247,19 +322,22 @@ export function KonvaCanvas({
     const sideways = viewRotation % 180 !== 0;
     const shownWidth = sideways ? height : width;
     const shownHeight = sideways ? width : height;
+    // Lo que tapan los paneles flotantes de arriba no cuenta como hueco.
+    const freeHeight = rect.height - topInset;
     // "Ajustar" en vez de volver a 100%: si la zona no cabe, se ve entera.
-    // El margen deja ver el borde del plano y la sombra.
-    const fit = Math.min((rect.width - 32) / shownWidth, (rect.height - 32) / shownHeight, 1);
+    // El margen deja ver el borde del plano y su brillo.
+    const fit = Math.min((rect.width - 40) / shownWidth, (freeHeight - 40) / shownHeight, 1);
     const scale = clamp(fit, MIN_SCALE, 1);
     stage.scale({ x: scale, y: scale });
     // El plano gira alrededor de su centro, así que basta con llevar ese
-    // centro al del hueco, gire como gire.
+    // centro al del hueco libre, gire como gire.
     stage.position({
       x: rect.width / 2 - (width / 2) * scale,
-      y: rect.height / 2 - (height / 2) * scale,
+      y: topInset + freeHeight / 2 - (height / 2) * scale,
     });
     onZoomChange(Math.round(scale * 100));
-  }, [height, onZoomChange, viewRotation, width]);
+    emitView();
+  }, [emitView, height, onZoomChange, topInset, viewRotation, width]);
 
   /** Pantalla -> lienzo, teniendo en cuenta zoom, desplazamiento y giro. */
   const toCanvas = useCallback((offsetX: number, offsetY: number) => {
@@ -300,6 +378,11 @@ export function KonvaCanvas({
     if (hasSize) resetView();
   }, [hasSize, layoutId, resetView]);
 
+  // Si cambia el hueco (girar la tablet, abrir un aviso), cambia lo que se ve.
+  useEffect(() => {
+    emitView();
+  }, [emitView, size]);
+
   // El Transformer sigue siempre al elemento seleccionado. `elements.length`
   // en las dependencias cubre que el nodo se monte o se desmonte; la posición
   // no hace falta porque Konva ya sigue al nodo mientras se mueve.
@@ -326,11 +409,11 @@ export function KonvaCanvas({
       "bottom-right",
     ] as Konva.TransformerConfig["enabledAnchors"],
     anchorSize: 18,
-    anchorStroke: "#2563eb",
+    anchorStroke: theme.accent,
     anchorStrokeWidth: 2,
-    anchorFill: "#ffffff",
+    anchorFill: theme.panel,
     anchorCornerRadius: 9,
-    borderStroke: "#2563eb",
+    borderStroke: theme.accent,
     borderDash: [4, 3],
     padding: 4,
   };
@@ -367,8 +450,8 @@ export function KonvaCanvas({
     [onChange, onResize],
   );
 
-  // Retícula de fondo: líneas finas cada 25 unidades y más marcadas cada 100,
-  // como un papel milimetrado suave. Va en el Layer de abajo y con
+  // Retícula de fondo, tenue: líneas finas cada 25 unidades y algo más
+  // marcadas cada 100, como el radar de un mapa visto desde arriba. Va en el Layer de abajo y con
   // `listening={false}`: los clics la atraviesan y llegan al Stage, que es lo
   // que hace que tocar el vacío deseleccione.
   const MINOR = 25;
@@ -379,7 +462,7 @@ export function KonvaCanvas({
       <Line
         key={`grid-v-${gx}`}
         points={[gx, 0, gx, height]}
-        stroke={gx % MAJOR === 0 ? "#e2e8f0" : "#f1f5f9"}
+        stroke={gx % MAJOR === 0 ? theme.gridMajor : theme.grid}
         strokeWidth={1}
         listening={false}
       />,
@@ -390,7 +473,7 @@ export function KonvaCanvas({
       <Line
         key={`grid-h-${gy}`}
         points={[0, gy, width, gy]}
-        stroke={gy % MAJOR === 0 ? "#e2e8f0" : "#f1f5f9"}
+        stroke={gy % MAJOR === 0 ? theme.gridMajor : theme.grid}
         strokeWidth={1}
         listening={false}
       />,
@@ -417,7 +500,7 @@ export function KonvaCanvas({
       ref={containerRef}
       // `touch-none`: sin esto el navegador de la tablet se queda con el
       // pellizco y hace zoom de la página entera en vez del mapa.
-      className="relative h-full w-full touch-none overflow-hidden bg-slate-100"
+      className="relative h-full w-full touch-none overflow-hidden bg-app-bg"
     >
       {size.width > 0 ? (
         <Stage
@@ -429,6 +512,10 @@ export function KonvaCanvas({
           onMouseDown={deselectOnEmpty}
           onTouchStart={deselectOnEmpty}
           onTouchMove={handleTouchMove}
+          onDragMove={(e) => {
+            // Solo el paneo del Stage mueve la vista; arrastrar una mesa no.
+            if (e.target === e.target.getStage()) emitView();
+          }}
           onTouchEnd={() => {
             pinchRef.current = null;
           }}
@@ -441,21 +528,21 @@ export function KonvaCanvas({
                 width={width}
                 height={height}
                 cornerRadius={14}
-                fill="#ffffff"
-                shadowColor="#64748b"
-                shadowBlur={18}
-                shadowOffsetY={4}
-                shadowOpacity={0.18}
+                fill={theme.mapBg}
               />
               {gridLines}
+              {/* Paredes del local: línea marcada con un brillo suave. */}
               <Rect
                 x={0}
                 y={0}
                 width={width}
                 height={height}
                 cornerRadius={14}
-                stroke="#cbd5e1"
-                strokeWidth={1.5}
+                stroke={theme.line}
+                strokeWidth={3}
+                shadowColor={theme.glow}
+                shadowBlur={16}
+                shadowOpacity={theme.dark ? 0.8 : 0.35}
               />
             </Group>
           </Layer>
@@ -472,6 +559,7 @@ export function KonvaCanvas({
                     key={element.id}
                     element={element}
                     type={type}
+                    theme={theme}
                     selected={element.id === selectedId}
                     viewRotation={viewRotation}
                     occupantName={element.currentEntryId ? element.occupantName : null}
@@ -503,25 +591,48 @@ export function KonvaCanvas({
         </Stage>
       ) : null}
 
-      <StatusLegend />
+      <div className="pointer-events-none absolute bottom-3 left-3">
+        <div className="pointer-events-auto">
+          <Minimap
+            width={width}
+            height={height}
+            elements={elements}
+            typesById={typesById}
+            theme={theme}
+            subscribeView={subscribeView}
+            getView={getView}
+            onJump={centerOn}
+          />
+        </div>
+      </div>
+
+      <StatusLegend theme={theme} />
     </div>
   );
 }
 
-/** Leyenda de colores, fija en la esquina: no se mueve con el zoom. */
-function StatusLegend() {
+/**
+ * Leyenda de colores: panel flotante semitransparente, fijo en la esquina (no
+ * se mueve con el zoom). Los colores salen del tema, así que siempre coinciden
+ * con los del mapa.
+ */
+function StatusLegend({ theme }: { theme: Theme }) {
   return (
-    <div className="pointer-events-none absolute bottom-3 right-3 flex flex-col gap-1.5 rounded-xl bg-white/95 px-3 py-2 text-xs text-neutral-700 shadow-md ring-1 ring-black/5">
+    <div className="pointer-events-none absolute bottom-3 right-3 flex flex-col gap-1.5 rounded-2xl bg-panel/80 px-3 py-2.5 text-xs font-medium text-panel-text shadow-lg ring-1 ring-app-border backdrop-blur-md">
       {STATUS_ORDER.map((status) => {
-        const colors = STATUS_COLORS[status];
+        const colors = theme.status[status];
         return (
           <span key={status} className="flex items-center gap-2">
             <span
               aria-hidden
               className="h-3.5 w-3.5 rounded-full border-2"
-              style={{ backgroundColor: colors.fill, borderColor: colors.stroke }}
+              style={{
+                backgroundColor: colors.fill,
+                borderColor: colors.stroke,
+                boxShadow: `0 0 8px ${colors.stroke}`,
+              }}
             />
-            {colors.label}
+            {STATUS_LABELS[status]}
           </span>
         );
       })}

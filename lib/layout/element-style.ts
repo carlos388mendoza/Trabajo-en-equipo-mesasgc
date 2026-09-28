@@ -5,6 +5,7 @@
 // montar el canvas.
 
 import { isSeatableElement } from "@/lib/db/enums";
+import type { StatusKey } from "@/lib/theme/theme";
 import type { ElementTypeInfo } from "./types";
 
 export type ElementShape = "circle" | "rect" | "booth" | "zone";
@@ -38,7 +39,7 @@ export const SELECTED_STROKE = "#2563eb";
  * asignación con su bloqueo); la columna `status` solo se mira para
  * "reservada", que no tiene puntero.
  */
-export type VisualStatus = "libre" | "ocupada" | "reservada";
+export type VisualStatus = StatusKey;
 
 export function visualStatus(element: {
   currentEntryId: string | null;
@@ -49,19 +50,12 @@ export function visualStatus(element: {
   return "libre";
 }
 
-export type StatusColors = {
-  /** Texto de la leyenda. */
-  label: string;
-  fill: string;
-  stroke: string;
-  /** Sillas y bancos. */
-  seat: string;
-};
-
-export const STATUS_COLORS: Record<VisualStatus, StatusColors> = {
-  libre: { label: "Libre", fill: "#dcfce7", stroke: "#16a34a", seat: "#86efac" },
-  ocupada: { label: "Ocupada", fill: "#fecaca", stroke: "#dc2626", seat: "#f87171" },
-  reservada: { label: "Reservada", fill: "#e5e7eb", stroke: "#6b7280", seat: "#9ca3af" },
+// Los COLORES de cada estado están en `lib/theme/theme.ts`: cambian con el
+// tema para leerse bien sobre cualquier fondo. Aquí solo el nombre.
+export const STATUS_LABELS: Record<VisualStatus, string> = {
+  libre: "Libre",
+  ocupada: "Ocupada",
+  reservada: "Reservada",
 };
 
 /** Orden de la leyenda. */

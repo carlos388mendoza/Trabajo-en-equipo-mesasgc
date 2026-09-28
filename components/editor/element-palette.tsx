@@ -27,7 +27,7 @@ type Props = {
 export function ElementPalette({ types, onAddClick }: Props) {
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+      <p className="text-xs font-semibold uppercase tracking-wide text-panel-muted">
         Elementos
       </p>
 
@@ -50,7 +50,7 @@ export function ElementPalette({ types, onAddClick }: Props) {
             }}
             onClick={() => onAddClick(type)}
             title={`${type.label}: arrastra al mapa o toca para añadirlo al centro`}
-            className="flex min-h-14 cursor-grab items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-left text-sm shadow-sm transition hover:border-neutral-300 hover:bg-neutral-50 active:scale-[0.98] active:cursor-grabbing"
+            className="flex min-h-14 cursor-grab items-center gap-3 rounded-xl border border-app-border bg-panel px-3 py-2 text-left text-sm shadow-sm transition hover:border-accent/50 hover:bg-app-border/40 active:scale-[0.98] active:cursor-grabbing"
           >
             <span
               aria-hidden
@@ -60,11 +60,11 @@ export function ElementPalette({ types, onAddClick }: Props) {
               <Icon size={20} strokeWidth={ICON_STROKE} />
             </span>
             <span className="min-w-0">
-              <span className="block truncate font-medium text-neutral-800">
+              <span className="block truncate font-medium text-panel-text">
                 {type.label}
               </span>
               {type.defaultCapacity ? (
-                <span className="block text-xs text-neutral-500">
+                <span className="block text-xs text-panel-muted">
                   {type.defaultCapacity} puestos
                 </span>
               ) : null}
@@ -73,7 +73,7 @@ export function ElementPalette({ types, onAddClick }: Props) {
         );
       })}
 
-      <p className="mt-1 text-xs leading-relaxed text-neutral-500">
+      <p className="mt-1 text-xs leading-relaxed text-panel-muted">
         Toca un elemento para añadirlo, o arrástralo al mapa.
         <br />
         Arrastra el fondo para mover la vista; pellizca o usa la rueda para

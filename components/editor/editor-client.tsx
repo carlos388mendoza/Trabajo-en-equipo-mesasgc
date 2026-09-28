@@ -65,7 +65,7 @@ const KonvaCanvas = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="flex h-full w-full items-center justify-center bg-slate-100 text-sm text-neutral-500">
+      <div className="flex h-full w-full items-center justify-center bg-app-bg text-sm text-app-muted">
         Cargando mapa…
       </div>
     ),
@@ -462,172 +462,176 @@ export function EditorClient({
     // contenido", y como el contenido era el propio lienzo, medía cero. Con
     // esta altura, la paleta y el mapa tienen contra qué dimensionarse y el
     // `ResizeObserver` de Konva recibe algo real.
-    <div className="flex h-[70vh] min-h-[520px] flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
-      {/* Barra de herramientas */}
-      <div className="flex flex-wrap items-center gap-x-1 gap-y-2 border-b border-neutral-200 bg-white px-3 py-2">
-        <label className="mr-2 flex flex-col text-[11px] font-medium text-neutral-500">
-          Zona
-          <select
-            value={layoutId}
-            onChange={(e) => {
-              const next = e.target.value;
-              if (next === layoutId) return;
-              router.push(
-                `/restaurante/${restaurantId}/editor?zona=${encodeURIComponent(next)}`,
-              );
-            }}
-            className="mt-0.5 h-11 rounded-xl border border-neutral-300 bg-white px-3 text-sm font-normal text-neutral-800"
-          >
-            {layouts.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-        </label>
+    <div className="flex h-[74vh] min-h-[560px] overflow-hidden rounded-2xl border border-app-border bg-panel text-panel-text shadow-sm">
+      {/* Paleta */}
+      <aside className="w-60 shrink-0 overflow-y-auto border-r border-app-border bg-panel p-3">
+        <ElementPalette types={types} onAddClick={addAtCenter} />
+      </aside>
 
-        <ToolButton
-          icon={Save}
-          label={saving ? "Guardando…" : dirty ? "Guardar" : "Guardado"}
-          onClick={handleSave}
-          disabled={saving || !dirty}
-          title={dirty ? "Guardar los cambios" : "No hay cambios que guardar"}
-          primary
-        />
-        <ToolButton
-          icon={Undo2}
-          label="Deshacer"
-          onClick={undo}
-          disabled={history.length === 0}
-          title="Deshacer el último cambio (Ctrl+Z)"
+      {/* Mapa, con los paneles flotando encima */}
+      <div
+        className="relative min-w-0 flex-1"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={handleDrop}
+      >
+        <KonvaCanvas
+          layoutId={layoutId}
+          width={width}
+          height={height}
+          viewRotation={viewRotation}
+          topInset={TOOLBAR_INSET}
+          elements={elements}
+          pulses={pulses}
+          now={now}
+          typesById={typesById}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onEditStart={() => recordEdit()}
+          onMove={(id, x, y) => {
+            patchElement(id, { x: Math.round(x), y: Math.round(y) });
+            setDirty(true);
+          }}
+          onResize={(id, box) => {
+            patchElement(id, box);
+          }}
+          onChange={markDirty}
+          onZoomChange={setZoom}
+          controllerRef={controllerRef}
         />
 
-        <Divider />
+        {/* Pila de paneles de arriba. El contenedor deja pasar los toques al
+            mapa; solo los paneles los reciben. */}
+        <div className="pointer-events-none absolute inset-x-3 top-3 flex flex-col items-start gap-2">
+          {/* Barra de herramientas */}
+          <div className={`pointer-events-auto flex w-full flex-wrap items-center gap-x-1 gap-y-2 px-3 py-2 ${FLOATING}`}>
+            <label className="mr-2 flex flex-col text-[11px] font-medium text-panel-muted">
+              Zona
+              <select
+                value={layoutId}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (next === layoutId) return;
+                  router.push(
+                    `/restaurante/${restaurantId}/editor?zona=${encodeURIComponent(next)}`,
+                  );
+                }}
+                className="mt-0.5 h-11 rounded-xl border border-app-border bg-panel px-3 text-sm font-normal text-panel-text"
+              >
+                {layouts.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-        <ToolButton
-          icon={RotateCcw}
-          label="Girar ↺"
-          onClick={() => setViewRotation((r) => normalizeAngle(r - VIEW_STEP))}
-          title="Girar el plano 90° a la izquierda (solo la vista, no se guarda)"
-        />
-        <ToolButton
-          icon={RotateCw}
-          label="Girar ↻"
-          onClick={() => setViewRotation((r) => normalizeAngle(r + VIEW_STEP))}
-          title="Girar el plano 90° a la derecha (solo la vista, no se guarda)"
-        />
-        <ToolButton
-          icon={Copy}
-          label="Copiar plano"
-          onClick={() => setCopyOpen(true)}
-          disabled={dirty}
-          title={
-            dirty
-              ? "Guarda los cambios antes de copiar, para no copiar una versión vieja"
-              : "Copiar zonas y mesas a otro restaurante"
-          }
-        />
+            <ToolButton
+              icon={Save}
+              label={saving ? "Guardando…" : dirty ? "Guardar" : "Guardado"}
+              onClick={handleSave}
+              disabled={saving || !dirty}
+              title={dirty ? "Guardar los cambios" : "No hay cambios que guardar"}
+              primary
+            />
+            <ToolButton
+              icon={Undo2}
+              label="Deshacer"
+              onClick={undo}
+              disabled={history.length === 0}
+              title="Deshacer el último cambio (Ctrl+Z)"
+            />
 
-        <Divider />
+            <Divider />
 
-        <ToolButton
-          icon={ZoomOut}
-          label="Alejar"
-          onClick={() => controllerRef.current?.zoomOut()}
-        />
-        <span className="w-12 text-center text-sm tabular-nums text-neutral-600">
-          {zoom}%
-        </span>
-        <ToolButton
-          icon={ZoomIn}
-          label="Acercar"
-          onClick={() => controllerRef.current?.zoomIn()}
-        />
-        <ToolButton
-          icon={Scan}
-          label="Ajustar"
-          onClick={() => controllerRef.current?.resetView()}
-          title="Encuadrar la zona entera en la pantalla"
-        />
+            <ToolButton
+              icon={RotateCcw}
+              label="Girar ↺"
+              onClick={() => setViewRotation((r) => normalizeAngle(r - VIEW_STEP))}
+              title="Girar el plano 90° a la izquierda (solo la vista, no se guarda)"
+            />
+            <ToolButton
+              icon={RotateCw}
+              label="Girar ↻"
+              onClick={() => setViewRotation((r) => normalizeAngle(r + VIEW_STEP))}
+              title="Girar el plano 90° a la derecha (solo la vista, no se guarda)"
+            />
+            <ToolButton
+              icon={Copy}
+              label="Copiar plano"
+              onClick={() => setCopyOpen(true)}
+              disabled={dirty}
+              title={
+                dirty
+                  ? "Guarda los cambios antes de copiar, para no copiar una versión vieja"
+                  : "Copiar zonas y mesas a otro restaurante"
+              }
+            />
 
-        <LiveIndicator status={realtime.status} error={realtime.joinError} />
-      </div>
+            <Divider />
 
-      {/* Otro dispositivo cambió la estructura que se ve aquí */}
-      {staleFromElsewhere ? (
-        <Notice tone="info" icon={RefreshCw}>
-          <span className="flex-1">
-            {structureChanged
-              ? "La estructura de este restaurante se reemplazó desde otro dispositivo."
-              : "Otro dispositivo guardó cambios en esta zona."}{" "}
-            {dirty
-              ? "Si recargas perderás lo que no has guardado; si guardas, sobrescribirás sus cambios."
-              : "Recarga para verlos."}
-          </span>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="h-10 rounded-lg border border-sky-300 bg-white px-3 font-medium hover:bg-sky-100"
-          >
-            Recargar
-          </button>
-        </Notice>
-      ) : null}
+            <ToolButton
+              icon={ZoomOut}
+              label="Alejar"
+              onClick={() => controllerRef.current?.zoomOut()}
+            />
+            <span className="w-12 text-center text-sm tabular-nums text-panel-muted">
+              {zoom}%
+            </span>
+            <ToolButton
+              icon={ZoomIn}
+              label="Acercar"
+              onClick={() => controllerRef.current?.zoomIn()}
+            />
+            <ToolButton
+              icon={Scan}
+              label="Ajustar"
+              onClick={() => controllerRef.current?.resetView()}
+              title="Encuadrar la zona entera en la pantalla"
+            />
 
-      {/* Aviso de cambios sin guardar / resultado del guardado */}
-      {feedback.kind === "error" ? (
-        <Notice tone="error" icon={CircleAlert}>
-          {feedback.text}
-        </Notice>
-      ) : feedback.kind === "saved" ? (
-        <Notice tone="success" icon={CircleCheck}>
-          {feedback.text}
-        </Notice>
-      ) : dirty ? (
-        <Notice tone="warning" icon={CircleAlert}>
-          Tienes cambios sin guardar.
-        </Notice>
-      ) : null}
+            <LiveIndicator status={realtime.status} error={realtime.joinError} />
+          </div>
 
-      {/* Paleta + mapa */}
-      <div className="flex min-h-0 flex-1">
-        <aside className="w-60 shrink-0 overflow-y-auto border-r border-neutral-200 bg-neutral-50 p-3">
-          <ElementPalette types={types} onAddClick={addAtCenter} />
-        </aside>
+          {/* Otro dispositivo cambió la estructura que se ve aquí */}
+          {staleFromElsewhere ? (
+            <Notice tone="info" icon={RefreshCw}>
+              <span className="flex-1">
+                {structureChanged
+                  ? "La estructura de este restaurante se reemplazó desde otro dispositivo."
+                  : "Otro dispositivo guardó cambios en esta zona."}{" "}
+                {dirty
+                  ? "Si recargas perderás lo que no has guardado; si guardas, sobrescribirás sus cambios."
+                  : "Recarga para verlos."}
+              </span>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="h-10 rounded-lg bg-accent px-3 font-medium text-accent-text hover:bg-accent/85"
+              >
+                Recargar
+              </button>
+            </Notice>
+          ) : null}
 
-        <div
-          className="relative min-w-0 flex-1"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={handleDrop}
-        >
-          <KonvaCanvas
-            layoutId={layoutId}
-            width={width}
-            height={height}
-            viewRotation={viewRotation}
-            elements={elements}
-            pulses={pulses}
-            now={now}
-            typesById={typesById}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            onEditStart={() => recordEdit()}
-            onMove={(id, x, y) => {
-              patchElement(id, { x: Math.round(x), y: Math.round(y) });
-              setDirty(true);
-            }}
-            onResize={(id, box) => {
-              patchElement(id, box);
-            }}
-            onChange={markDirty}
-            onZoomChange={setZoom}
-            controllerRef={controllerRef}
-          />
+          {/* Aviso de cambios sin guardar / resultado del guardado */}
+          {feedback.kind === "error" ? (
+            <Notice tone="error" icon={CircleAlert}>
+              {feedback.text}
+            </Notice>
+          ) : feedback.kind === "saved" ? (
+            <Notice tone="success" icon={CircleCheck}>
+              {feedback.text}
+            </Notice>
+          ) : dirty ? (
+            <Notice tone="warning" icon={CircleAlert}>
+              Tienes cambios sin guardar.
+            </Notice>
+          ) : null}
 
-          {/* Panel del elemento elegido, flotando sobre el mapa */}
+          {/* Panel del elemento elegido */}
           {selected ? (
-            <div className="absolute left-3 top-3 flex flex-wrap items-end gap-2 rounded-2xl bg-white/95 p-3 shadow-lg ring-1 ring-black/5">
-              <label className="flex flex-col text-[11px] font-medium text-neutral-500">
+            <div className={`pointer-events-auto flex flex-wrap items-end gap-2 p-3 ${FLOATING}`}>
+              <label className="flex flex-col text-[11px] font-medium text-panel-muted">
                 Nombre
                 <input
                   type="text"
@@ -638,11 +642,11 @@ export function EditorClient({
                     patchElement(selected.id, { label: e.target.value });
                     markDirty();
                   }}
-                  className="mt-0.5 h-11 w-32 rounded-xl border border-neutral-300 px-3 text-sm font-normal text-neutral-800"
+                  className="mt-0.5 h-11 w-32 rounded-xl border border-app-border bg-panel px-3 text-sm font-normal text-panel-text"
                   aria-label="Nombre del elemento"
                 />
               </label>
-              <label className="flex flex-col text-[11px] font-medium text-neutral-500">
+              <label className="flex flex-col text-[11px] font-medium text-panel-muted">
                 Puestos
                 <input
                   type="number"
@@ -658,7 +662,7 @@ export function EditorClient({
                     });
                     markDirty();
                   }}
-                  className="mt-0.5 h-11 w-20 rounded-xl border border-neutral-300 px-3 text-sm font-normal text-neutral-800"
+                  className="mt-0.5 h-11 w-20 rounded-xl border border-app-border bg-panel px-3 text-sm font-normal text-panel-text"
                   aria-label="Puestos"
                 />
               </label>
@@ -682,12 +686,13 @@ export function EditorClient({
               />
             </div>
           ) : null}
+        </div>
 
-          <div className="pointer-events-none absolute bottom-3 left-3 rounded-lg bg-white/90 px-2.5 py-1.5 text-xs text-neutral-500 shadow-sm ring-1 ring-black/5">
-            {layoutName} · {width}×{height} · v{savedVersion} · {elements.length}{" "}
-            elemento(s)
-            {viewRotation !== 0 ? ` · vista girada ${viewRotation}°` : ""}
-          </div>
+        {/* Datos de la zona, abajo en el centro (el minimapa va a la
+            izquierda y la leyenda a la derecha). */}
+        <div className={`pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap px-3 py-1.5 text-xs text-panel-muted ${FLOATING}`}>
+          {layoutName} · {width}×{height} · v{savedVersion} · {elements.length} elemento(s)
+          {viewRotation !== 0 ? ` · vista girada ${viewRotation}°` : ""}
         </div>
       </div>
 
@@ -711,7 +716,19 @@ export function EditorClient({
 
 // ---------------------------------------------------------------------------
 // Piezas de la interfaz
+//
+// Todas con los colores del tema (`bg-panel`, `text-accent`...), que salen de
+// `lib/theme/theme.ts`: no hay colores sueltos en este archivo.
 // ---------------------------------------------------------------------------
+
+/**
+ * Panel flotante semitransparente sobre el mapa: se ve el plano por detrás,
+ * difuminado.
+ */
+const FLOATING = "rounded-2xl bg-panel/80 text-panel-text shadow-lg ring-1 ring-app-border backdrop-blur-md";
+
+/** Alto aproximado de la barra flotante, para encuadrar el plano debajo. */
+const TOOLBAR_INSET = 92;
 
 /** Botón de barra: ícono y texto corto debajo, 44 px o más para el dedo. */
 function ToolButton({
@@ -732,10 +749,10 @@ function ToolButton({
   danger?: boolean;
 }) {
   const tone = primary
-    ? "bg-neutral-900 text-white hover:bg-neutral-700 disabled:bg-neutral-200 disabled:text-neutral-500"
+    ? "bg-accent text-accent-text hover:bg-accent/85 disabled:bg-app-border/70 disabled:text-panel-muted"
     : danger
-      ? "text-red-700 hover:bg-red-50 disabled:text-neutral-300"
-      : "text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-300";
+      ? "text-estado-ocupada hover:bg-estado-ocupada/10 disabled:text-panel-muted/50"
+      : "text-panel-text hover:bg-app-border/60 disabled:text-panel-muted/50";
   return (
     <button
       type="button"
@@ -751,7 +768,7 @@ function ToolButton({
 }
 
 function Divider() {
-  return <span aria-hidden className="mx-1 h-9 w-px bg-neutral-200" />;
+  return <span aria-hidden className="mx-1 h-9 w-px bg-app-border" />;
 }
 
 function LiveIndicator({
@@ -766,7 +783,7 @@ function LiveIndicator({
   return (
     <span
       className={`ml-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium ${
-        live ? "bg-emerald-50 text-emerald-700" : "bg-neutral-100 text-neutral-500"
+        live ? "bg-estado-libre/15 text-estado-libre" : "bg-app-border/60 text-panel-muted"
       }`}
       title={error ?? undefined}
     >
@@ -776,11 +793,13 @@ function LiveIndicator({
   );
 }
 
+// El color de cada aviso sale del tema: acento para lo informativo, los
+// colores de estado para bien (libre) y mal (ocupada).
 const NOTICE_TONES = {
-  info: "bg-sky-50 text-sky-800",
-  success: "bg-emerald-50 text-emerald-800",
-  warning: "bg-amber-50 text-amber-800",
-  error: "bg-red-50 text-red-700",
+  info: "text-accent",
+  success: "text-estado-libre",
+  warning: "text-accent",
+  error: "text-estado-ocupada",
 } as const;
 
 function Notice({
@@ -793,8 +812,8 @@ function Notice({
   children: ReactNode;
 }) {
   return (
-    <div className={`flex items-center gap-2 px-3 py-2 text-sm ${NOTICE_TONES[tone]}`}>
-      <Icon aria-hidden size={18} strokeWidth={ICON_STROKE} className="shrink-0" />
+    <div className={`pointer-events-auto flex max-w-full items-center gap-2 px-3 py-2 text-sm ${FLOATING}`}>
+      <Icon aria-hidden size={18} strokeWidth={ICON_STROKE} className={`shrink-0 ${NOTICE_TONES[tone]}`} />
       {children}
     </div>
   );
