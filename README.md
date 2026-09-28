@@ -483,3 +483,78 @@ su `key` (`components/editor/icons.ts`), igual que la forma. La columna
   leyenda, pero ninguna pantalla asigna ese estado.
 - El comentario de `element_types.icon` en `lib/db/schema.ts` todavía dice
   «emoji». No se tocó porque es el archivo compartido del esquema.
+
+## 12. Estilo radar y temas
+
+### El mapa
+
+- **Estilo de mapa visto desde arriba**, con diseño propio. No usa logos,
+  tipografías ni íconos de ningún juego; los íconos son de lucide.
+- **Elementos:**
+  - Cuadrícula tenue de fondo.
+  - Paredes y zonas con líneas marcadas y un brillo suave.
+  - Áreas con rellenos translúcidos.
+  - Mesas como marcadores con su ícono.
+- **En vivo:** cuando una mesa cambia, sale de ella una onda expansiva con un
+  eco que se desvanecen.
+- **Minimapa** abajo a la izquierda: el plano entero y la parte que se ve.
+  Tocarlo o arrastrar sobre él lleva la vista ahí.
+- **Paneles flotantes semitransparentes:** la barra de herramientas, los
+  avisos, el panel del elemento y la leyenda flotan sobre el mapa.
+
+### Ajustes > Apariencia (`/ajustes`)
+
+- **Temas:**
+  - Claro.
+  - Oscuro (azul marino).
+  - Sistema: sigue el modo del dispositivo y cambia en vivo.
+  - Personalizado: cuatro selectores de color (fondo del mapa, líneas y
+    paredes, acento, paneles).
+- **Vista previa** que cambia en vivo.
+- **Restablecer:** vuelve a Claro y a la paleta Personalizada por defecto.
+- **Colores de estado:** libre, ocupada y reservada no se eligen. Se ajustan
+  solos al fondo: tonos medios sobre claro, más brillantes sobre oscuro.
+- **Avisos de contraste:** en Personalizado se avisa si el contraste baja de
+  3:1, el mínimo de WCAG para elementos gráficos. Se comprueba en líneas,
+  acento y cada estado.
+
+### Cómo está hecho
+
+| Fichero | Para qué |
+| --- | --- |
+| `lib/theme/theme.ts` | **El único sitio con colores.** Temas, derivación de Personalizado, contraste, variables CSS y el script de arranque. |
+| `lib/theme/use-theme.ts` | Leer y guardar la elección (localStorage), seguir el modo del sistema, aplicar las variables. |
+| `components/theme/theme-sync.tsx` | Mantiene `<html>` al día con el tema elegido. |
+| `components/editor/minimap.tsx` | Minimapa en SVG. |
+| `components/settings/*` | Página de Apariencia y vista previa. |
+
+### Decisiones que conviene no deshacer sin pensarlo
+
+- **Un solo archivo de colores, dos salidas.**
+  - La interfaz usa variables CSS (`--c-panel`, `--c-accent`...) guardadas como
+    "r g b", para que Tailwind pueda añadir transparencia (`bg-panel/80`).
+    `tailwind.config.ts` solo dice qué variable usa cada clase.
+  - Konva recibe el mismo objeto `Theme`.
+  - No hay colores sueltos en los componentes. La excepción son los colores de
+    cada tipo, que salen de `element_types`.
+- **Sin parpadeo al recargar.** Un script en el `<head>`, generado desde
+  `theme.ts`, aplica el tema guardado antes del primer pintado. Es la técnica de
+  la guía de Next «Preventing flash before hydration». Por eso `<html>` lleva
+  `suppressHydrationWarning`.
+  - En desarrollo, Strict Mode borra lo que puso el script, y `ThemeSync` lo
+    repone en `useLayoutEffect`.
+  - `ThemeSync` lee la fuente directamente y no el valor del hook. Al hidratar,
+    el hook todavía trae el valor del servidor (Claro), y aplicarlo pintaría un
+    destello.
+- **Personalizado guarda sus variables ya resueltas en localStorage**, para
+  que el script de arranque no tenga que saber derivar colores.
+- **La vista publica su posición al minimapa por una suscripción propia**, una
+  vez por fotograma. Panear no re-renderiza el editor.
+- **El plano se encuadra debajo de la barra flotante** con su alto real,
+  medido con `ResizeObserver`: en tablet la barra ocupa dos filas.
+
+### Pendiente de este paso
+
+- **La elección vive solo en el navegador.** Cuando esté Better Auth, hay que
+  guardarla por usuario (ver el TODO en `lib/theme/theme.ts`), coordinándolo
+  con quien lleva el esquema. No se tocó `lib/db/schema.ts`.
