@@ -46,12 +46,7 @@ export default function AnaliticasPage() {
       const response = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question,
-          summary: analytics.summary,
-          daily: analytics.daily,
-          restaurants: analytics.restaurants,
-        }),
+        body: JSON.stringify({ question }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No pude generar una respuesta.");

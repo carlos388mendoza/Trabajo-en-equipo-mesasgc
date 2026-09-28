@@ -441,3 +441,8 @@ grupo; `notes` guarda la observación del registro; `status` distingue
 `called_at` conserva cuándo se avisó que había lugar; `seated_at` registra el
 momento de sentar al grupo y permite calcular la espera real. La relación con
 `restaurants` permite filtrar y comparar la actividad por local.
+
+Los clientes marcados como `listo` todavía no cuentan en las estadísticas:
+estas solo incluyen grupos con estado `sentado` y `seated_at`. El modo rápido
+los contará cuando la asignación de mesa con `assignTable` se integre en la
+siguiente rama.
