@@ -1,3 +1,6 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Los colores NO se definen aquí: las variables `--c-*` las genera
+   `lib/theme/theme.ts` (ver `app/layout.tsx`). */
