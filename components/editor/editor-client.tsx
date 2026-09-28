@@ -90,6 +90,9 @@ export function EditorClient({
   const [zoom, setZoom] = useState(100);
   const [feedback, setFeedback] = useState<Feedback>({ kind: "idle" });
   const [copyOpen, setCopyOpen] = useState(false);
+  // Giro de la VISTA del plano, en pasos de 90°. `table_layouts` no tiene
+  // dónde guardarlo, así que es solo de esta pantalla (ver README).
+  const [viewRotation, setViewRotation] = useState(0);
   // Versión de la zona que tiene este editor, y la última que otro
   // dispositivo anunció. Si la de fuera es mayor, lo de la pantalla es viejo.
   const [savedVersion, setSavedVersion] = useState(version);
@@ -470,6 +473,7 @@ export function EditorClient({
             layoutId={layoutId}
             width={width}
             height={height}
+            viewRotation={viewRotation}
             elements={elements}
             typesById={typesById}
             selectedId={selectedId}

@@ -1,6 +1,6 @@
 "use client";
 
-// El canvas de Konva:Stage, Layer y los elementos.
+// El canvas de Konva: Stage, Layer y los elementos.
 //
 // Es un Client Component y, además, se carga con `ssr: false` desde
 // `editor-client.tsx`. Konva toca el DOM en el momento de importarse
@@ -10,6 +10,10 @@
 // React a propósito: panear mueve el Stage en cada `dragMove` y pasar eso por
 // estado re-renderizaría el árbol entero 60 veces por segundo. Solo se
 // notifica el porcentaje de zoom al padre, que lo muestra en la barra.
+//
+// El giro del plano (`viewRotation`) es solo de la vista: gira un Group que
+// envuelve todo el lienzo alrededor de su centro. Los elementos no cambian y
+// no se guarda nada (ver README, "Pendiente").
 
 import {
   useCallback,
@@ -19,8 +23,8 @@ import {
   useState,
 } from "react";
 import type { ReactNode, RefObject } from "react";
-import { Layer, Line, Rect, Stage, Transformer } from "react-konva";
-import type Konva from "konva";
+import { Group, Layer, Line, Rect, Stage, Transformer } from "react-konva";
+import Konva from "konva";
 
 import { ElementNode } from "./element-node";
 import { STATUS_COLORS, STATUS_ORDER } from "@/lib/layout/element-style";
@@ -30,6 +34,10 @@ export const MIN_SCALE = 0.2;
 export const MAX_SCALE = 4;
 const ZOOM_STEP = 1.2;
 const MIN_SIZE = 24;
+
+// Con dos dedos en pantalla, Konva por defecto deja de detectar qué hay
+// debajo mientras algo se arrastra, y el pellizco no llega a empezar.
+Konva.hitOnDragEnabled = true;
 
 export type CanvasHandle = {
   zoomIn: () => void;
@@ -49,6 +57,8 @@ type Props = {
   layoutId: string;
   width: number;
   height: number;
+  /** Giro de la vista en grados: 0, 90, 180 o 270. No se guarda. */
+  viewRotation: number;
   elements: LayoutElement[];
   typesById: Map<string, ElementTypeInfo>;
   selectedId: string | null;
@@ -77,6 +87,7 @@ export function KonvaCanvas({
   layoutId,
   width,
   height,
+  viewRotation,
   elements,
   typesById,
   selectedId,
@@ -89,8 +100,11 @@ export function KonvaCanvas({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
+  const contentRef = useRef<Konva.Group>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const nodesRef = useRef(new Map<string, Konva.Group>());
+  // Distancia entre los dos dedos en el último `touchmove` del pellizco.
+  const pinchRef = useRef<number | null>(null);
 
   const [size, setSize] = useState({ width: 0, height: 0 });
   // Mientras un elemento se arrastra, el Stage deja de ser arrastrable para
@@ -163,6 +177,37 @@ export function KonvaCanvas({
     [zoomAround],
   );
 
+  // Pellizco con dos dedos. Mientras dura, ni el Stage ni un elemento se
+  // arrastran: el primer dedo había empezado un arrastre y hay que cortarlo.
+  const handleTouchMove = useCallback(
+    (e: Konva.KonvaEventObject<TouchEvent>) => {
+      const touches = e.evt.touches;
+      if (touches.length !== 2) {
+        pinchRef.current = null;
+        return;
+      }
+      e.evt.preventDefault();
+      const stage = stageRef.current;
+      if (stage?.isDragging()) stage.stopDrag();
+      for (const node of nodesRef.current.values()) {
+        if (node.isDragging()) node.stopDrag();
+      }
+
+      const [a, b] = [touches[0], touches[1]];
+      const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      const previous = pinchRef.current;
+      pinchRef.current = distance;
+      if (previous === null || previous === 0) return;
+
+      zoomAround(
+        (a.clientX + b.clientX) / 2,
+        (a.clientY + b.clientY) / 2,
+        distance / previous,
+      );
+    },
+    [zoomAround],
+  );
+
   const zoomByCentre = useCallback(
     (factor: number) => {
       const node = containerRef.current;
@@ -179,20 +224,30 @@ export function KonvaCanvas({
     if (!stage || !node) return;
 
     const rect = node.getBoundingClientRect();
+    // Girado 90° o 270°, el plano ocupa en pantalla alto × ancho.
+    const sideways = viewRotation % 180 !== 0;
+    const shownWidth = sideways ? height : width;
+    const shownHeight = sideways ? width : height;
     // "Ajustar" en vez de volver a 100%: si la zona no cabe, se ve entera.
-    const fit = Math.min(
-      rect.width / width,
-      rect.height / height,
-      1,
-    );
+    // El margen deja ver el borde del plano y la sombra.
+    const fit = Math.min((rect.width - 32) / shownWidth, (rect.height - 32) / shownHeight, 1);
     const scale = clamp(fit, MIN_SCALE, 1);
     stage.scale({ x: scale, y: scale });
+    // El plano gira alrededor de su centro, así que basta con llevar ese
+    // centro al del hueco, gire como gire.
     stage.position({
-      x: (rect.width - width * scale) / 2,
-      y: (rect.height - height * scale) / 2,
+      x: rect.width / 2 - (width / 2) * scale,
+      y: rect.height / 2 - (height / 2) * scale,
     });
     onZoomChange(Math.round(scale * 100));
-  }, [height, onZoomChange, width]);
+  }, [height, onZoomChange, viewRotation, width]);
+
+  /** Pantalla -> lienzo, teniendo en cuenta zoom, desplazamiento y giro. */
+  const toCanvas = useCallback((offsetX: number, offsetY: number) => {
+    const content = contentRef.current;
+    if (!content) return null;
+    return content.getAbsoluteTransform().copy().invert().point({ x: offsetX, y: offsetY });
+  }, []);
 
   useImperativeHandle(
     controllerRef,
@@ -201,30 +256,22 @@ export function KonvaCanvas({
       zoomOut: () => zoomByCentre(1 / ZOOM_STEP),
       resetView,
       screenToStage: (clientX, clientY) => {
-        const stage = stageRef.current;
         const node = containerRef.current;
-        if (!stage || !node) return null;
+        if (!node) return null;
         const rect = node.getBoundingClientRect();
-        return {
-          x: (clientX - rect.left - stage.x()) / stage.scaleX(),
-          y: (clientY - rect.top - stage.y()) / stage.scaleY(),
-        };
+        return toCanvas(clientX - rect.left, clientY - rect.top);
       },
       viewportCenter: () => {
-        const stage = stageRef.current;
         const node = containerRef.current;
-        if (!stage || !node) return null;
+        if (!node) return null;
         const rect = node.getBoundingClientRect();
-        return {
-          x: (rect.width / 2 - stage.x()) / stage.scaleX(),
-          y: (rect.height / 2 - stage.y()) / stage.scaleY(),
-        };
+        return toCanvas(rect.width / 2, rect.height / 2);
       },
     }),
-    [resetView, zoomByCentre],
+    [resetView, toCanvas, zoomByCentre],
   );
 
-  // Al cambiar de zona, la vista de la anterior no tiene sentido.
+  // Al cambiar de zona o girar el plano, se vuelve a encuadrar.
   useEffect(() => {
     resetView();
   }, [layoutId, resetView]);
@@ -242,9 +289,9 @@ export function KonvaCanvas({
   }, [selectedId, elements.length]);
 
   // `Transformer` en una sola pieza: 4 tiradores de esquina, sin los de los
-  // lados intermedios, que en un mapa solo estorban. La rotación se desactiva
-  // porque los tipos de `element_types` no traen ángulo; la columna
-  // `rotation` se queda a 0 y ya se podrá aprovechar en el paso 4.
+  // lados intermedios, que en un mapa solo estorban. Tiradores grandes y
+  // redondos para el dedo. El giro no se hace arrastrando (es difícil de
+  // controlar en una tablet), sino con los botones del panel del elemento.
   const transformerConfig = {
     rotateEnabled: false,
     keepRatio: false,
@@ -254,12 +301,14 @@ export function KonvaCanvas({
       "bottom-left",
       "bottom-right",
     ] as Konva.TransformerConfig["enabledAnchors"],
-    anchorSize: 9,
+    anchorSize: 18,
     anchorStroke: "#2563eb",
+    anchorStrokeWidth: 2,
     anchorFill: "#ffffff",
-    anchorCornerRadius: 2,
+    anchorCornerRadius: 9,
     borderStroke: "#2563eb",
     borderDash: [4, 3],
+    padding: 4,
   };
 
   const handleTransformEnd = useCallback(
@@ -294,38 +343,57 @@ export function KonvaCanvas({
     [onChange, onResize],
   );
 
-  // Retícula de fondo cada GRID unidades. Va en el Layer de abajo y con
+  // Retícula de fondo: líneas finas cada 25 unidades y más marcadas cada 100,
+  // como un papel milimetrado suave. Va en el Layer de abajo y con
   // `listening={false}`: los clics la atraviesan y llegan al Stage, que es lo
-  // que hace que hacer clic en el vacío deseleccione.
-  const GRID = 50;
+  // que hace que tocar el vacío deseleccione.
+  const MINOR = 25;
+  const MAJOR = 100;
   const gridLines: ReactNode[] = [];
-  for (let gx = GRID; gx < width; gx += GRID) {
+  for (let gx = MINOR; gx < width; gx += MINOR) {
     gridLines.push(
       <Line
         key={`grid-v-${gx}`}
         points={[gx, 0, gx, height]}
-        stroke="#e5e7eb"
+        stroke={gx % MAJOR === 0 ? "#e2e8f0" : "#f1f5f9"}
         strokeWidth={1}
         listening={false}
       />,
     );
   }
-  for (let gy = GRID; gy < height; gy += GRID) {
+  for (let gy = MINOR; gy < height; gy += MINOR) {
     gridLines.push(
       <Line
         key={`grid-h-${gy}`}
         points={[0, gy, width, gy]}
-        stroke="#e5e7eb"
+        stroke={gy % MAJOR === 0 ? "#e2e8f0" : "#f1f5f9"}
         strokeWidth={1}
         listening={false}
       />,
     );
   }
 
+  // Mismo giro en las dos capas: el suelo y los elementos giran juntos.
+  const rotated = {
+    x: width / 2,
+    y: height / 2,
+    offsetX: width / 2,
+    offsetY: height / 2,
+    rotation: viewRotation,
+  };
+
+  const deselectOnEmpty = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    // Toque en el vacío: deseleccionar. Se comprueba que el objetivo sea el
+    // propio Stage y no un elemento.
+    if (e.target === e.target.getStage()) onSelect(null);
+  };
+
   return (
     <div
       ref={containerRef}
-      className="relative h-full w-full overflow-hidden bg-neutral-200"
+      // `touch-none`: sin esto el navegador de la tablet se queda con el
+      // pellizco y hace zoom de la página entera en vez del mapa.
+      className="relative h-full w-full touch-none overflow-hidden bg-slate-100"
     >
       {size.width > 0 ? (
         <Stage
@@ -334,60 +402,68 @@ export function KonvaCanvas({
           height={size.height}
           draggable={!dragging}
           onWheel={handleWheel}
-          onMouseDown={(e) => {
-            // Clic en el vacío: deseleccionar. Se comprueba que el objetivo
-            // sea el propio Stage y no un elemento.
-            if (e.target === e.target.getStage()) onSelect(null);
+          onMouseDown={deselectOnEmpty}
+          onTouchStart={deselectOnEmpty}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={() => {
+            pinchRef.current = null;
           }}
         >
           <Layer listening={false}>
-            <Rect
-              x={0}
-              y={0}
-              width={width}
-              height={height}
-              fill="#f9fafb"
-              shadowColor="#9ca3af"
-              shadowBlur={12}
-              shadowOpacity={0.4}
-            />
-            {gridLines}
-            <Rect
-              x={0}
-              y={0}
-              width={width}
-              height={height}
-              stroke="#9ca3af"
-              strokeWidth={1}
-            />
+            <Group {...rotated}>
+              <Rect
+                x={0}
+                y={0}
+                width={width}
+                height={height}
+                cornerRadius={14}
+                fill="#ffffff"
+                shadowColor="#64748b"
+                shadowBlur={18}
+                shadowOffsetY={4}
+                shadowOpacity={0.18}
+              />
+              {gridLines}
+              <Rect
+                x={0}
+                y={0}
+                width={width}
+                height={height}
+                cornerRadius={14}
+                stroke="#cbd5e1"
+                strokeWidth={1.5}
+              />
+            </Group>
           </Layer>
 
           <Layer>
-            {elements.map((element) => {
-              const type = typesById.get(element.elementTypeId);
-              // Un elemento cuyo tipo se borró del catálogo no se dibuja, pero
-              // tampoco rompe el mapa entero.
-              if (!type) return null;
-              return (
-                <ElementNode
-                  key={element.id}
-                  element={element}
-                  type={type}
-                  selected={element.id === selectedId}
-                  occupantName={null}
-                  minutes={null}
-                  pulse={0}
-                  onSelect={onSelect}
-                  onDragStart={() => setDragging(true)}
-                  onDragMove={onMove}
-                  onDragEnd={() => {
-                    setDragging(false);
-                    onChange();
-                  }}
-                  registerNode={registerNode}
-                />
-              );
-            })}
+            <Group ref={contentRef} {...rotated}>
+              {elements.map((element) => {
+                const type = typesById.get(element.elementTypeId);
+                // Un elemento cuyo tipo se borró del catálogo no se dibuja, pero
+                // tampoco rompe el mapa entero.
+                if (!type) return null;
+                return (
+                  <ElementNode
+                    key={element.id}
+                    element={element}
+                    type={type}
+                    selected={element.id === selectedId}
+                    occupantName={null}
+                    minutes={null}
+                    pulse={0}
+                    onSelect={onSelect}
+                    onDragStart={() => setDragging(true)}
+                    onDragMove={onMove}
+                    onDragEnd={() => {
+                      setDragging(false);
+                      onChange();
+                    }}
+                    registerNode={registerNode}
+                  />
+                );
+              })}
+            </Group>
 
             <Transformer
               {...transformerConfig}
