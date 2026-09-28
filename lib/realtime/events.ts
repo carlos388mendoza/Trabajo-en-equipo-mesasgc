@@ -13,6 +13,7 @@ import { z } from "zod";
 // Solo el tipo: `import type` se borra al compilar, así que el cliente no
 // arrastra la base de datos.
 import type { TableOccupancy } from "@/lib/tables/assign";
+import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
 
 export type { TableOccupancy };
 
@@ -54,6 +55,35 @@ export const releaseTableSchema = z.object({
 
 export type ReleaseTableInput = z.infer<typeof releaseTableSchema>;
 
+export const addWaitlistEntrySchema = z.object({
+  customerName: z.string().trim().min(1).max(100),
+  partySize: z.number().int().min(1).max(10),
+  notes: z.string().trim().max(500).optional().default(""),
+});
+
+export type AddWaitlistEntryInput = z.infer<typeof addWaitlistEntrySchema>;
+
+export const resolveWaitlistEntrySchema = z.object({
+  entryId: idSchema,
+  status: z.enum(["listo", "ausente"]),
+});
+
+export type ResolveWaitlistEntryInput = z.infer<typeof resolveWaitlistEntrySchema>;
+
+export const undoWaitlistSchema = z.object({ actionId: idSchema });
+export type UndoWaitlistInput = z.infer<typeof undoWaitlistSchema>;
+
+export type WaitlistUndoState = {
+  actionId: string;
+  label: string;
+} | null;
+
+export type WaitlistChange = {
+  action: "added" | "resolved" | "removed" | "restored";
+  entry: WaitlistEntrySnapshot;
+  undo: WaitlistUndoState;
+};
+
 /** Una mesa cuya ocupación cambió, con su cliente. */
 export type TableChange = { table: TableOccupancy; entryId: string };
 
@@ -76,6 +106,12 @@ export interface ClientToServerEvents {
   "table:assign": (payload: AssignTableInput, ack: (res: Ack<TableChange>) => void) => void;
   /** Liberar una mesa. Mismo contrato que `table:assign`. */
   "table:release": (payload: ReleaseTableInput, ack: (res: Ack<TableChange>) => void) => void;
+  /** Agregar un grupo a la lista rápida. */
+  "waitlist:add": (payload: AddWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
+  /** Marcar un grupo listo o ausente. */
+  "waitlist:resolve": (payload: ResolveWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
+  /** Deshacer la última acción de la lista para ese restaurante. */
+  "waitlist:undo": (payload: UndoWaitlistInput, ack: (res: Ack<{ action: "removed" | "restored"; entry: WaitlistEntrySnapshot }>) => void) => void;
 }
 
 /** Lo que el servidor le avisa a todos los de una room. */
@@ -91,6 +127,10 @@ export interface ServerToClientEvents {
    * local). Las zonas que el cliente tenga abiertas pueden no existir ya.
    */
   "structure:changed": () => void;
+  /** Cambio de lista aplicado; se envía a todas las tablets del local. */
+  "waitlist:changed": (payload: WaitlistChange) => void;
+  /** Acción que cualquier host de la room puede deshacer. */
+  "waitlist:undo-state": (payload: WaitlistUndoState) => void;
 }
 
 /** Lo que el servidor recuerda de cada conexión. */
