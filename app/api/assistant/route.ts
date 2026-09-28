@@ -43,14 +43,16 @@ function localAnswer(question: string, daily: unknown) {
   const days = Array.isArray(daily) ? daily as { day?: string; groups?: number; minutes?: number }[] : [];
   const normalized = question.toLocaleLowerCase("es");
   if (!days.length) return "No hay datos suficientes para responder.";
+  const activeDays = days.filter((item) => (item.groups ?? 0) > 0);
   if (/rápid|menor espera|menos espera|más lento|mayor espera/.test(normalized)) {
-    const chosen = days.reduce((best, item) => (item.minutes ?? Infinity) < (best.minutes ?? Infinity) ? item : best);
-    const slowest = /más lento|mayor espera/.test(normalized) ? days.reduce((best, item) => (item.minutes ?? 0) > (best.minutes ?? 0) ? item : best) : chosen;
+    if (!activeDays.length) return "No hay grupos sentados en este periodo para comparar los tiempos de espera.";
+    const chosen = activeDays.reduce((best, item) => (item.minutes ?? Infinity) < (best.minutes ?? Infinity) ? item : best);
+    const slowest = /más lento|mayor espera/.test(normalized) ? activeDays.reduce((best, item) => (item.minutes ?? 0) > (best.minutes ?? 0) ? item : best) : chosen;
     return `${slowest.day} fue ${slowest === chosen ? "el día más rápido" : "el día con mayor espera"}, con ${slowest.minutes} minutos de espera promedio.`;
   }
   if (/grupo|atend|volumen|más clientes/.test(normalized)) {
     const busiest = days.reduce((best, item) => (item.groups ?? 0) > (best.groups ?? 0) ? item : best);
     return `${busiest.day} fue el día con más grupos atendidos: ${busiest.groups}.`;
   }
-  return "Para responder preguntas abiertas, configura OPENROUTER_API_KEY en .env.local. Puedo consultar el día más rápido y el volumen de grupos con los datos de demostración.";
+  return "Para responder preguntas abiertas, configura OPENROUTER_API_KEY en .env.local. Sin esa clave puedo consultar los días con actividad, sus tiempos de espera y el volumen de grupos.";
 }
