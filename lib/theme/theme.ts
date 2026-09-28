@@ -216,7 +216,9 @@ export const DEFAULT_CUSTOM: CustomColors = {
   mapBg: "#0d1b2a",
   line: "#5eead4",
   accent: "#f59e0b",
-  panel: "#13263b",
+  // 1,4:1 contra el fondo: sigue siendo oscuro, pero los paneles se separan
+  // del mapa. Con #13263b (1,13:1) la propia paleta de fábrica daba aviso.
+  panel: "#1b3553",
 };
 
 export const DEFAULT_SETTING: ThemeSetting = { mode: "claro", custom: DEFAULT_CUSTOM };
