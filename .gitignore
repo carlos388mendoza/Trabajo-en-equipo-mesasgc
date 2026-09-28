@@ -29,3 +29,6 @@ local.db-shm
 
 # base de datos temporal de `npm run verify:editor`
 .verify-editor.db*
+
+# logs de `next dev` en segundo plano
+.dev-*.log
