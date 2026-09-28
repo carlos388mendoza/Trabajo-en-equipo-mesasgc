@@ -478,8 +478,8 @@ export function EditorClient({
               patchElement(id, { x: Math.round(x), y: Math.round(y) });
               setDirty(true);
             }}
-            onResize={(id, w, h) => {
-              patchElement(id, { width: w, height: h });
+            onResize={(id, box) => {
+              patchElement(id, box);
             }}
             onChange={markDirty}
             onZoomChange={setZoom}

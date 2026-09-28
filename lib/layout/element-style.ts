@@ -31,6 +31,42 @@ export const OCCUPIED_STROKE = "#7f1d1d";
 export const FREE_STROKE = "#1f2937";
 export const SELECTED_STROKE = "#2563eb";
 
+/**
+ * Estado que se PINTA en una mesa.
+ *
+ * "ocupada" sale del puntero `currentEntryId`, que es la verdad (lo escribe la
+ * asignación con su bloqueo); la columna `status` solo se mira para
+ * "reservada", que no tiene puntero.
+ */
+export type VisualStatus = "libre" | "ocupada" | "reservada";
+
+export function visualStatus(element: {
+  currentEntryId: string | null;
+  status: string;
+}): VisualStatus {
+  if (element.currentEntryId !== null) return "ocupada";
+  if (element.status === "reservada") return "reservada";
+  return "libre";
+}
+
+export type StatusColors = {
+  /** Texto de la leyenda. */
+  label: string;
+  fill: string;
+  stroke: string;
+  /** Sillas y bancos. */
+  seat: string;
+};
+
+export const STATUS_COLORS: Record<VisualStatus, StatusColors> = {
+  libre: { label: "Libre", fill: "#dcfce7", stroke: "#16a34a", seat: "#86efac" },
+  ocupada: { label: "Ocupada", fill: "#fecaca", stroke: "#dc2626", seat: "#f87171" },
+  reservada: { label: "Reservada", fill: "#e5e7eb", stroke: "#6b7280", seat: "#9ca3af" },
+};
+
+/** Orden de la leyenda. */
+export const STATUS_ORDER: readonly VisualStatus[] = ["libre", "ocupada", "reservada"];
+
 function normalizeHex(hex: string): string {
   const clean = hex.trim().replace("#", "");
   const full =

@@ -23,6 +23,7 @@ import { Layer, Line, Rect, Stage, Transformer } from "react-konva";
 import type Konva from "konva";
 
 import { ElementNode } from "./element-node";
+import { STATUS_COLORS, STATUS_ORDER } from "@/lib/layout/element-style";
 import type { ElementTypeInfo, LayoutElement } from "@/lib/layout/types";
 
 export const MIN_SCALE = 0.2;
@@ -53,8 +54,11 @@ type Props = {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onMove: (id: string, x: number, y: number) => void;
-  /** Redimensionado mediante el Transformer. */
-  onResize: (id: string, width: number, height: number) => void;
+  /** Redimensionado mediante el Transformer: tamaño y esquina nuevos. */
+  onResize: (
+    id: string,
+    box: { x: number; y: number; width: number; height: number },
+  ) => void;
   onChange: () => void;
   onZoomChange: (percent: number) => void;
   /**
@@ -275,7 +279,16 @@ export function KonvaCanvas({
       node.width(newWidth);
       node.height(newHeight);
 
-      onResize(id, Math.round(newWidth), Math.round(newHeight));
+      // El nodo se posiciona por su centro (ver `element-node.tsx`), y Konva
+      // escala alrededor del `offset`, así que `x`/`y` ya son el centro nuevo.
+      // Tirar de la esquina de arriba a la izquierda también MUEVE el
+      // elemento: por eso se devuelve la posición, no solo el tamaño.
+      onResize(id, {
+        x: Math.round(node.x() - newWidth / 2),
+        y: Math.round(node.y() - newHeight / 2),
+        width: Math.round(newWidth),
+        height: Math.round(newHeight),
+      });
       onChange();
     },
     [onChange, onResize],
@@ -361,6 +374,9 @@ export function KonvaCanvas({
                   element={element}
                   type={type}
                   selected={element.id === selectedId}
+                  occupantName={null}
+                  minutes={null}
+                  pulse={0}
                   onSelect={onSelect}
                   onDragStart={() => setDragging(true)}
                   onDragMove={onMove}
@@ -381,6 +397,29 @@ export function KonvaCanvas({
           </Layer>
         </Stage>
       ) : null}
+
+      <StatusLegend />
+    </div>
+  );
+}
+
+/** Leyenda de colores, fija en la esquina: no se mueve con el zoom. */
+function StatusLegend() {
+  return (
+    <div className="pointer-events-none absolute bottom-3 right-3 flex flex-col gap-1.5 rounded-xl bg-white/95 px-3 py-2 text-xs text-neutral-700 shadow-md ring-1 ring-black/5">
+      {STATUS_ORDER.map((status) => {
+        const colors = STATUS_COLORS[status];
+        return (
+          <span key={status} className="flex items-center gap-2">
+            <span
+              aria-hidden
+              className="h-3.5 w-3.5 rounded-full border-2"
+              style={{ backgroundColor: colors.fill, borderColor: colors.stroke }}
+            />
+            {colors.label}
+          </span>
+        );
+      })}
     </div>
   );
 }
