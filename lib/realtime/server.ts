@@ -14,9 +14,16 @@ import type { Server as HttpServer } from "node:http";
 import { Server } from "socket.io";
 
 import { restaurantExists } from "@/lib/db/queries/layouts";
+import { assignTable, releaseTable } from "@/lib/tables/assign";
 
 import { canJoinRestaurant, identifySocket } from "./auth";
-import { type Ack, joinRestaurantSchema, roomFor } from "./events";
+import {
+  type Ack,
+  assignTableSchema,
+  joinRestaurantSchema,
+  releaseTableSchema,
+  roomFor,
+} from "./events";
 import { type RealtimeServer, setRealtimeServer } from "./registry";
 
 export function attachRealtime(httpServer: HttpServer): RealtimeServer {
@@ -68,6 +75,45 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         await socket.join(roomFor(restaurantId));
         socket.data.restaurantId = restaurantId;
         return { ok: true };
+      });
+    });
+
+    // Asignar y liberar siguen el flujo del README: el cliente pide y espera,
+    // el servidor decide, y solo si gana se avisa a toda la room. El que
+    // pierde recibe el error por su ack y nadie más se entera.
+    socket.on("table:assign", async (raw, ack) => {
+      await respond(ack, async () => {
+        const restaurantId = socket.data.restaurantId;
+        if (!restaurantId) return fail("Primero entra en un restaurante.");
+        const parsed = assignTableSchema.safeParse(raw);
+        if (!parsed.success) return fail("Datos de la asignación no válidos.");
+
+        const result = await assignTable({
+          restaurantId,
+          ...parsed.data,
+          userId: socket.data.userId,
+        });
+        if (!result.ok) return fail(result.error);
+
+        const change = { table: result.table, entryId: result.entryId };
+        io.to(roomFor(restaurantId)).emit("table:assigned", change);
+        return { ok: true, ...change };
+      });
+    });
+
+    socket.on("table:release", async (raw, ack) => {
+      await respond(ack, async () => {
+        const restaurantId = socket.data.restaurantId;
+        if (!restaurantId) return fail("Primero entra en un restaurante.");
+        const parsed = releaseTableSchema.safeParse(raw);
+        if (!parsed.success) return fail("Datos de la mesa no válidos.");
+
+        const result = await releaseTable({ restaurantId, ...parsed.data });
+        if (!result.ok) return fail(result.error);
+
+        const change = { table: result.table, entryId: result.entryId };
+        io.to(roomFor(restaurantId)).emit("table:released", change);
+        return { ok: true, ...change };
       });
     });
   });
