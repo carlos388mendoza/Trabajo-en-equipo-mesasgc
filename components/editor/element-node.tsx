@@ -51,6 +51,8 @@ type Props = {
   element: LayoutElement;
   type: ElementTypeInfo;
   selected: boolean;
+  /** Giro de la vista del plano, para que el texto quede derecho en pantalla. */
+  viewRotation: number;
   /** Nombre del cliente sentado; null si la mesa está libre. */
   occupantName: string | null;
   /** Minutos que lleva sentado; null si no se sabe. */
@@ -135,6 +137,7 @@ function ElementNodeBase({
   element,
   type,
   selected,
+  viewRotation,
   occupantName,
   minutes,
   pulse,
@@ -380,8 +383,13 @@ function ElementNodeBase({
       {body}
 
       {/* Nombre, ícono y cliente van en un grupo que contrarresta el giro del
-          elemento: la mesa gira, el texto sigue derecho. */}
-      <Group x={width / 2} y={height / 2} rotation={-element.rotation} listening={false}>
+          elemento Y el de la vista: la mesa gira, el texto sigue derecho. */}
+      <Group
+        x={width / 2}
+        y={height / 2}
+        rotation={-(element.rotation + viewRotation)}
+        listening={false}
+      >
         {showIcon && iconY !== null ? (
           <CanvasIcon
             node={icon}

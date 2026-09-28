@@ -67,6 +67,8 @@ type Props = {
   typesById: Map<string, ElementTypeInfo>;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /** Justo antes de arrastrar o redimensionar: el editor guarda la foto para Deshacer. */
+  onEditStart: () => void;
   onMove: (id: string, x: number, y: number) => void;
   /** Redimensionado mediante el Transformer: tamaño y esquina nuevos. */
   onResize: (
@@ -108,6 +110,7 @@ export function KonvaCanvas({
   typesById,
   selectedId,
   onSelect,
+  onEditStart,
   onMove,
   onResize,
   onChange,
@@ -287,10 +290,15 @@ export function KonvaCanvas({
     [resetView, toCanvas, zoomByCentre],
   );
 
-  // Al cambiar de zona o girar el plano, se vuelve a encuadrar.
+  // Se encuadra al abrir, al cambiar de zona y al girar el plano. `hasSize`
+  // es lo que cubre la apertura: en el primer render el Stage todavía no
+  // existe (se monta cuando el ResizeObserver mide el hueco), así que el
+  // encuadre tiene que repetirse cuando aparece. Sin esto el mapa se abría al
+  // 100% y en una tablet no cabía.
+  const hasSize = size.width > 0;
   useEffect(() => {
-    resetView();
-  }, [layoutId, resetView]);
+    if (hasSize) resetView();
+  }, [hasSize, layoutId, resetView]);
 
   // El Transformer sigue siempre al elemento seleccionado. `elements.length`
   // en las dependencias cubre que el nodo se monte o se desmonte; la posición
@@ -465,11 +473,15 @@ export function KonvaCanvas({
                     element={element}
                     type={type}
                     selected={element.id === selectedId}
+                    viewRotation={viewRotation}
                     occupantName={element.currentEntryId ? element.occupantName : null}
                     minutes={minutesSeated(element, now)}
                     pulse={pulses[element.id] ?? 0}
                     onSelect={onSelect}
-                    onDragStart={() => setDragging(true)}
+                    onDragStart={() => {
+                      onEditStart();
+                      setDragging(true);
+                    }}
                     onDragMove={onMove}
                     onDragEnd={() => {
                       setDragging(false);
@@ -484,6 +496,7 @@ export function KonvaCanvas({
             <Transformer
               {...transformerConfig}
               ref={transformerRef}
+              onTransformStart={onEditStart}
               onTransformEnd={handleTransformEnd}
             />
           </Layer>
