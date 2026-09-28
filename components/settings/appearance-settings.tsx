@@ -12,7 +12,7 @@ import { ThemePreview } from "./theme-preview";
 import { ICON_STROKE } from "@/components/editor/icons";
 import {
   type CustomColors,
-  DEFAULT_SETTING,
+  DEFAULT_CUSTOM,
   type ThemeMode,
   contrastWarnings,
   resolveTheme,
@@ -53,6 +53,9 @@ export function AppearanceSettings() {
   const systemDark = useSystemDark();
   const theme = resolveTheme(setting, systemDark);
   const warnings = setting.mode === "personalizado" ? contrastWarnings(theme) : [];
+  const isFactoryPalette = (Object.keys(DEFAULT_CUSTOM) as (keyof CustomColors)[]).every(
+    (key) => setting.custom[key].toLowerCase() === DEFAULT_CUSTOM[key].toLowerCase(),
+  );
 
   const setMode = (mode: ThemeMode) => saveThemeSetting({ ...setting, mode });
   const setColor = (key: keyof CustomColors, value: string) =>
@@ -138,6 +141,23 @@ export function AppearanceSettings() {
                 Los colores de Libre, Ocupada y Reservada se ajustan solos al fondo para
                 que siempre se lean.
               </p>
+              {/* Solo los colores: el tema elegido (Personalizado) no cambia. */}
+              <div className="flex flex-wrap items-center gap-3 border-t border-app-border pt-3">
+                <button
+                  type="button"
+                  onClick={() => saveThemeSetting({ ...setting, custom: DEFAULT_CUSTOM })}
+                  disabled={isFactoryPalette}
+                  className="flex h-11 items-center gap-2 rounded-xl border border-app-border bg-panel px-4 text-sm font-medium hover:bg-app-border/50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RotateCcw aria-hidden size={18} strokeWidth={ICON_STROKE} />
+                  Restablecer
+                </button>
+                <span className="text-xs text-panel-muted">
+                  {isFactoryPalette
+                    ? "Ya estás usando los colores de fábrica."
+                    : "Vuelve a los colores de fábrica de Personalizado."}
+                </span>
+              </div>
             </div>
           ) : null}
 
@@ -163,19 +183,6 @@ export function AppearanceSettings() {
             </div>
           ) : null}
 
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => saveThemeSetting(DEFAULT_SETTING)}
-              className="flex h-11 items-center gap-2 rounded-xl border border-app-border bg-panel px-4 text-sm font-medium hover:bg-app-border/50"
-            >
-              <RotateCcw aria-hidden size={18} strokeWidth={ICON_STROKE} />
-              Restablecer
-            </button>
-            <span className="text-xs text-panel-muted">
-              Vuelve al tema Claro y a los colores de Personalizado por defecto.
-            </span>
-          </div>
         </div>
 
         {/* Vista previa */}

@@ -511,7 +511,7 @@ su `key` (`components/editor/icons.ts`), igual que la forma. La columna
   - Personalizado: cuatro selectores de color (fondo del mapa, líneas y
     paredes, acento, paneles).
 - **Vista previa** que cambia en vivo.
-- **Restablecer:** vuelve a Claro y a la paleta Personalizada por defecto.
+- **Restablecer** (dentro de Personalizado): devuelve los cuatro colores a los de fábrica. No cambia el tema elegido.
 - **Colores de estado:** libre, ocupada y reservada no se eligen. Se ajustan
   solos al fondo: tonos medios sobre claro, más brillantes sobre oscuro.
 - **Avisos de contraste:** en Personalizado se avisa si el contraste baja de
