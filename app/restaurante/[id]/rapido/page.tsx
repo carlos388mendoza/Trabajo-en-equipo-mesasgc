@@ -1,12 +1,14 @@
-export default function ModoRapidoPage({
+export default async function ModoRapidoPage({
   params,
 }: {
-  params: { id: string };
+  // Next 16: `params` es una Promise (ver app/restaurante/[id]/page.tsx).
+  params: Promise<{ id: string }>;
 }) {
+  const { id } = await params;
   return (
     <div>
       <h1 className="text-lg font-semibold">
-        Modo rápido — Restaurante {params.id}
+        Modo rápido — Restaurante {id}
       </h1>
       <p className="text-sm text-gray-500">
         [MIEMBRO B] Aquí van las tarjetas deslizables de clientes en espera,
