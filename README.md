@@ -384,6 +384,27 @@ reciba el error solo él, y que el restaurante salga de la room.
 Lo que **no** comprueba: dos navegadores reales a la vez. Eso es el día 6 del
 cronograma.
 
+### Probarlo a mano con dos pestañas
+
+Con `npm run dev` corriendo y los datos del seed, abre
+`http://localhost:3000/restaurante/rest_centro/editor` en dos pestañas. Abajo a
+la izquierda las dos dicen «● en vivo».
+
+- **Guardar:** añade una mesa en una pestaña y pulsa Guardar. La otra muestra
+  «Otro dispositivo guardó cambios en esta zona».
+- **Asignar:** mientras no exista el modo rápido, `demo:host` hace de otro host
+  desde la terminal. Pasa por los mismos eventos que el navegador.
+
+```bash
+npm run demo:host -- sentar tbl_c_1 wl_1          # Mesa 1 se pinta OCUPADA en las dos pestañas
+npm run demo:host -- carrera tbl_c_2 wl_2 wl_3    # dos hosts a la vez: uno gana, el otro "Esta mesa ya fue asignada."
+npm run demo:host -- liberar tbl_c_1 wl_1         # Mesa 1 vuelve a libre
+```
+
+`URL` y `RESTAURANTE` cambian el servidor y el restaurante (por defecto
+`http://localhost:3000` y `rest_centro`). Para volver a los datos de partida:
+`npm run seed:reset`.
+
 ### Pendiente de este paso
 
 - Better Auth: `lib/realtime/auth.ts` deja pasar a todos. El TODO dice qué
