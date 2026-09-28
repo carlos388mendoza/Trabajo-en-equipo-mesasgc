@@ -82,14 +82,14 @@ export const tableLayouts = sqliteTable(
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (t) => ({
-    restaurantIdx: index("table_layouts_restaurant_idx").on(t.restaurantId),
+  (t) => [
+    index("table_layouts_restaurant_idx").on(t.restaurantId),
     // Una sola zona por defecto: el índice es único y filtrado por is_default,
     // así el "primer restaurante, primera zona" del seed no puede duplicar.
-    oneDefaultPerRestaurant: uniqueIndex("table_layouts_one_default_idx")
+    uniqueIndex("table_layouts_one_default_idx")
       .on(t.restaurantId)
       .where(sql`${t.isDefault} = 1`),
-  }),
+  ],
 );
 
 // ---------------------------------------------------------------------------
@@ -178,9 +178,9 @@ export const tables = sqliteTable(
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (t) => ({
-    layoutIdx: index("tables_layout_idx").on(t.layoutId),
-    restaurantIdx: index("tables_restaurant_idx").on(t.restaurantId),
+  (t) => [
+    index("tables_layout_idx").on(t.layoutId),
+    index("tables_restaurant_idx").on(t.restaurantId),
     // Un mismo cliente no puede estar sentado en dos mesas a la vez (red de
     // seguridad por si el código de aplicación falla).
     //
@@ -190,10 +190,10 @@ export const tables = sqliteTable(
     // `UPDATE ... WHERE current_entry_id IS NULL` del paso 6, que es atómico.
     // El `WHERE` es necesario: los no-mesas (baños, cajas) dejan el campo en
     // NULL y un único NULL no viola la unicidad.
-    currentEntryUnique: uniqueIndex("tables_current_entry_unique")
+    uniqueIndex("tables_current_entry_unique")
       .on(t.currentEntryId)
       .where(sql`${t.currentEntryId} IS NOT NULL`),
-  }),
+  ],
 );
 
 // ---------------------------------------------------------------------------
@@ -244,11 +244,11 @@ export const waitlistEntries = sqliteTable(
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (t) => ({
-    restaurantIdx: index("waitlist_entries_restaurant_idx").on(t.restaurantId),
-    statusIdx: index("waitlist_entries_status_idx").on(t.status),
-    assignedTableIdx: index("waitlist_entries_table_idx").on(t.assignedTableId),
-  }),
+  (t) => [
+    index("waitlist_entries_restaurant_idx").on(t.restaurantId),
+    index("waitlist_entries_status_idx").on(t.status),
+    index("waitlist_entries_table_idx").on(t.assignedTableId),
+  ],
 );
 
 // ---------------------------------------------------------------------------
@@ -288,10 +288,7 @@ export const user = sqliteTable(
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (t) => ({
-    roleIdx: index("user_role_idx").on(t.role),
-    restaurantIdx: index("user_restaurant_idx").on(t.restaurantId),
-  }),
+  (t) => [index("user_role_idx").on(t.role), index("user_restaurant_idx").on(t.restaurantId)],
 );
 
 export const session = sqliteTable(
@@ -312,11 +309,11 @@ export const session = sqliteTable(
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (t) => ({
+  (t) => [
     // Better Auth limpia las sesiones vencidas por este índice.
-    expiresAtIdx: index("session_expires_at_idx").on(t.expiresAt),
-    userIdx: index("session_user_idx").on(t.userId),
-  }),
+    index("session_expires_at_idx").on(t.expiresAt),
+    index("session_user_idx").on(t.userId),
+  ],
 );
 
 export const account = sqliteTable(
@@ -343,10 +340,10 @@ export const account = sqliteTable(
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (t) => ({
+  (t) => [
     // Busca la cuenta al iniciar sesión con correo + contraseña.
-    userIdx: index("account_user_idx").on(t.userId),
-  }),
+    index("account_user_idx").on(t.userId),
+  ],
 );
 
 export const verification = sqliteTable(
@@ -363,10 +360,10 @@ export const verification = sqliteTable(
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (t) => ({
+  (t) => [
     // Better Auth busca por (identifier, value) al validar un token.
-    identifierIdx: index("verification_identifier_idx").on(t.identifier),
-  }),
+    index("verification_identifier_idx").on(t.identifier),
+  ],
 );
 
 // ---------------------------------------------------------------------------

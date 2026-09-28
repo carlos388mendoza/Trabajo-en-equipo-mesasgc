@@ -15,6 +15,7 @@ CREATE TABLE `account` (
 	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE INDEX `account_user_idx` ON `account` (`user_id`);--> statement-breakpoint
 CREATE TABLE `element_types` (
 	`id` text PRIMARY KEY NOT NULL,
 	`key` text NOT NULL,
@@ -27,6 +28,7 @@ CREATE TABLE `element_types` (
 	`sort_order` integer DEFAULT 0 NOT NULL
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `element_types_key_unique` ON `element_types` (`key`);--> statement-breakpoint
 CREATE TABLE `restaurants` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
@@ -35,6 +37,7 @@ CREATE TABLE `restaurants` (
 	`updated_at` integer DEFAULT (unixepoch() * 1000) NOT NULL
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `restaurants_slug_unique` ON `restaurants` (`slug`);--> statement-breakpoint
 CREATE TABLE `session` (
 	`id` text PRIMARY KEY NOT NULL,
 	`token` text NOT NULL,
@@ -47,6 +50,9 @@ CREATE TABLE `session` (
 	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `session_token_unique` ON `session` (`token`);--> statement-breakpoint
+CREATE INDEX `session_expires_at_idx` ON `session` (`expires_at`);--> statement-breakpoint
+CREATE INDEX `session_user_idx` ON `session` (`user_id`);--> statement-breakpoint
 CREATE TABLE `table_layouts` (
 	`id` text PRIMARY KEY NOT NULL,
 	`restaurant_id` text NOT NULL,
@@ -62,6 +68,8 @@ CREATE TABLE `table_layouts` (
 	FOREIGN KEY (`restaurant_id`) REFERENCES `restaurants`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE INDEX `table_layouts_restaurant_idx` ON `table_layouts` (`restaurant_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `table_layouts_one_default_idx` ON `table_layouts` (`restaurant_id`) WHERE "table_layouts"."is_default" = 1;--> statement-breakpoint
 CREATE TABLE `tables` (
 	`id` text PRIMARY KEY NOT NULL,
 	`restaurant_id` text NOT NULL,
@@ -84,6 +92,9 @@ CREATE TABLE `tables` (
 	FOREIGN KEY (`element_type_id`) REFERENCES `element_types`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
+CREATE INDEX `tables_layout_idx` ON `tables` (`layout_id`);--> statement-breakpoint
+CREATE INDEX `tables_restaurant_idx` ON `tables` (`restaurant_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `tables_current_entry_unique` ON `tables` (`current_entry_id`) WHERE "tables"."current_entry_id" IS NOT NULL;--> statement-breakpoint
 CREATE TABLE `user` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
@@ -98,6 +109,9 @@ CREATE TABLE `user` (
 	FOREIGN KEY (`restaurant_id`) REFERENCES `restaurants`(`id`) ON UPDATE no action ON DELETE set null
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `user_email_unique` ON `user` (`email`);--> statement-breakpoint
+CREATE INDEX `user_role_idx` ON `user` (`role`);--> statement-breakpoint
+CREATE INDEX `user_restaurant_idx` ON `user` (`restaurant_id`);--> statement-breakpoint
 CREATE TABLE `verification` (
 	`id` text PRIMARY KEY NOT NULL,
 	`identifier` text NOT NULL,
@@ -107,6 +121,7 @@ CREATE TABLE `verification` (
 	`updated_at` integer DEFAULT (unixepoch() * 1000) NOT NULL
 );
 --> statement-breakpoint
+CREATE INDEX `verification_identifier_idx` ON `verification` (`identifier`);--> statement-breakpoint
 CREATE TABLE `waitlist_entries` (
 	`id` text PRIMARY KEY NOT NULL,
 	`restaurant_id` text NOT NULL,
@@ -126,21 +141,6 @@ CREATE TABLE `waitlist_entries` (
 	FOREIGN KEY (`assigned_table_id`) REFERENCES `tables`(`id`) ON UPDATE no action ON DELETE set null
 );
 --> statement-breakpoint
-CREATE INDEX `account_user_idx` ON `account` (`user_id`);--> statement-breakpoint
-CREATE UNIQUE INDEX `element_types_key_unique` ON `element_types` (`key`);--> statement-breakpoint
-CREATE UNIQUE INDEX `restaurants_slug_unique` ON `restaurants` (`slug`);--> statement-breakpoint
-CREATE UNIQUE INDEX `session_token_unique` ON `session` (`token`);--> statement-breakpoint
-CREATE INDEX `session_expires_at_idx` ON `session` (`expires_at`);--> statement-breakpoint
-CREATE INDEX `session_user_idx` ON `session` (`user_id`);--> statement-breakpoint
-CREATE INDEX `table_layouts_restaurant_idx` ON `table_layouts` (`restaurant_id`);--> statement-breakpoint
-CREATE UNIQUE INDEX `table_layouts_one_default_idx` ON `table_layouts` (`restaurant_id`) WHERE "table_layouts"."is_default" = 1;--> statement-breakpoint
-CREATE INDEX `tables_layout_idx` ON `tables` (`layout_id`);--> statement-breakpoint
-CREATE INDEX `tables_restaurant_idx` ON `tables` (`restaurant_id`);--> statement-breakpoint
-CREATE UNIQUE INDEX `tables_current_entry_unique` ON `tables` (`current_entry_id`) WHERE "tables"."current_entry_id" IS NOT NULL;--> statement-breakpoint
-CREATE UNIQUE INDEX `user_email_unique` ON `user` (`email`);--> statement-breakpoint
-CREATE INDEX `user_role_idx` ON `user` (`role`);--> statement-breakpoint
-CREATE INDEX `user_restaurant_idx` ON `user` (`restaurant_id`);--> statement-breakpoint
-CREATE INDEX `verification_identifier_idx` ON `verification` (`identifier`);--> statement-breakpoint
 CREATE INDEX `waitlist_entries_restaurant_idx` ON `waitlist_entries` (`restaurant_id`);--> statement-breakpoint
 CREATE INDEX `waitlist_entries_status_idx` ON `waitlist_entries` (`status`);--> statement-breakpoint
 CREATE INDEX `waitlist_entries_table_idx` ON `waitlist_entries` (`assigned_table_id`);
