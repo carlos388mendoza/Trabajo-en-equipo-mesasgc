@@ -218,8 +218,9 @@ chunk de cliente de 330 KB que solo se descarga al abrir el editor.
 - **Las formas salen de la `key` del tipo, no de una columna.** Una mesa con
   sillas siempre es redonda aunque le cambien el color, y cambiar la forma de un
   tipo no necesita migrar la base de datos.
-- **`rotation` se queda a 0.** El `Transformer` va con `rotateEnabled: false`
-  porque los tipos no traen ángulo; la columna está para el paso 4.
+- **Un elemento se gira con los botones de su panel, no arrastrando.** El
+  `Transformer` sigue con `rotateEnabled: false`: en una tablet, girar con el
+  dedo es impreciso. Ver la sección 12.
 
 ### Verificación
 
@@ -244,7 +245,6 @@ y el drop se sientan bien. Eso hay que probarlo a mano.
   placeholder deliberado. Ojo a que ocultar el formulario no es una barrera de
   seguridad; la comprobación va en la action.
 - Los tipos de `element_types` son de solo lectura en el editor.
-- Sin deshacer (Ctrl+Z): todavía no existe.
 
 ## 9. Copiar estructura entre restaurantes (paso 3)
 
@@ -446,3 +446,146 @@ Los clientes marcados como `listo` todavía no cuentan en las estadísticas:
 estas solo incluyen grupos con estado `sentado` y `seated_at`. El modo rápido
 los contará cuando la asignación de mesa con `assignTable` se integre en la
 siguiente rama.
+
+## 12. Aspecto del editor (tablet)
+
+El editor está pensado para usarse con el dedo en una tablet:
+- Botones de al menos 44 px, con ícono y un texto corto debajo.
+- Zoom pellizcando con dos dedos.
+- Tiradores grandes para redimensionar.
+- Tocar un elemento de la paleta lo añade en el centro de lo que se ve.
+
+### Qué se ve
+
+- **Cada tipo con su dibujo:**
+  - Mesa redonda con una silla por puesto (hasta 8).
+  - Mesa con butaca en forma de U.
+  - Área de juegos con rayas.
+  - Baño y caja con su ícono.
+- **El nombre siempre visible**, en una etiqueta blanca que no gira con la mesa.
+- **Colores por estado:** libre en verde, ocupada en rojo, reservada en gris,
+  con una leyenda fija en una esquina.
+- **Mesas ocupadas:** el nombre del cliente y los minutos que lleva sentado. El
+  contador avanza solo, con un único reloj para todo el mapa.
+- **Un pulso corto** cuando una mesa cambia por un evento en vivo.
+- **Barra de herramientas:** Guardar, Deshacer (también con Ctrl+Z), Girar el
+  plano ↺ ↻, Copiar plano, Alejar, Acercar y Ajustar. Al lado, el indicador
+  «En vivo».
+
+### Íconos
+
+Son íconos de línea de [lucide](https://lucide.dev), todos con el mismo grosor.
+Los botones y la paleta usan `lucide-react`. El lienzo de Konva usa el paquete
+gemelo `lucide`, que da el mismo dibujo como datos: se convierte a SVG y se pinta
+como imagen (`components/editor/canvas-icon.tsx`). El ícono de cada tipo sale de
+su `key` (`components/editor/icons.ts`), igual que la forma. La columna
+`element_types.icon` ya no se muestra; el seed guarda ahí el nombre del ícono.
+
+### Decisiones que conviene no deshacer sin pensarlo
+
+- **`lucide` y `lucide-react` van fijados a la MISMA versión exacta** (sin
+  `^`). Si se separan, un ícono puede verse distinto en la paleta y en el mapa.
+- **El elemento se dibuja desde su centro** (`offset` = mitad del tamaño) para
+  girar sobre sí mismo. En la base de datos `x`/`y` siguen siendo la esquina
+  superior izquierda sin girar; la conversión está en `element-node.tsx` y en
+  el `Transformer`.
+- **Todo el dibujo va con `listening={false}` y hay un rectángulo invisible
+  como zona de toque.** Así Konva no calcula el toque de cada silla. Sin ese
+  rectángulo el elemento no se puede seleccionar ni arrastrar.
+- **Deshacer nunca deshace la ocupación.** Es lo que pasa en el local ahora, no
+  una edición del usuario: al restaurar una foto se conserva la ocupación que
+  hay en pantalla.
+- **El nombre del cliente en vivo se pide aparte.** El evento `table:assigned`
+  solo trae el id del cliente. El editor llama a `getTableOccupantInfo`, una
+  action de solo lectura, en vez de cambiar el evento.
+- **Las sombras solo van en el cuerpo del elemento.** En Konva son caras, y
+  con 40 mesas se nota.
+
+### Pendiente de este paso
+
+- **El giro del plano entero no se guarda.** `table_layouts` no tiene ningún
+  campo para ello, así que solo gira la vista de esa pantalla. Guardarlo
+  requiere añadir una columna, por ejemplo `table_layouts.rotation`, y hay que
+  coordinarlo porque toca `lib/db/schema.ts`.
+- **Barra, puerta y pared** no existen todavía como tipos. Hacen falta filas
+  nuevas en `element_types`, sus claves en `lib/db/enums.ts` y el seed. Van en
+  otra rama.
+- **Nada pone una mesa en "reservada" todavía.** Se pinta en gris y está en la
+  leyenda, pero ninguna pantalla asigna ese estado.
+- El comentario de `element_types.icon` en `lib/db/schema.ts` todavía dice
+  «emoji». No se tocó porque es el archivo compartido del esquema.
+
+## 13. Estilo radar y temas
+
+### El mapa
+
+- **Estilo de mapa visto desde arriba**, con diseño propio. No usa logos,
+  tipografías ni íconos de ningún juego; los íconos son de lucide.
+- **Elementos:**
+  - Cuadrícula tenue de fondo.
+  - Paredes y zonas con líneas marcadas y un brillo suave.
+  - Áreas con rellenos translúcidos.
+  - Mesas como marcadores con su ícono.
+- **En vivo:** cuando una mesa cambia, sale de ella una onda expansiva con un
+  eco que se desvanecen.
+- **Minimapa** abajo a la izquierda: el plano entero y la parte que se ve.
+  Tocarlo o arrastrar sobre él lleva la vista ahí.
+- **Paneles flotantes semitransparentes:** la barra de herramientas, los
+  avisos, el panel del elemento y la leyenda flotan sobre el mapa.
+
+### Ajustes > Apariencia (`/ajustes`)
+
+- **Temas:**
+  - Claro.
+  - Oscuro (azul marino).
+  - Sistema: sigue el modo del dispositivo y cambia en vivo.
+  - Personalizado: cuatro selectores de color (fondo del mapa, líneas y
+    paredes, acento, paneles).
+- **Vista previa** que cambia en vivo.
+- **Restablecer** (dentro de Personalizado): devuelve los cuatro colores a los de fábrica. No cambia el tema elegido.
+- **Colores de estado:** libre, ocupada y reservada no se eligen. Se ajustan
+  solos al fondo: tonos medios sobre claro, más brillantes sobre oscuro.
+- **Avisos de contraste:** en Personalizado se avisa si el contraste baja de
+  3:1, el mínimo de WCAG para elementos gráficos. Se comprueba en líneas,
+  acento y cada estado.
+
+### Cómo está hecho
+
+| Fichero | Para qué |
+| --- | --- |
+| `lib/theme/theme.ts` | **El único sitio con colores.** Temas, derivación de Personalizado, contraste, variables CSS y el script de arranque. |
+| `lib/theme/use-theme.ts` | Leer y guardar la elección (localStorage), seguir el modo del sistema, aplicar las variables. |
+| `components/theme/theme-sync.tsx` | Mantiene `<html>` al día con el tema elegido. |
+| `components/editor/minimap.tsx` | Minimapa en SVG. |
+| `components/settings/*` | Página de Apariencia y vista previa. |
+
+### Decisiones que conviene no deshacer sin pensarlo
+
+- **Un solo archivo de colores, dos salidas.**
+  - La interfaz usa variables CSS (`--c-panel`, `--c-accent`...) guardadas como
+    "r g b", para que Tailwind pueda añadir transparencia (`bg-panel/80`).
+    `tailwind.config.ts` solo dice qué variable usa cada clase.
+  - Konva recibe el mismo objeto `Theme`.
+  - No hay colores sueltos en los componentes. La excepción son los colores de
+    cada tipo, que salen de `element_types`.
+- **Sin parpadeo al recargar.** Un script en el `<head>`, generado desde
+  `theme.ts`, aplica el tema guardado antes del primer pintado. Es la técnica de
+  la guía de Next «Preventing flash before hydration». Por eso `<html>` lleva
+  `suppressHydrationWarning`.
+  - En desarrollo, Strict Mode borra lo que puso el script, y `ThemeSync` lo
+    repone en `useLayoutEffect`.
+  - `ThemeSync` lee la fuente directamente y no el valor del hook. Al hidratar,
+    el hook todavía trae el valor del servidor (Claro), y aplicarlo pintaría un
+    destello.
+- **Personalizado guarda sus variables ya resueltas en localStorage**, para
+  que el script de arranque no tenga que saber derivar colores.
+- **La vista publica su posición al minimapa por una suscripción propia**, una
+  vez por fotograma. Panear no re-renderiza el editor.
+- **El plano se encuadra debajo de la barra flotante** con su alto real,
+  medido con `ResizeObserver`: en tablet la barra ocupa dos filas.
+
+### Pendiente de este paso
+
+- **La elección vive solo en el navegador.** Cuando esté Better Auth, hay que
+  guardarla por usuario (ver el TODO en `lib/theme/theme.ts`), coordinándolo
+  con quien lleva el esquema. No se tocó `lib/db/schema.ts`.

@@ -7,7 +7,9 @@
 // normalmente quiere cambiar el destino y volver a intentarlo.
 
 import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 
+import { ICON_STROKE } from "./icons";
 import {
   copyStructureToRestaurant,
   type RestaurantOption,
@@ -92,14 +94,14 @@ export function CopyLayoutDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="copy-title"
-        className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl outline-none"
+        className="w-full max-w-md rounded-2xl bg-panel p-5 text-panel-text shadow-xl outline-none"
       >
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h2 id="copy-title" className="text-base font-semibold text-neutral-900">
+            <h2 id="copy-title" className="text-base font-semibold text-panel-text">
               Copiar estructura a otro restaurante
             </h2>
-            <p className="mt-1 text-sm text-neutral-500">
+            <p className="mt-1 text-sm text-panel-muted">
               Se copiarán{" "}
               <strong>
                 {sourceZoneCount} zona{sourceZoneCount === 1 ? "" : "s"}
@@ -113,22 +115,22 @@ export function CopyLayoutDialog({
             onClick={onClose}
             disabled={state.kind === "busy"}
             aria-label="Cerrar"
-            className="rounded px-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-40"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-panel-muted hover:bg-app-border/60 hover:text-panel-text disabled:opacity-40"
           >
-            ✕
+            <X aria-hidden size={20} strokeWidth={ICON_STROKE} />
           </button>
         </div>
 
         {state.kind === "choosing" ? (
           <div className="space-y-2">
             {targets.length === 0 ? (
-              <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+              <p className="rounded-md bg-accent/10 p-3 text-sm text-panel-text">
                 No hay ningún otro restaurante en la base de datos. Crea uno
                 primero.
               </p>
             ) : (
               <>
-                <p className="text-sm text-neutral-600">
+                <p className="text-sm text-panel-muted">
                   Elige a dónde llevarla:
                 </p>
                 {targets.map((t) => (
@@ -140,10 +142,10 @@ export function CopyLayoutDialog({
                         ? setState({ kind: "confirming", target: t })
                         : void run(t, false)
                     }
-                    className="flex w-full items-center justify-between rounded-md border border-neutral-200 px-3 py-2 text-left text-sm hover:border-neutral-400 hover:bg-neutral-50"
+                    className="flex w-full items-center justify-between rounded-md border border-app-border px-3 py-2 text-left text-sm hover:border-accent/60 hover:bg-app-border/40"
                   >
-                    <span className="font-medium text-neutral-800">{t.name}</span>
-                    <span className="text-xs text-neutral-500">
+                    <span className="font-medium text-panel-text">{t.name}</span>
+                    <span className="text-xs text-panel-muted">
                       {t.zones === 0
                         ? "vacío"
                         : `${t.zones} zona(s) · ${t.elements} elemento(s)`}
@@ -157,7 +159,7 @@ export function CopyLayoutDialog({
 
         {state.kind === "confirming" ? (
           <div className="space-y-3">
-            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="rounded-md border border-accent/40 bg-accent/10 p-3 text-sm text-panel-text">
               <p className="font-semibold">
                 {state.target.name} ya tiene {state.target.zones} zona(s) y{" "}
                 {state.target.elements} elemento(s).
@@ -177,14 +179,14 @@ export function CopyLayoutDialog({
               <button
                 type="button"
                 onClick={() => setState({ kind: "choosing" })}
-                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+                className="rounded-md border border-app-border px-3 py-1.5 text-sm hover:bg-app-border/40"
               >
                 Volver
               </button>
               <button
                 type="button"
                 onClick={() => void run(state.target, true)}
-                className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+                className="rounded-md bg-estado-ocupada px-3 py-1.5 text-sm font-medium text-panel hover:bg-estado-ocupada/85"
               >
                 Sí, sustituirlo todo
               </button>
@@ -193,21 +195,21 @@ export function CopyLayoutDialog({
         ) : null}
 
         {state.kind === "busy" ? (
-          <p className="py-2 text-sm text-neutral-600">
+          <p className="py-2 text-sm text-panel-muted">
             Copiando a {state.targetName}…
           </p>
         ) : null}
 
         {state.kind === "error" ? (
           <div className="space-y-3">
-            <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+            <p className="rounded-md border border-estado-ocupada/40 bg-estado-ocupada/10 p-3 text-sm text-panel-text">
               {state.message}
             </p>
             <div className="flex justify-end">
               <button
                 type="button"
                 onClick={() => setState({ kind: "choosing" })}
-                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+                className="rounded-md border border-app-border px-3 py-1.5 text-sm hover:bg-app-border/40"
               >
                 Cambiar de destino
               </button>

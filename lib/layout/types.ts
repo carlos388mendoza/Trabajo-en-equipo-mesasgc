@@ -46,6 +46,10 @@ export type LayoutElement = {
   capacity: number | null;
   status: string;
   currentEntryId: string | null;
+  /** Cliente sentado: solo lectura, igual que `currentEntryId`. */
+  occupantName: string | null;
+  /** Cuándo se sentó, en milisegundos. Alimenta el contador de minutos. */
+  seatedAt: number | null;
 };
 
 /** Una zona con su estructura, tal y como la carga y guarda el editor. */
