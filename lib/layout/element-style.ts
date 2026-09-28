@@ -5,6 +5,7 @@
 // montar el canvas.
 
 import { isSeatableElement } from "@/lib/db/enums";
+import type { StatusKey } from "@/lib/theme/theme";
 import type { ElementTypeInfo } from "./types";
 
 export type ElementShape = "circle" | "rect" | "booth" | "zone";
@@ -30,6 +31,35 @@ export const OCCUPIED_FILL = "#dc2626";
 export const OCCUPIED_STROKE = "#7f1d1d";
 export const FREE_STROKE = "#1f2937";
 export const SELECTED_STROKE = "#2563eb";
+
+/**
+ * Estado que se PINTA en una mesa.
+ *
+ * "ocupada" sale del puntero `currentEntryId`, que es la verdad (lo escribe la
+ * asignación con su bloqueo); la columna `status` solo se mira para
+ * "reservada", que no tiene puntero.
+ */
+export type VisualStatus = StatusKey;
+
+export function visualStatus(element: {
+  currentEntryId: string | null;
+  status: string;
+}): VisualStatus {
+  if (element.currentEntryId !== null) return "ocupada";
+  if (element.status === "reservada") return "reservada";
+  return "libre";
+}
+
+// Los COLORES de cada estado están en `lib/theme/theme.ts`: cambian con el
+// tema para leerse bien sobre cualquier fondo. Aquí solo el nombre.
+export const STATUS_LABELS: Record<VisualStatus, string> = {
+  libre: "Libre",
+  ocupada: "Ocupada",
+  reservada: "Reservada",
+};
+
+/** Orden de la leyenda. */
+export const STATUS_ORDER: readonly VisualStatus[] = ["libre", "ocupada", "reservada"];
 
 function normalizeHex(hex: string): string {
   const clean = hex.trim().replace("#", "");

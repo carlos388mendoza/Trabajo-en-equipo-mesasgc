@@ -78,8 +78,8 @@ await db.insert(restaurants).values([
   { id: REST_2, name: "Bar Apuesto", slug: "bar-apuesto" },
 ]);
 await db.insert(elementTypes).values([
-  { id: "type-mesa", key: "mesa-sillas", label: "Mesa con sillas", color: "#3b82f6", icon: "🍽️", defaultCapacity: 4, sortOrder: 0 },
-  { id: "type-bano", key: "bano", label: "Baños", color: "#06b6d4", icon: "🚻", defaultCapacity: null, sortOrder: 1 },
+  { id: "type-mesa", key: "mesa-sillas", label: "Mesa con sillas", color: "#3b82f6", icon: "utensils", defaultCapacity: 4, sortOrder: 0 },
+  { id: "type-bano", key: "bano", label: "Baños", color: "#06b6d4", icon: "toilet", defaultCapacity: null, sortOrder: 1 },
 ]);
 await db.insert(tableLayouts).values([
   { id: "layout-1", restaurantId: REST, name: "Comedor", isDefault: true },
