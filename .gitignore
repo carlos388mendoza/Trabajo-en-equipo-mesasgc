@@ -21,3 +21,14 @@ npm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# base de datos local de desarrollo (TURSO_DATABASE_URL=file:./local.db)
+local.db
+local.db-wal
+local.db-shm
+
+# base de datos temporal de `npm run verify:editor`
+.verify-editor.db*
+
+# logs de `next dev` en segundo plano
+.dev-*.log
