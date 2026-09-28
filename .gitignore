@@ -27,8 +27,12 @@ local.db
 local.db-wal
 local.db-shm
 
-# base de datos temporal de `npm run verify:editor`
+# bases de datos temporales de `npm run verify:editor` y `verify:realtime`
 .verify-editor.db*
+.verify-realtime.db*
 
 # logs de `next dev` en segundo plano
 .dev-*.log
+
+# configuración local de Claude Code (levantar la app desde el panel)
+.claude/launch.json
