@@ -1,3 +1,4 @@
+// TODO(auth): validar sesión Better Auth y permisos sobre el restaurante en GET y POST.
 import { asc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";

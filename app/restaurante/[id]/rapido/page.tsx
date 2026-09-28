@@ -8,7 +8,7 @@ type Guest = {
   party: number;
   arrived: number;
   note: string;
-  status: "waiting" | "seated" | "absent";
+  status: "waiting" | "ready" | "seated" | "absent";
 };
 
 type ApiEntry = {
@@ -56,11 +56,13 @@ export default function ModoRapidoPage({
           arrived: entry.arrivedAt,
           note: entry.notes ?? "",
           status:
-            entry.status === "esperando" || entry.status === "listo"
+            entry.status === "esperando"
               ? "waiting"
-              : entry.status === "sentado"
-                ? "seated"
-                : "absent",
+              : entry.status === "listo"
+                ? "ready"
+                : entry.status === "sentado"
+                  ? "seated"
+                  : "absent",
         })),
       );
       setError("");
@@ -119,7 +121,7 @@ export default function ModoRapidoPage({
     }
   }
 
-  async function mark(status: "seated" | "absent") {
+  async function mark(status: "ready" | "absent") {
     if (!current) return;
     const previous = guests;
     setError("");
@@ -134,10 +136,15 @@ export default function ModoRapidoPage({
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: status === "seated" ? "sentado" : "ausente" }),
+          body: JSON.stringify({ status: status === "ready" ? "listo" : "ausente" }),
         },
       );
       const data = await response.json();
+      if (response.status === 409) {
+        await loadGuests();
+        setError(data.error || "Este cliente ya fue atendido por otro dispositivo");
+        return;
+      }
       if (!response.ok) throw new Error(data.error || "No se pudo actualizar el cliente.");
     } catch (cause) {
       setGuests(previous);
@@ -189,7 +196,7 @@ export default function ModoRapidoPage({
               onTouchEnd={(event) => {
                 if (touchStart.current === null) return;
                 const delta = event.changedTouches[0].clientX - touchStart.current;
-                if (delta > 65) void mark("seated");
+                if (delta > 65) void mark("ready");
                 else if (delta < -65) void mark("absent");
                 touchStart.current = null;
               }}
@@ -210,7 +217,7 @@ export default function ModoRapidoPage({
                   onClick={() => void mark("seated")}
                   className="rounded-2xl bg-emerald-400 px-4 py-4 font-bold text-emerald-950 transition hover:bg-emerald-300"
                 >
-                  ✓ Sentar grupo
+                  ✓ Marcar listo
                 </button>
                 <button
                   onClick={() => void mark("absent")}
@@ -220,7 +227,7 @@ export default function ModoRapidoPage({
                 </button>
               </div>
               <p className="mt-4 text-center text-xs text-slate-400">
-                Desliza a la derecha para sentar · a la izquierda para marcar ausente.
+                Desliza a la derecha para marcar listo · a la izquierda para marcar ausente.
               </p>
             </article>
           ) : (
@@ -302,7 +309,7 @@ export default function ModoRapidoPage({
             <div className="mt-3 flex gap-3 text-sm text-slate-500">
               <span className="text-emerald-600">●</span>
               <p>
-                {guests.filter((guest) => guest.status === "seated").length} grupos sentados
+                {guests.filter((guest) => guest.status === "ready").length} grupos listos
                 <span className="mx-1">·</span>
                 {guests.filter((guest) => guest.status === "absent").length} ausentes
               </p>
