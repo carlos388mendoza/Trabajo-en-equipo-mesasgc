@@ -214,7 +214,7 @@ export default function ModoRapidoPage({
               )}
               <div className="mt-10 grid grid-cols-2 gap-3">
                 <button
-                  onClick={() => void mark("seated")}
+                  onClick={() => void mark("ready")}
                   className="rounded-2xl bg-emerald-400 px-4 py-4 font-bold text-emerald-950 transition hover:bg-emerald-300"
                 >
                   ✓ Marcar listo
