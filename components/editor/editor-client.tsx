@@ -248,7 +248,13 @@ export function EditorClient({
   }, [elements, height, layoutId, restaurantId, width]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    // `h-[70vh]` en vez de `h-full`: el alto tiene que estar DEFINIDO en algún
+    // sitio de la cadena, y `h-full` no lo estaba. `main` y `body` tienen alto
+    // automático, así que `height: 100%` se resolvía contra "lo que ocupa el
+    // contenido", y como el contenido era el propio lienzo, medía cero. Con
+    // esta altura, la paleta y el mapa tienen contra qué dimensionarse y el
+    // `ResizeObserver` de Konva recibe algo real.
+    <div className="flex h-[70vh] min-h-[480px] flex-col">
       {/* Barra de zonas y herramientas */}
       <div className="flex flex-wrap items-center gap-3 border-b border-neutral-200 bg-white px-3 py-2">
         <label className="flex items-center gap-2 text-sm">
