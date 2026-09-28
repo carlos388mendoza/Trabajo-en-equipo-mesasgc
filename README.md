@@ -313,3 +313,84 @@ encaje de una zona copiada dentro de otra de tamaño distinto.
 - El diálogo se cierra solo si la copia va bien. Si falla, se queda abierto con
   el mensaje, para poder cambiar el destino sin recargar.
 
+
+## 10. Tiempo real y conflictos (pasos 5 y 6)
+
+`npm run dev` ya no es `next dev`: arranca `server.ts`, que sirve Next **y**
+Socket.IO en el mismo puerto (3000). `npm run dev:next` sigue existiendo por si
+solo quieres la web, pero sin tiempo real.
+
+### Cómo funciona
+
+- Cada pantalla entra en la *room* de su restaurante (`restaurant:<id>`), así
+  que un local solo recibe sus propios avisos.
+- **Asignar una mesa** sigue el flujo de la sección 6: el cliente pide, el
+  servidor decide y solo si gana se avisa a toda la room. El perdedor recibe
+  «Esta mesa ya fue asignada.» por su respuesta (ack) y nadie más se entera.
+- Al guardar una zona o copiar una estructura, los demás dispositivos reciben
+  un aviso y el editor muestra «Otro dispositivo guardó cambios» con un botón
+  para recargar. No recarga solo: pisaría lo que el usuario esté moviendo.
+- La ocupación de las mesas se pinta en el editor en vivo.
+
+| Evento | Quién lo manda | Qué hace |
+| --- | --- | --- |
+| `restaurant:join` | cliente | Entra en la room. Un socket, un restaurante. |
+| `table:assign` / `table:release` | cliente | Pide sentar / liberar. Contesta por ack. |
+| `table:assigned` / `table:released` | servidor | Aviso a toda la room cuando alguien gana. |
+| `layout:updated` / `structure:changed` | servidor | Otro dispositivo guardó o copió. |
+
+### Archivos
+
+| Fichero | Para qué |
+| --- | --- |
+| `server.ts` | Next + Socket.IO en un solo `http.Server`. |
+| `lib/realtime/events.ts` | El contrato: tipos de los eventos y schemas Zod. |
+| `lib/realtime/server.ts` | Rooms y handlers. No importa nada de Next. |
+| `lib/realtime/registry.ts` | `io` en `globalThis`, para emitir desde las actions. |
+| `lib/realtime/auth.ts` | Permisos del socket. **Único sitio a tocar con Better Auth.** |
+| `lib/tables/assign.ts` | Asignar y liberar con bloqueo optimista. |
+| `components/realtime/use-restaurant-socket.ts` | Hook del navegador. El modo rápido puede usarlo igual. |
+
+### Decisiones que conviene no deshacer sin pensarlo
+
+- **Un solo puerto.** Railway expone uno, y así el navegador se conecta al
+  mismo origen sin CORS. `NEXT_PUBLIC_SOCKET_URL` es opcional.
+- **`destroyUpgrade: false`.** Engine.io cierra al segundo cualquier WebSocket
+  que no sea suyo; sin esto podría cortar el HMR de Next (`/_next/hmr`).
+- **`io` vive en `globalThis`.** Next empaqueta las server actions en otro
+  grafo de módulos; una variable de módulo estaría vacía desde la action.
+- **El bloqueo es el `UPDATE ... WHERE current_entry_id IS NULL`, no la
+  lectura previa.** Las lecturas solo dan buenos mensajes. Va en un `batch`
+  con el `UPDATE` del cliente de la lista: o se sientan los dos, o ninguno.
+- **El restaurante sale de la room, nunca del payload.** Un socket que entró
+  en el restaurante 2 no puede tocar una mesa del 1 mandando su id.
+- **Liberar pide el cliente que el host ve en la mesa.** Si otro dispositivo
+  ya la liberó y la volvió a asignar, no se libera a alguien que no ha visto.
+- **`output: "standalone"` no se puede activar**: la guía de servidor propio
+  de Next dice que no son compatibles.
+
+### Verificación
+
+```bash
+npm run verify:realtime
+```
+
+Base SQLite temporal (`.verify-realtime.db`, gitignorada) con la migración real
+y un servidor Socket.IO de verdad en un puerto libre. Comprueba las reglas de
+asignación y liberación, las carreras (2 y 10 hosts a por la misma mesa, un
+cliente en dos mesas a la vez), el aislamiento entre rooms, que el perdedor
+reciba el error solo él, y que el restaurante salga de la room.
+
+Lo que **no** comprueba: dos navegadores reales a la vez. Eso es el día 6 del
+cronograma.
+
+### Pendiente de este paso
+
+- Better Auth: `lib/realtime/auth.ts` deja pasar a todos. El TODO dice qué
+  poner: la sesión desde la cookie del handshake y `canAccessRestaurant`.
+- Copiar una zona suelta (`copyZoneIntoAnother`) no avisa: no tiene interfaz
+  todavía y su resultado no trae el restaurante de destino.
+- El guardado del editor no comprueba la versión de la zona: si dos personas
+  guardan a la vez, gana la última. El editor avisa, pero no lo impide.
+- En Windows, `@libsql/client` necesita el *Visual C++ Redistributable*
+  (`vcruntime140.dll`). Sin él, ni `server.ts` ni los `verify:*` arrancan.
