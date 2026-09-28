@@ -34,4 +34,23 @@ export const saveLayoutInputSchema = z.object({
   elements: z.array(layoutElementInputSchema).max(500),
 });
 
+// ---------------------------------------------------------------------------
+// Copia de estructura entre restaurantes (paso 3)
+// ---------------------------------------------------------------------------
+
+export const copyLayoutInputSchema = z.object({
+  sourceRestaurantId: idSchema,
+  targetRestaurantId: idSchema,
+  /** Sin esto solo se puede copiar a un destino que esté vacío. */
+  replace: z.boolean(),
+});
+
+export const copyZoneInputSchema = z.object({
+  sourceRestaurantId: idSchema,
+  sourceLayoutId: idSchema,
+  targetLayoutId: idSchema,
+});
+
 export type SaveLayoutInput = z.infer<typeof saveLayoutInputSchema>;
+export type CopyLayoutInput = z.infer<typeof copyLayoutInputSchema>;
+export type CopyZoneInput = z.infer<typeof copyZoneInputSchema>;

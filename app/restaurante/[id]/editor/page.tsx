@@ -1,5 +1,6 @@
 import { EditorClient } from "@/components/editor/editor-client";
 import { getElementTypes, getLayout, getLayoutsForRestaurant, restaurantExists } from "@/lib/db/queries/layouts";
+import { getRestaurantsWithoutLayout } from "@/lib/layout/copy";
 
 // Es una Server Component a propósito: la zona, el catálogo de tipos y los
 // elementos llegan desde la base de datos y se pasan ya resueltos al editor.
@@ -17,10 +18,11 @@ export default async function EditorPage({
 }) {
   const [{ id }, { zona }] = await Promise.all([params, searchParams]);
 
-  const [exists, layouts, types] = await Promise.all([
+  const [exists, layouts, types, copyTargets] = await Promise.all([
     restaurantExists(id),
     getLayoutsForRestaurant(id),
     getElementTypes(),
+    getRestaurantsWithoutLayout(id),
   ]);
 
   if (!exists) {
@@ -71,6 +73,7 @@ export default async function EditorPage({
         elements={layout.elements}
         types={types}
         layouts={layouts}
+        copyTargets={copyTargets}
       />
     </div>
   );

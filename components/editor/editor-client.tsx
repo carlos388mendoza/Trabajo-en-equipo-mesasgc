@@ -23,12 +23,16 @@ import { useRouter } from "next/navigation";
 
 import type { CanvasHandle } from "./konva-canvas";
 import { DND_MIME, ElementPalette } from "./element-palette";
+import { CopyLayoutDialog } from "./copy-layout-dialog";
 import { nextLabel } from "@/lib/layout/element-style";
 import type { ElementTypeInfo, LayoutElement, LayoutSummary } from "@/lib/layout/types";
 // La action vive en la ruta (convención de Next para "use server"), y el
 // editor la importa por el alias en vez de por una ruta relativa que
 // saltaría de `components/` a `app/`.
-import { saveLayoutStructure } from "@/app/restaurante/[id]/editor/actions";
+import {
+  saveLayoutStructure,
+  type RestaurantOption,
+} from "@/app/restaurante/[id]/editor/actions";
 
 // `ssr: false` es imprescindible: ver la cabecera del archivo.
 const KonvaCanvas = dynamic(
@@ -53,6 +57,8 @@ type Props = {
   elements: LayoutElement[];
   types: ElementTypeInfo[];
   layouts: LayoutSummary[];
+  /** A quién se le puede copiar la estructura. Lo carga la page. */
+  copyTargets: RestaurantOption[];
 };
 
 type Feedback =
@@ -70,6 +76,7 @@ export function EditorClient({
   elements: initialElements,
   types,
   layouts,
+  copyTargets,
 }: Props) {
   const router = useRouter();
   const controllerRef = useRef<CanvasHandle | null>(null);
@@ -80,6 +87,7 @@ export function EditorClient({
   const [saving, setSaving] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [feedback, setFeedback] = useState<Feedback>({ kind: "idle" });
+  const [copyOpen, setCopyOpen] = useState(false);
 
   const typesById = useMemo(
     () => new Map(types.map((t) => [t.id, t])),
@@ -344,6 +352,20 @@ export function EditorClient({
           >
             {saving ? "Guardando…" : dirty ? "Guardar" : "Guardado"}
           </button>
+
+          <button
+            type="button"
+            onClick={() => setCopyOpen(true)}
+            disabled={dirty}
+            title={
+              dirty
+                ? "Guarda los cambios antes de copiar, para no copiar una versión vieja"
+                : "Copiar zonas y mesas a otro restaurante"
+            }
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-800 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:text-neutral-400"
+          >
+            Copiar estructura…
+          </button>
         </div>
       </div>
 
@@ -401,6 +423,21 @@ export function EditorClient({
           </div>
         </div>
       </div>
+
+      {copyOpen ? (
+        <CopyLayoutDialog
+          sourceRestaurantId={restaurantId}
+          sourceZoneName={layoutName}
+          sourceZoneCount={layouts.length}
+          sourceElementCount={elements.length}
+          targets={copyTargets}
+          onClose={() => setCopyOpen(false)}
+          onCopied={(message) => {
+            setCopyOpen(false);
+            setFeedback({ kind: "saved", text: message });
+          }}
+        />
+      ) : null}
     </div>
   );
 }

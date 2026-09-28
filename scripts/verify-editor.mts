@@ -35,6 +35,8 @@ const { elementTypes, restaurants, tableLayouts, tables } = await import(
 );
 const { applyLayoutStructure } = await import("@/lib/layout/save");
 const { saveLayoutInputSchema } = await import("@/lib/layout/validation");
+const { copyLayoutToRestaurant, copyZoneIntoLayout, getStructureCounts } =
+  await import("@/lib/layout/copy");
 const { elementStyle, nextLabel, visibleSeats } = await import(
   "@/lib/layout/element-style"
 );
@@ -499,6 +501,316 @@ check(
   "y las dos veces cuentan 3 guardados y 0 borrados",
   first.ok && again.ok && first.removed === 0 && again.removed === 0,
   first.ok && again.ok ? `${first.removed}/${again.removed}` : "-",
+);
+
+// ---------------------------------------------------------------------------
+// Paso 3: copiar estructura entre restaurantes
+// ---------------------------------------------------------------------------
+
+section("Copia entre restaurantes (paso 3)");
+
+const COPY_FROM = "copy-src";
+const COPY_TO_VACIA = "copy-dest-vacia";
+const COPY_TO_LLENO = "copy-dest-lleno";
+const COPY_TO_OCUPADA = "copy-dest-ocupada";
+
+await db.insert(restaurants).values([
+  { id: COPY_FROM, name: "Origen", slug: "copia-origen" },
+  { id: COPY_TO_VACIA, name: "Destino Vacio", slug: "copia-vacio" },
+  { id: COPY_TO_LLENO, name: "Destino Lleno", slug: "copia-lleno" },
+  { id: COPY_TO_OCUPADA, name: "Destino Ocupado", slug: "copia-ocupado" },
+]);
+
+// El origen: 2 zonas y 3 elementos, uno de ellos ocupado a propósito.
+const ORIG_A = "lay-orig-a";
+const ORIG_B = "lay-orig-b";
+await db.insert(tableLayouts).values([
+  { id: ORIG_A, restaurantId: COPY_FROM, name: "Comedor", width: 1200, height: 800, isDefault: true, sortOrder: 0, version: 1 },
+  { id: ORIG_B, restaurantId: COPY_FROM, name: "Terraza", width: 800, height: 600, isDefault: false, sortOrder: 1, version: 1 },
+]);
+await db.insert(tables).values([
+  { id: "t-orig-1", restaurantId: COPY_FROM, layoutId: ORIG_A, elementTypeId: TYPES.mesa, label: "Mesa 1", x: 10, y: 20, width: 80, height: 80, capacity: 4, rotation: 0 },
+  { id: "t-orig-2", restaurantId: COPY_FROM, layoutId: ORIG_A, elementTypeId: TYPES.caja, label: "Caja 1", x: 300, y: 40, width: 60, height: 40, capacity: null, rotation: 0 },
+  // Esta mesa está ocupada. Si al copiarla se "!colara" su ocupación, el
+  // destino aparecería con una mesa ocupada sin ningún cliente esperando.
+  { id: "t-orig-3", restaurantId: COPY_FROM, layoutId: ORIG_B, elementTypeId: TYPES.mesa, label: "Mesa T1", x: 5, y: 5, width: 100, height: 60, capacity: 6, rotation: 0, status: "ocupada", currentEntryId: "entry-origen" },
+]);
+
+// El destino lleno: 1 zona con 1 mesa, y una zona con el MISMO nombre que una
+// del origen, para chocar contra el índice único.
+const LLENO_LAYOUT = "lay-lleno";
+await db.insert(tableLayouts).values([
+  { id: LLENO_LAYOUT, restaurantId: COPY_TO_LLENO, name: "Terraza", width: 400, height: 400, isDefault: true, version: 1 },
+]);
+await db.insert(tables).values([
+  { id: "t-vieja", restaurantId: COPY_TO_LLENO, layoutId: LLENO_LAYOUT, elementTypeId: TYPES.mesa, label: "Vieja", x: 1, y: 1, width: 50, height: 50, capacity: 2, rotation: 0 },
+]);
+
+// El destino ocupado: su sustitución tiene que ser rechazada.
+const OCUP_LAYOUT = "lay-ocup";
+await db.insert(tableLayouts).values([
+  { id: OCUP_LAYOUT, restaurantId: COPY_TO_OCUPADA, name: "Salon", width: 600, height: 600, isDefault: true, version: 1 },
+]);
+await db.insert(tables).values([
+  { id: "t-con-gente", restaurantId: COPY_TO_OCUPADA, layoutId: OCUP_LAYOUT, elementTypeId: TYPES.mesa, label: "Con gente", x: 1, y: 1, width: 50, height: 50, capacity: 2, rotation: 0, status: "ocupada", currentEntryId: "entry-destino" },
+]);
+
+// Un tercer restaurante para el caso "la zona por defecto NO es la primera".
+// El `select` no garantiza orden, así que una implementación que asuma que la
+// por defecto es la fila 0 acierta aquí por casualidad y falla al reordenar.
+const COPY_DEF_AL_TERIOR = "copy-def-al-terior";
+await db.insert(restaurants).values([
+  { id: COPY_DEF_AL_TERIOR, name: "Definitiva al final", slug: "copia-def-terior" },
+]);
+await db.insert(tableLayouts).values([
+  { id: "lay-def-1", restaurantId: COPY_DEF_AL_TERIOR, name: "Almacen", width: 500, height: 400, isDefault: false, sortOrder: 0, version: 1 },
+  { id: "lay-def-2", restaurantId: COPY_DEF_AL_TERIOR, name: "Comedor", width: 900, height: 700, isDefault: true, sortOrder: 1, version: 1 },
+]);
+await db.insert(tables).values([
+  { id: "t-def-1", restaurantId: COPY_DEF_AL_TERIOR, layoutId: "lay-def-2", elementTypeId: TYPES.mesa, label: "Mesa D", x: 10, y: 10, width: 80, height: 80, capacity: 2, rotation: 0 },
+]);
+
+const copyDefault = await copyLayoutToRestaurant({
+  sourceRestaurantId: COPY_DEF_AL_TERIOR,
+  targetRestaurantId: "copy-def-destino",
+  replace: false,
+});
+// El destino no existe, así que esto debe fallar y no crear nada.
+check(
+  "no se inventa un restaurante que no existe al copiar",
+  !copyDefault.ok && copyDefault.error.includes("destino no existe"),
+);
+
+await db.insert(restaurants).values([
+  { id: "copy-def-destino", name: "Destino De Def", slug: "copia-def-destino" },
+]);
+const copyDefaultOk = await copyLayoutToRestaurant({
+  sourceRestaurantId: COPY_DEF_AL_TERIOR,
+  targetRestaurantId: "copy-def-destino",
+  replace: false,
+});
+check("copia de un origen con ladefault al final", copyDefaultOk.ok, copyDefaultOk.ok ? "" : copyDefaultOk.error);
+
+const defLayouts = await db.query.tableLayouts.findMany({
+  where: (l, { eq }) => eq(l.restaurantId, "copy-def-destino"),
+});
+const defDefaults = defLayouts.filter((l) => l.isDefault);
+check(
+  "la zona por defecto se copia aunque no sea la primera",
+  defDefaults.length === 1 && defDefaults[0].name === "Comedor",
+  defLayouts.map((l) => `${l.name}:${l.isDefault}`).join(" | "),
+);
+
+// --- rechazos ---
+
+const sameOnBoth = await copyLayoutToRestaurant({
+  sourceRestaurantId: COPY_FROM,
+  targetRestaurantId: COPY_FROM,
+  replace: false,
+});
+check(
+  "copiar a sí mismo se rechaza",
+  !sameOnBoth.ok && sameOnBoth.error.includes("distinto"),
+);
+
+const missingTarget = await copyLayoutToRestaurant({
+  sourceRestaurantId: COPY_FROM,
+  targetRestaurantId: "no-existe",
+  replace: false,
+});
+check(
+  "destino inexistente se rechaza",
+  !missingTarget.ok && missingTarget.error.includes("destino no existe"),
+);
+
+const toFullNoReplace = await copyLayoutToRestaurant({
+  sourceRestaurantId: COPY_FROM,
+  targetRestaurantId: COPY_TO_LLENO,
+  replace: false,
+});
+check(
+  "destino con estructura y sin `replace` se rechaza",
+  !toFullNoReplace.ok && toFullNoReplace.error.includes("ya tiene"),
+);
+check(
+  "el mensaje dice cuántas zonas hay",
+  !toFullNoReplace.ok && toFullNoReplace.error.includes("1 zona(s)"),
+);
+const fullIntact = await getStructureCounts(COPY_TO_LLENO);
+check(
+  "y el destino intacto tras el rechazo",
+  fullIntact.zones === 1 && fullIntact.elements === 1,
+  `zonas=${fullIntact.zones} elementos=${fullIntact.elements}`,
+);
+
+const toOccupied = await copyLayoutToRestaurant({
+  sourceRestaurantId: COPY_FROM,
+  targetRestaurantId: COPY_TO_OCUPADA,
+  replace: true,
+});
+check(
+  "destino con mesas ocupadas se rechaza aunque venga replace",
+  !toOccupied.ok && toOccupied.error.includes("sentados"),
+  toOccupied.ok ? "lo aceptó" : toOccupied.error,
+);
+const occupiedIntact = await db.query.tables.findMany({
+  where: (t, { eq }) => eq(t.restaurantId, COPY_TO_OCUPADA),
+});
+check(
+  "y sus mesas ocupadas siguen ahí",
+  occupiedIntact.length === 1 && occupiedIntact[0].currentEntryId === "entry-destino",
+);
+
+// --- copia a un destino vacío ---
+
+const copied = await copyLayoutToRestaurant({
+  sourceRestaurantId: COPY_FROM,
+  targetRestaurantId: COPY_TO_VACIA,
+  replace: false,
+});
+
+check("copia a destino vacío", copied.ok, copied.ok ? "" : copied.error);
+if (copied.ok) {
+  check("  copia 2 zonas", copied.zones === 2, `zones=${copied.zones}`);
+  check("  copia 3 elementos", copied.elements === 3, `elements=${copied.elements}`);
+  check("  marca que no sustituyó", copied.replaced === false);
+  check("  dice el nombre del destino", copied.targetName === "Destino Vacio");
+}
+
+const destLayouts = await db.query.tableLayouts.findMany({
+  where: (l, { eq }) => eq(l.restaurantId, COPY_TO_VACIA),
+});
+check(
+  "las zonas del destino heredan nombre y tamaño del origen",
+  destLayouts.length === 2 &&
+    destLayouts.some((l) => l.name === "Comedor" && l.width === 1200 && l.height === 800) &&
+    destLayouts.some((l) => l.name === "Terraza" && l.width === 800 && l.height === 600),
+  destLayouts.map((l) => `${l.name} ${l.width}x${l.height}`).join(" | "),
+);
+check(
+  "la zona por defecto se copia",
+  destLayouts.filter((l) => l.isDefault).length === 1,
+);
+
+const destElements = await db.query.tables.findMany({
+  where: (t, { eq }) => eq(t.restaurantId, COPY_TO_VACIA),
+});
+check("los 3 elementos están en el destino", destElements.length === 3, `n=${destElements.length}`);
+
+const sourceElementIds = (
+  await db.query.tables.findMany({ where: (t, { eq }) => eq(t.restaurantId, COPY_FROM) })
+).map((t) => t.id);
+const destElementIds = destElements.map((t) => t.id);
+check(
+  "CRÍTICO: los ids son nuevos, ninguno se repite",
+  destElementIds.every((id) => !sourceElementIds.includes(id)),
+);
+check(
+  "CRÍTICO: las mesas del destino nacen LIBRES",
+  destElements.every((t) => t.status === "libre" && t.currentEntryId === null),
+  destElements.map((t) => `${t.label}:${t.status}`).join(","),
+);
+check(
+  "la geometría y los puestos se copian tal cual",
+  destElements.some((t) => t.label === "Mesa 1" && t.x === 10 && t.y === 20 && t.capacity === 4) &&
+    destElements.some((t) => t.label === "Caja 1" && t.width === 60 && t.height === 40 && t.capacity === null),
+);
+
+// --- copia con reemplazo ---
+
+const replaced = await copyLayoutToRestaurant({
+  sourceRestaurantId: COPY_FROM,
+  targetRestaurantId: COPY_TO_LLENO,
+  replace: true,
+});
+check("copia con reemplazo", replaced.ok, replaced.ok ? "" : replaced.error);
+if (replaced.ok) {
+  check("  avisa de que sustituyó", replaced.replaced === true);
+}
+
+const afterReplace = await db.query.tableLayouts.findMany({
+  where: (l, { eq }) => eq(l.restaurantId, COPY_TO_LLENO),
+});
+const afterReplaceElements = await db.query.tables.findMany({
+  where: (t, { eq }) => eq(t.restaurantId, COPY_TO_LLENO),
+});
+check(
+  "sustituye TODO lo del destino, no añade encima",
+  afterReplace.length === 2 && afterReplaceElements.length === 3,
+  `zonas=${afterReplace.length} elementos=${afterReplaceElements.length}`,
+);
+check(
+  "la mesa Vieja desapareció",
+  !afterReplaceElements.some((t) => t.label === "Vieja"),
+);
+check(
+  "los nombres del origen se reutilizan tal cual, porque el destino se vació antes",
+  afterReplace.some((l) => l.name === "Terraza") &&
+    afterReplace.some((l) => l.name === "Comedor"),
+  afterReplace.map((l) => l.name).join(" | "),
+);
+check(
+  "sigue habiendo una sola zona por defecto",
+  afterReplace.filter((l) => l.isDefault).length === 1,
+);
+
+// --- modo zona: encajar en una zona existente ---
+
+const zoneTarget = "lay-encaje";
+await db.insert(tableLayouts).values([
+  { id: zoneTarget, restaurantId: COPY_TO_VACIA, name: "Pasillo", width: 300, height: 200, version: 1 },
+]);
+
+const zoneCopy = await copyZoneIntoLayout({
+  sourceRestaurantId: COPY_FROM,
+  sourceLayoutId: ORIG_A,
+  targetLayoutId: zoneTarget,
+});
+check("copia una zona a otra existente", zoneCopy.ok, zoneCopy.ok ? "" : zoneCopy.error);
+
+const fitted = await db.query.tables.findMany({
+  where: (t, { eq }) => eq(t.layoutId, zoneTarget),
+});
+check("  copia sus 2 elementos", fitted.length === 2, `n=${fitted.length}`);
+
+const fittedBoxes = fitted.map((t) => ({ x: t.x, y: t.y, w: t.width, h: t.height }));
+check(
+  "  TODO cabe dentro de la zona de destino (300x200)",
+  fittedBoxes.every((b) => b.x >= 0 && b.y >= 0 && b.x + b.w <= 300 && b.y + b.h <= 200),
+  JSON.stringify(fittedBoxes),
+);
+const originBoxes = (await db.query.tables.findMany({ where: (t, { eq }) => eq(t.layoutId, ORIG_A) }))
+  .map((t) => ({ x: t.x, y: t.y, w: t.width, h: t.height }));
+const sameRatio =
+  originBoxes.length === fittedBoxes.length &&
+  originBoxes.every((o, i) => {
+    const f = fittedBoxes[i];
+    return Math.abs(o.w / o.h - f.w / f.h) < 0.15;
+  });
+check("  y conserva la proporción (no deforma las mesas)", sameRatio);
+check(
+  "  conserva el orden de posiciones relativas",
+  fitted[0].x <= fitted[1].x,
+  `${fitted[0].label}@${fitted[0].x} ${fitted[1].label}@${fitted[1].x}`,
+);
+check(
+  "  la zona de destino conserva su nombre y su tamaño",
+  (await db.query.tableLayouts.findFirst({ where: (l, { eq }) => eq(l.id, zoneTarget) }))?.width === 300,
+);
+check(
+  "  y su versión sube",
+  (await db.query.tableLayouts.findFirst({ where: (l, { eq }) => eq(l.id, zoneTarget) }))?.version === 2,
+);
+
+const zoneBusy = await copyZoneIntoLayout({
+  sourceRestaurantId: COPY_FROM,
+  sourceLayoutId: ORIG_A,
+  targetLayoutId: OCUP_LAYOUT,
+});
+check(
+  "copiar a una zona ocupada se rechaza",
+  !zoneBusy.ok && zoneBusy.error.includes("sentados"),
+  zoneBusy.ok ? "lo aceptó" : zoneBusy.error,
 );
 
 // ---------------------------------------------------------------------------

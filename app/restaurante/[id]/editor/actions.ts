@@ -28,9 +28,20 @@ import { revalidatePath } from "next/cache";
 
 import { applyLayoutStructure } from "@/lib/layout/save";
 import type { SaveResult } from "@/lib/layout/save";
-import { saveLayoutInputSchema } from "@/lib/layout/validation";
+import {
+  copyLayoutInputSchema,
+  copyZoneInputSchema,
+  saveLayoutInputSchema,
+} from "@/lib/layout/validation";
+import {
+  copyLayoutToRestaurant,
+  copyZoneIntoLayout,
+  getRestaurantsWithoutLayout,
+  type CopyLayoutResult,
+} from "@/lib/layout/copy";
 
 export type { SaveResult };
+export type { CopyLayoutResult };
 
 export async function saveLayoutStructure(raw: unknown): Promise<SaveResult> {
   const parsed = saveLayoutInputSchema.safeParse(raw);
@@ -53,6 +64,74 @@ export async function saveLayoutStructure(raw: unknown): Promise<SaveResult> {
 
 /** Resultado simple para acciones que no devuelven datos. */
 export type SimpleResult = { ok: true } | { ok: false; error: string };
+
+// ---------------------------------------------------------------------------
+// Copia de estructura a otro restaurante (paso 3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Copia TODAS las zonas de un restaurante a otro.
+ *
+ * `replace` no es un detalle: sin él, la acción solo deja copiar a un destino
+ * que esté vacío. Es la diferencia entre "se me borró el local" y "hice clic
+ * sin querer".
+ */
+export async function copyStructureToRestaurant(
+  raw: unknown,
+): Promise<CopyLayoutResult> {
+  const parsed = copyLayoutInputSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: "Los datos de la copia no son válidos." };
+  }
+
+  assertCanEditRestaurant(parsed.data.sourceRestaurantId);
+  assertCanEditRestaurant(parsed.data.targetRestaurantId);
+
+  const result = await copyLayoutToRestaurant(parsed.data);
+
+  if (result.ok) {
+    // Los dos lados cambian: el editor de origen y el del destino.
+    revalidatePath(`/restaurante/${parsed.data.sourceRestaurantId}/editor`);
+    revalidatePath(`/restaurante/${parsed.data.targetRestaurantId}/editor`);
+  }
+
+  return result;
+}
+
+/** Copia una zona a una zona que ya existe, ajustándola a su tamaño. */
+export async function copyZoneIntoAnother(
+  raw: unknown,
+): Promise<CopyLayoutResult> {
+  const parsed = copyZoneInputSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: "Los datos de la copia no son válidos." };
+  }
+
+  assertCanEditRestaurant(parsed.data.sourceRestaurantId);
+
+  const result = await copyZoneIntoLayout(parsed.data);
+  if (result.ok) {
+    revalidatePath(`/restaurante/${parsed.data.sourceRestaurantId}/editor`);
+  }
+  return result;
+}
+
+export type RestaurantOption = {
+  id: string;
+  name: string;
+  zones: number;
+  elements: number;
+  /** Mesas con clientes: avisa de que la sustitución se va a rechazar. */
+  ocupadas: number;
+};
+
+/** Restaurantes a los que ofrecer la copia, con lo que tienen dentro. */
+export async function listCopyTargets(
+  sourceRestaurantId: string,
+): Promise<RestaurantOption[]> {
+  assertCanEditRestaurant(sourceRestaurantId);
+  return getRestaurantsWithoutLayout(sourceRestaurantId);
+}
 
 // TODO (Ambos): `await auth.api.getSession({ headers: await headers() })` y
 // comprobar el rol contra `restaurants.ownerId`. Hoy es un placeholder

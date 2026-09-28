@@ -244,4 +244,72 @@ y el drop se sientan bien. Eso hay que probarlo a mano.
   placeholder deliberado. Ojo a que ocultar el formulario no es una barrera de
   seguridad; la comprobación va en la action.
 - Los tipos de `element_types` son de solo lectura en el editor.
-- Sin deshacer (Ctrl+Z) ni copiar/pegar entre zonas: son los pasos 3 y 4.
+- Sin deshacer (Ctrl+Z): todavía no existe.
+
+## 9. Copiar estructura entre restaurantes (paso 3)
+
+El botón **«Copiar estructura…»** de la barra del editor lleva *todas* las zonas
+de un restaurante a otro que tú elijas, con ids nuevos.
+
+Lo que hace y lo que se niega a hacer:
+
+- Copia zonas y elementos, y nada más. La lista de espera **no** se copia ni se
+  toca: las mesas del destino nacen `libre` y sin `currentEntryId`, aunque en el
+  origen estuvieran ocupadas.
+- Si el destino ya tiene zonas, **no copia**: dice cuántas hay y para. La
+  sustitución solo ocurre si el usuario lo confirma explícitamente, y entonces
+  borra todo lo del destino antes de escribir.
+- Si el destino tiene mesas con clientes sentados, la sustitución se rechaza
+  aunque venga confirmada. Vaciar el local con gente dentro rompería la lista de
+  espera de ese local.
+- Borra y escribe dentro de una transacción: o se copia entero, o no se toca
+  nada. No queda un destino a medias si falla a mitad.
+
+### Archivos
+
+| Fichero | Para qué |
+| --- | --- |
+| `lib/layout/copy.ts` | La copia. Sin dependencias de Next: se puede probar sola. |
+| `components/editor/copy-layout-dialog.tsx` | El diálogo de elegir destino y confirmar. |
+| `lib/layout/geometry.ts` | Rectángulo envolvente y normalización, para encajar una zona en otra de otro tamaño. |
+
+### Decisiones que conviene no deshacer sin pensarlo
+
+- **`lib/layout/copy.ts` no importa nada de Next.** Las server actions son
+  capa fina; la lógica va aquí para poder testearla. Es el mismo patrón que
+  `lib/layout/save.ts`.
+- **El destino se vacía antes de insertar, no se renombra nada.** Por eso los
+  nombres de zona del origen se pueden reutilizar tal cual: no hay nada con lo
+  que choquen contra el índice único de `(restaurante, nombre)`. Un deduplicador
+  de nombres aquí sería código que no puede dispararse.
+- **La zona por defecto se busca, no se supone.** Un `select` no garantiza
+  orden, así que "la por defecto es la primera fila" funciona por casualidad y
+  falla en cuanto el orden cambia. Si el origen no marcara ninguna, se promueve
+  la primera para que el destino siempre tenga una.
+- **`replace` es obligatorio en el tipo, no opcional.** Que la action acepte
+  copiar sin preguntar significaría que un `undefined` —un forgot de un
+  parámetro, un `?? false` mal puesto— se lee como "sustituye todo". Con el
+  boolean obligatorio, el que tiene que decidir es el código que llama, y la
+  action no compila hasta que sepas qué pasa.
+- **El botón se deshabilita si hay cambios sin guardar.** Copiar el estado
+  guardado cuando en pantalla hay otra cosa es una forma sutil de perder trabajo.
+
+### Verificación
+
+```bash
+npm run verify:editor
+```
+
+79 comprobaciones. Las de este paso cubren: no copiar a sí mismo, destino
+inexistente, destino con estructura sin `replace` (y que queda intacto),
+destino ocupado rechazado, ids nuevos, mesas que nacen libres, sustitución
+completa, que la zona por defecto sobreviva aunque no sea la primera, y el
+encaje de una zona copiada dentro de otra de tamaño distinto.
+
+### Pendiente de este paso
+
+- Better Auth: `assertCanEditRestaurant` sigue siendo un placeholder, también
+  en la copia. Se llama para origen y destino.
+- El diálogo se cierra solo si la copia va bien. Si falla, se queda abierto con
+  el mensaje, para poder cambiar el destino sin recargar.
+
