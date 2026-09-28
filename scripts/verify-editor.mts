@@ -16,7 +16,7 @@
 // Importante: NO se ejecuta `drizzle-kit push` aquí a propósito, porque leería
 // el TURSO_DATABASE_URL del entorno y podría vaciar una base de verdad.
 
-import { readFileSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { config } from "dotenv";
@@ -28,7 +28,7 @@ const DB_FILE = resolve(process.cwd(), ".verify-editor.db");
 rmSync(DB_FILE, { force: true });
 process.env.TURSO_DATABASE_URL = `file:${DB_FILE}`;
 
-const { createClient } = await import("@libsql/client");
+const { applyAllMigrations } = await import("./migrations.mts");
 const { db } = await import("@/lib/db");
 const { elementTypes, restaurants, tableLayouts, tables } = await import(
   "@/lib/db/schema"
@@ -64,14 +64,8 @@ function section(title: string): void {
 
 section("Esquema");
 
-const migration = readFileSync(
-  resolve(process.cwd(), "drizzle/0000_loose_post.sql"),
-  "utf8",
-);
-const bootstrap = createClient({ url: `file:${DB_FILE}` });
-await bootstrap.executeMultiple(migration);
-await bootstrap.close();
-check("la migración del repo se aplica", true);
+const applied = await applyAllMigrations(`file:${DB_FILE}`);
+check(`las migraciones del repo se aplican (${applied.length})`, applied.length > 0);
 
 // ---------------------------------------------------------------------------
 // Datos mínimos

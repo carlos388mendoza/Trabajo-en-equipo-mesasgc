@@ -17,7 +17,7 @@
 // del repo. NO ejecuta `drizzle-kit push`, por lo mismo que `verify-editor`:
 // leería el TURSO_DATABASE_URL del entorno y podría vaciar una base de verdad.
 
-import { readFileSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { resolve } from "node:path";
@@ -30,7 +30,7 @@ const DB_FILE = resolve(process.cwd(), ".verify-realtime.db");
 rmSync(DB_FILE, { force: true });
 process.env.TURSO_DATABASE_URL = `file:${DB_FILE}`;
 
-const { createClient } = await import("@libsql/client");
+const { applyAllMigrations } = await import("./migrations.mts");
 const { eq } = await import("drizzle-orm");
 const { io: ioClient } = await import("socket.io-client");
 const { db } = await import("@/lib/db");
@@ -64,11 +64,8 @@ function section(title: string): void {
 
 section("Esquema y datos de prueba");
 
-const migration = readFileSync(resolve(process.cwd(), "drizzle/0000_loose_post.sql"), "utf8");
-const bootstrap = createClient({ url: `file:${DB_FILE}` });
-await bootstrap.executeMultiple(migration);
-await bootstrap.close();
-check("la migración del repo se aplica", true);
+const applied = await applyAllMigrations(`file:${DB_FILE}`);
+check(`las migraciones del repo se aplican (${applied.length})`, applied.length > 0);
 
 const REST = "rest-1";
 const REST_2 = "rest-2";
