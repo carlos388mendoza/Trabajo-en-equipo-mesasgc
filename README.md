@@ -218,8 +218,9 @@ chunk de cliente de 330 KB que solo se descarga al abrir el editor.
 - **Las formas salen de la `key` del tipo, no de una columna.** Una mesa con
   sillas siempre es redonda aunque le cambien el color, y cambiar la forma de un
   tipo no necesita migrar la base de datos.
-- **`rotation` se queda a 0.** El `Transformer` va con `rotateEnabled: false`
-  porque los tipos no traen ángulo; la columna está para el paso 4.
+- **Un elemento se gira con los botones de su panel, no arrastrando.** El
+  `Transformer` sigue con `rotateEnabled: false`: en una tablet, girar con el
+  dedo es impreciso. Ver la sección 11.
 
 ### Verificación
 
@@ -244,7 +245,6 @@ y el drop se sientan bien. Eso hay que probarlo a mano.
   placeholder deliberado. Ojo a que ocultar el formulario no es una barrera de
   seguridad; la comprobación va en la action.
 - Los tipos de `element_types` son de solo lectura en el editor.
-- Sin deshacer (Ctrl+Z): todavía no existe.
 
 ## 9. Copiar estructura entre restaurantes (paso 3)
 
@@ -415,3 +415,71 @@ npm run demo:host -- liberar tbl_c_1 wl_1         # Mesa 1 vuelve a libre
   guardan a la vez, gana la última. El editor avisa, pero no lo impide.
 - En Windows, `@libsql/client` necesita el *Visual C++ Redistributable*
   (`vcruntime140.dll`). Sin él, ni `server.ts` ni los `verify:*` arrancan.
+
+## 11. Aspecto del editor (tablet)
+
+El editor está pensado para usarse con el dedo en una tablet:
+- Botones de al menos 44 px, con ícono y un texto corto debajo.
+- Zoom pellizcando con dos dedos.
+- Tiradores grandes para redimensionar.
+- Tocar un elemento de la paleta lo añade en el centro de lo que se ve.
+
+### Qué se ve
+
+- **Cada tipo con su dibujo:**
+  - Mesa redonda con una silla por puesto (hasta 8).
+  - Mesa con butaca en forma de U.
+  - Área de juegos con rayas.
+  - Baño y caja con su ícono.
+- **El nombre siempre visible**, en una etiqueta blanca que no gira con la mesa.
+- **Colores por estado:** libre en verde, ocupada en rojo, reservada en gris,
+  con una leyenda fija en una esquina.
+- **Mesas ocupadas:** el nombre del cliente y los minutos que lleva sentado. El
+  contador avanza solo, con un único reloj para todo el mapa.
+- **Un pulso corto** cuando una mesa cambia por un evento en vivo.
+- **Barra de herramientas:** Guardar, Deshacer (también con Ctrl+Z), Girar el
+  plano ↺ ↻, Copiar plano, Alejar, Acercar y Ajustar. Al lado, el indicador
+  «En vivo».
+
+### Íconos
+
+Son íconos de línea de [lucide](https://lucide.dev), todos con el mismo grosor.
+Los botones y la paleta usan `lucide-react`. El lienzo de Konva usa el paquete
+gemelo `lucide`, que da el mismo dibujo como datos: se convierte a SVG y se pinta
+como imagen (`components/editor/canvas-icon.tsx`). El ícono de cada tipo sale de
+su `key` (`components/editor/icons.ts`), igual que la forma. La columna
+`element_types.icon` ya no se muestra; el seed guarda ahí el nombre del ícono.
+
+### Decisiones que conviene no deshacer sin pensarlo
+
+- **`lucide` y `lucide-react` van fijados a la MISMA versión exacta** (sin
+  `^`). Si se separan, un ícono puede verse distinto en la paleta y en el mapa.
+- **El elemento se dibuja desde su centro** (`offset` = mitad del tamaño) para
+  girar sobre sí mismo. En la base de datos `x`/`y` siguen siendo la esquina
+  superior izquierda sin girar; la conversión está en `element-node.tsx` y en
+  el `Transformer`.
+- **Todo el dibujo va con `listening={false}` y hay un rectángulo invisible
+  como zona de toque.** Así Konva no calcula el toque de cada silla. Sin ese
+  rectángulo el elemento no se puede seleccionar ni arrastrar.
+- **Deshacer nunca deshace la ocupación.** Es lo que pasa en el local ahora, no
+  una edición del usuario: al restaurar una foto se conserva la ocupación que
+  hay en pantalla.
+- **El nombre del cliente en vivo se pide aparte.** El evento `table:assigned`
+  solo trae el id del cliente. El editor llama a `getTableOccupantInfo`, una
+  action de solo lectura, en vez de cambiar el evento.
+- **Las sombras solo van en el cuerpo del elemento.** En Konva son caras, y
+  con 40 mesas se nota.
+
+### Pendiente de este paso
+
+- **El giro del plano entero no se guarda.** `table_layouts` no tiene ningún
+  campo para ello, así que solo gira la vista de esa pantalla. Guardarlo
+  requiere añadir una columna, por ejemplo `table_layouts.rotation`, y hay que
+  coordinarlo porque toca `lib/db/schema.ts`.
+- **Barra, puerta y pared** no existen todavía como tipos. Hacen falta filas
+  nuevas en `element_types`, sus claves en `lib/db/enums.ts` y el seed. Van en
+  otra rama.
+- **Nada pone una mesa en "reservada" todavía.** Se pinta en gris y está en la
+  leyenda, pero ninguna pantalla asigna ese estado.
+- El comentario de `element_types.icon` en `lib/db/schema.ts` todavía dice
+  «emoji». No se tocó porque es el archivo compartido del esquema.
