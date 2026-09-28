@@ -33,3 +33,6 @@ local.db-shm
 
 # logs de `next dev` en segundo plano
 .dev-*.log
+
+# configuración local de Claude Code (levantar la app desde el panel)
+.claude/launch.json
