@@ -26,6 +26,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { emitToRestaurant } from "@/lib/realtime/registry";
 import { applyLayoutStructure } from "@/lib/layout/save";
 import type { SaveResult } from "@/lib/layout/save";
 import {
@@ -57,6 +58,11 @@ export async function saveLayoutStructure(raw: unknown): Promise<SaveResult> {
 
   if (result.ok) {
     revalidatePath(`/restaurante/${input.restaurantId}/editor`);
+    // Los demás dispositivos con esta zona abierta sabrán que lo suyo es viejo.
+    emitToRestaurant(input.restaurantId, "layout:updated", {
+      layoutId: input.layoutId,
+      version: result.version,
+    });
   }
 
   return result;
@@ -93,6 +99,9 @@ export async function copyStructureToRestaurant(
     // Los dos lados cambian: el editor de origen y el del destino.
     revalidatePath(`/restaurante/${parsed.data.sourceRestaurantId}/editor`);
     revalidatePath(`/restaurante/${parsed.data.targetRestaurantId}/editor`);
+    // Solo cambia el destino. Quien copia está en la room del origen, así que
+    // no se avisa a sí mismo.
+    emitToRestaurant(parsed.data.targetRestaurantId, "structure:changed");
   }
 
   return result;
