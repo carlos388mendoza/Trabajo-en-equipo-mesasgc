@@ -14,6 +14,8 @@ const config = [
   {
     ignores: [
       ".next/**",
+      // Salida de la app que levanta `npm run verify:auth`.
+      ".next-verify/**",
       "out/**",
       "build/**",
       "node_modules/**",

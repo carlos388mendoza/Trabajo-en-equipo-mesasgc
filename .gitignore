@@ -3,6 +3,8 @@
 
 # next.js
 /.next/
+# salida de la app que levanta `npm run verify:auth`
+/.next-verify/
 /out/
 
 # production
@@ -30,6 +32,7 @@ local.db-shm
 # bases de datos temporales de `npm run verify:editor` y `verify:realtime`
 .verify-editor.db*
 .verify-realtime.db*
+.verify-auth.db*
 
 # logs de `next dev` en segundo plano
 .dev-*.log

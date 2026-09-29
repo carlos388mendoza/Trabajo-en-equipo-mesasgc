@@ -17,7 +17,7 @@
 // del repo. NO ejecuta `drizzle-kit push`, por lo mismo que `verify-editor`:
 // leería el TURSO_DATABASE_URL del entorno y podría vaciar una base de verdad.
 
-import { readFileSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { resolve } from "node:path";
@@ -29,8 +29,11 @@ config({ path: resolve(process.cwd(), ".env.local"), quiet: true });
 const DB_FILE = resolve(process.cwd(), ".verify-realtime.db");
 rmSync(DB_FILE, { force: true });
 process.env.TURSO_DATABASE_URL = `file:${DB_FILE}`;
+// Secreto solo de esta prueba: el handshake del socket firma y lee cookies.
+process.env.BETTER_AUTH_SECRET = "verify-realtime-secret-solo-para-esta-prueba";
+process.env.BETTER_AUTH_URL = "http://localhost:3000";
 
-const { createClient } = await import("@libsql/client");
+const { applyAllMigrations } = await import("./migrations.mts");
 const { eq } = await import("drizzle-orm");
 const { io: ioClient } = await import("socket.io-client");
 const { db } = await import("@/lib/db");
@@ -64,11 +67,8 @@ function section(title: string): void {
 
 section("Esquema y datos de prueba");
 
-const migration = readFileSync(resolve(process.cwd(), "drizzle/0000_loose_post.sql"), "utf8");
-const bootstrap = createClient({ url: `file:${DB_FILE}` });
-await bootstrap.executeMultiple(migration);
-await bootstrap.close();
-check("la migración del repo se aplica", true);
+const applied = await applyAllMigrations(`file:${DB_FILE}`);
+check(`las migraciones del repo se aplican (${applied.length})`, applied.length > 0);
 
 const REST = "rest-1";
 const REST_2 = "rest-2";
@@ -311,12 +311,46 @@ const url = `http://localhost:${(httpServer.address() as AddressInfo).port}`;
 type Client = ReturnType<typeof ioClient>;
 type AnyAck = { ok: boolean; error?: string };
 
-function connect(): Promise<Client> {
+/** Conecta con la cookie de sesión de `cookie` (o sin ella). */
+function connect(cookie?: string): Promise<Client> {
   return new Promise((res, rej) => {
-    const c = ioClient(url, { transports: ["websocket"], reconnection: false });
+    const c = ioClient(url, {
+      transports: ["websocket"],
+      reconnection: false,
+      extraHeaders: cookie ? { cookie } : {},
+    });
     c.once("connect", () => res(c));
     c.once("connect_error", rej);
   });
+}
+
+// El handshake exige sesión de Better Auth: tres usuarios de prueba.
+//  - hostA: admin (entra en cualquier restaurante).
+//  - hostB: rol restaurante en REST.
+//  - otro:  rol restaurante en REST_2.
+const { createUserWithPassword, setUserActive } = await import("@/lib/auth/users");
+const { getAuth } = await import("@/lib/auth/auth");
+async function sessionCookie(email: string, roles: ("admin" | "restaurante")[], restaurantIds: string[]) {
+  await createUserWithPassword({ name: email, email, password: "12345abc", roles, restaurantIds });
+  const res = await getAuth().api.signInEmail({
+    body: { email, password: "12345abc" },
+    returnHeaders: true,
+  });
+  return res.headers.get("set-cookie")?.split(";")[0] ?? "";
+}
+const cookieA = await sessionCookie("admin@verify.test", ["admin"], []);
+const cookieB = await sessionCookie("rest1@verify.test", ["restaurante"], [REST]);
+const cookieOtro = await sessionCookie("rest2@verify.test", ["restaurante"], [REST_2]);
+
+{
+  const rejected = await connect().then(
+    (c) => {
+      c.close();
+      return false;
+    },
+    () => true,
+  );
+  check("sin sesión, el socket no conecta", rejected);
 }
 async function ask(c: Client, event: string, payload: unknown): Promise<AnyAck> {
   return c.timeout(3000).emitWithAck(event, payload);
@@ -329,10 +363,16 @@ function counter(c: Client, event: string) {
 }
 const settle = () => new Promise((r) => setTimeout(r, 300));
 
-const hostA = await connect();
-const hostB = await connect();
-const otro = await connect();
+const hostA = await connect(cookieA);
+const hostB = await connect(cookieB);
+const otro = await connect(cookieOtro);
 check("tres clientes conectados por WebSocket", hostA.connected && hostB.connected && otro.connected);
+
+{
+  // Un host no entra en la room de otro restaurante.
+  const r = await ask(hostB, "restaurant:join", { restaurantId: REST_2 });
+  check("un host de REST no entra en la room de REST_2", !r.ok && /acceso/.test(r.error ?? ""), r.error);
+}
 
 {
   const r = await ask(hostA, "table:assign", { tableId: "m-socket", entryId: "socket-a" });
@@ -424,6 +464,19 @@ check(
   emitToRestaurant(REST, "layout:updated", { layoutId: "layout-1", version: 8 });
   await settle();
   check("cambiar de restaurante sale de la room anterior", layoutA.length === 0);
+}
+
+{
+  // Desactivado: su sesión se cierra y el socket ya no conecta.
+  await setUserActive((await getAuth().api.getSession({ headers: new Headers({ cookie: cookieOtro }) }))!.user.id, false);
+  const rejected = await connect(cookieOtro).then(
+    (c) => {
+      c.close();
+      return false;
+    },
+    () => true,
+  );
+  check("un usuario desactivado ya no conecta", rejected);
 }
 
 hostA.close();

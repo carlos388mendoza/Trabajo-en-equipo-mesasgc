@@ -1,3 +1,11 @@
+import { redirect } from "next/navigation";
+
+import { can } from "@/lib/auth/rbac";
+import { requirePage } from "@/lib/auth/session";
+
+// /restaurante/[id] a secas lleva al modo que el usuario puede usar ahí
+// (modo sencillo primero); si no puede ninguno, a /sin-acceso.
+
 export default async function RestaurantePage({
   params,
 }: {
@@ -6,10 +14,8 @@ export default async function RestaurantePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return (
-    <div>
-      <h1 className="text-xl font-semibold">Restaurante {id}</h1>
-      <p>Elige un modo desde el menú de arriba.</p>
-    </div>
-  );
+  const user = await requirePage(`/restaurante/${id}`);
+  if (can(user, "rapido:ver", id)) redirect(`/restaurante/${id}/rapido`);
+  if (can(user, "editor:ver", id)) redirect(`/restaurante/${id}/editor`);
+  redirect("/sin-acceso");
 }

@@ -1,7 +1,9 @@
-// TODO(auth): validar sesión Better Auth y filtrar estadísticas por permisos del usuario.
+// Permisos: solo quien tiene "analiticas:ver" (admin y analitica), que ve
+// todos los restaurantes. Sin sesión, 401; sin permiso, 403.
 import { asc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
+import { guardApi } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { restaurants, waitlistEntries } from "@/lib/db/schema";
 
@@ -10,7 +12,10 @@ export const dynamic = "force-dynamic";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const dateKey = (date: Date) => date.toISOString().slice(0, 10);
 
-export async function GET() {
+export async function GET(request: Request) {
+  const guard = await guardApi(request, "analiticas:ver");
+  if (!guard.ok) return guard.response;
+
   try {
     const [entries, restaurantRows] = await Promise.all([
       db.select().from(waitlistEntries).orderBy(asc(waitlistEntries.arrivedAt)),
