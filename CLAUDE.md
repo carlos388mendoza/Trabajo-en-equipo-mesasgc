@@ -66,7 +66,9 @@ comprobaciones ahí. Nunca le añadas `drizzle-kit push`, porque leería el
 ```
 app/restaurante/[id]/editor/page.tsx     Server Component: carga zona, catálogo y elementos
 app/restaurante/[id]/editor/actions.ts   Server actions: Zod → permisos → lib → revalidatePath
-components/editor/                       Cliente: editor-client (dynamic de Konva), canvas, nodos, paleta, diálogo de copia
+components/editor/                       Cliente: editor-client, lazy-konva-canvas (dynamic de Konva), canvas, nodos, paleta, diálogo de copia
+components/map/                          Mapa general (SVG), plano en vivo (Konva en solo lectura) y socket de la sala overview
+lib/map/                                 Contadores agregados, dibujo del mapa y lecturas del plano en vivo, sin nada de Next
 lib/db/schema.ts                         Todo el esquema Drizzle (un solo archivo a propósito)
 lib/db/enums.ts                          Única fuente de verdad de roles, tipos y estados
 lib/db/index.ts                          `db`: proxy perezoso, se conecta en el primer uso
@@ -90,7 +92,8 @@ scripts/seed.ts, verify-editor.mts       Seed y verificación
   el servidor con Zod.
 - **`db` solo se importa en el servidor**, nunca en un Client Component.
 - Konva solo se carga con el `dynamic({ ssr: false })` de
-  `components/editor/editor-client.tsx`.
+  `components/editor/lazy-konva-canvas.tsx` (lo usan el editor y el plano en
+  vivo).
 - La densidad y el tono de los comentarios siguen el código actual: en
   español, explicando el *porqué* de las decisiones que no son obvias.
 
