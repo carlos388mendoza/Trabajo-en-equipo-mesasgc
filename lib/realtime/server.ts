@@ -15,14 +15,23 @@ import { Server } from "socket.io";
 
 import { restaurantExists } from "@/lib/db/queries/layouts";
 import { assignTable, releaseTable } from "@/lib/tables/assign";
+import {
+  addWaitlistEntry,
+  getWaitlistUndoState,
+  resolveWaitlistEntry,
+  undoWaitlistAction,
+} from "@/lib/waitlist/quick-actions";
 
-import { canAssignTables, canJoinRestaurant, identifySocket } from "./auth";
+import { canAssignTables, canJoinRestaurant, canModifyWaitlist, identifySocket } from "./auth";
 import {
   type Ack,
+  addWaitlistEntrySchema,
   assignTableSchema,
   joinRestaurantSchema,
   releaseTableSchema,
+  resolveWaitlistEntrySchema,
   roomFor,
+  undoWaitlistSchema,
 } from "./events";
 import { type RealtimeServer, setRealtimeServer } from "./registry";
 
@@ -75,6 +84,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         }
         await socket.join(roomFor(restaurantId));
         socket.data.restaurantId = restaurantId;
+        socket.emit("waitlist:undo-state", getWaitlistUndoState(restaurantId));
         return { ok: true };
       });
     });
@@ -125,6 +135,76 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         const change = { table: result.table, entryId: result.entryId };
         io.to(roomFor(restaurantId)).emit("table:released", change);
         return { ok: true, ...change };
+      });
+    });
+
+    socket.on("waitlist:add", async (raw, ack) => {
+      await respond(ack, async () => {
+        const restaurantId = socket.data.restaurantId;
+        if (!restaurantId) return fail("Primero entra en un restaurante.");
+        if (!(await canModifyWaitlist({ userId: socket.data.userId }, restaurantId))) {
+          return fail("No tienes permiso para modificar la lista de espera en este restaurante.");
+        }
+        const parsed = addWaitlistEntrySchema.safeParse(raw);
+        if (!parsed.success) return fail("Revisa el nombre y la cantidad de personas.");
+
+        const result = await addWaitlistEntry(restaurantId, parsed.data);
+        if (!result.ok) return fail(result.error);
+        const undo = getWaitlistUndoState(restaurantId);
+        const change = { action: "added" as const, entry: result.entry, undo };
+        io.to(roomFor(restaurantId)).emit("waitlist:changed", change);
+        io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
+        return { ok: true, entry: result.entry, actionId: result.actionId };
+      });
+    });
+
+    socket.on("waitlist:resolve", async (raw, ack) => {
+      await respond(ack, async () => {
+        const restaurantId = socket.data.restaurantId;
+        if (!restaurantId) return fail("Primero entra en un restaurante.");
+        if (!(await canModifyWaitlist({ userId: socket.data.userId }, restaurantId))) {
+          return fail("No tienes permiso para modificar la lista de espera en este restaurante.");
+        }
+        const parsed = resolveWaitlistEntrySchema.safeParse(raw);
+        if (!parsed.success) return fail("Datos del cliente no válidos.");
+
+        const result = await resolveWaitlistEntry(
+          restaurantId,
+          parsed.data.entryId,
+          parsed.data.status,
+        );
+        if (!result.ok) return fail(result.error);
+        const undo = getWaitlistUndoState(restaurantId);
+        io.to(roomFor(restaurantId)).emit("waitlist:changed", {
+          action: "resolved",
+          entry: result.entry,
+          undo,
+        });
+        io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
+        return { ok: true, entry: result.entry, actionId: result.actionId };
+      });
+    });
+
+    socket.on("waitlist:undo", async (raw, ack) => {
+      await respond(ack, async () => {
+        const restaurantId = socket.data.restaurantId;
+        if (!restaurantId) return fail("Primero entra en un restaurante.");
+        if (!(await canModifyWaitlist({ userId: socket.data.userId }, restaurantId))) {
+          return fail("No tienes permiso para modificar la lista de espera en este restaurante.");
+        }
+        const parsed = undoWaitlistSchema.safeParse(raw);
+        if (!parsed.success) return fail("Datos para deshacer no válidos.");
+
+        const result = await undoWaitlistAction(restaurantId, parsed.data.actionId);
+        if (!result.ok) return fail(result.error);
+        const undo = getWaitlistUndoState(restaurantId);
+        io.to(roomFor(restaurantId)).emit("waitlist:changed", {
+          action: result.action,
+          entry: result.entry,
+          undo,
+        });
+        io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
+        return { ok: true, action: result.action, entry: result.entry };
       });
     });
   });

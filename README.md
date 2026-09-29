@@ -436,9 +436,15 @@ El modo rápido (`/restaurante/[id]/rapido`) lee y escribe clientes de
 una nota, y marcar al grupo siguiente como listo o ausente; en pantallas
 táctiles también acepta deslizar la tarjeta a izquierda o derecha.
 
+Estas tres acciones viajan por Socket.IO (`waitlist:add`, `waitlist:resolve` y
+`waitlist:undo`) y se notifican a las tablets conectadas a la room del mismo
+restaurante. `Deshacer` revierte la última acción del local: elimina un grupo
+que acaba de agregarse o restaura el estado anterior. El registro de deshacer
+vive en memoria y se reinicia al reiniciar el servidor.
+
 Las estadísticas (`/analiticas`) se calculan en `/api/analiticas` sobre los
-registros reales: grupos sentados durante los últimos siete días, espera desde
-`arrived_at` hasta `seated_at`, comparación con los siete días anteriores,
+registros reales: grupos sentados durante los últimos 14 días (zona
+`America/Tegucigalpa`), espera desde `arrived_at` hasta `seated_at`, comparación con los 14 días anteriores,
 resumen diario y agrupación por restaurante. Sin registros, la interfaz indica
 que todavía no hay actividad; no presenta cifras de demostración.
 
@@ -458,7 +464,11 @@ momento de sentar al grupo y permite calcular la espera real. La relación con
 Los clientes marcados como `listo` todavía no cuentan en las estadísticas:
 estas solo incluyen grupos con estado `sentado` y `seated_at`. El modo rápido
 los contará cuando la asignación de mesa con `assignTable` se integre en la
-siguiente rama.
+siguiente rama. Las estadísticas también muestran actividad de hoy, el día
+más lento, top 10 de clientes y filtros por restaurante y marca (la búsqueda
+de marca coincide con el nombre del restaurante disponible en el esquema).
+El tiempo hasta avisar se calcula desde `arrived_at` hasta `called_at` para
+clientes avisados durante el período.
 
 ## 12. Aspecto del editor (tablet)
 
