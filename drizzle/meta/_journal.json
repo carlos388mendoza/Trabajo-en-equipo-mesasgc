@@ -22,6 +22,13 @@
       "when": 1790696270231,
       "tag": "0002_brands_world_map",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790704428004,
+      "tag": "0003_layout_rotation",
+      "breakpoints": true
     }
   ]
 }

@@ -116,6 +116,12 @@ export const tableLayouts = sqliteTable(
      * y para invalidar caché. Es de la ZONA, no de cada mesa.
      */
     version: integer("version").notNull().default(1),
+    /**
+     * Giro del plano completo: 0, 90, 180 o 270 (`LAYOUT_ROTATIONS`). Se guarda
+     * con el guardado normal del editor y lo respetan el plano en vivo y la
+     * copia a otro restaurante. Migración 0003, solo aditiva.
+     */
+    rotation: integer("rotation").notNull().default(0),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
