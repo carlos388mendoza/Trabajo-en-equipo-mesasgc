@@ -29,14 +29,18 @@ import {
 import { ROLES, TABLE_STATUSES, WAITLIST_STATUSES } from "./enums";
 
 // ---------------------------------------------------------------------------
-// Restaurants
+// Marcas
+//
+// China Wok, Pizza Hut, KFC, Denny's... Cada restaurante pertenece (o no) a
+// una marca. La usan el mapa general (color del marcador, filtro) y las
+// estadísticas por marca del Miembro B.
 // ---------------------------------------------------------------------------
 
-export const restaurants = sqliteTable("restaurants", {
+export const brands = sqliteTable("brands", {
   id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  /** Identificador legible en la URL; único para no tener dos "restaurante/1". */
-  slug: text("slug").notNull().unique(),
+  name: text("name").notNull().unique(),
+  /** Color de acento en "#rrggbb". Sin `check()`: se valida con Zod. */
+  accentColor: text("accent_color").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .notNull()
     .default(sql`(unixepoch() * 1000)`),
@@ -44,6 +48,42 @@ export const restaurants = sqliteTable("restaurants", {
     .notNull()
     .default(sql`(unixepoch() * 1000)`),
 });
+
+// ---------------------------------------------------------------------------
+// Restaurants
+// ---------------------------------------------------------------------------
+
+export const restaurants = sqliteTable(
+  "restaurants",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    /** Identificador legible en la URL; único para no tener dos "restaurante/1". */
+    slug: text("slug").notNull().unique(),
+    // --- Mapa general (migración 0002, solo aditiva: todo es opcional) ---
+    /**
+     * Marca del restaurante. SET NULL al borrar la marca: el restaurante y su
+     * histórico no dependen de ella.
+     */
+    brandId: text("brand_id").references(() => brands.id, { onDelete: "set null" }),
+    /** Ciudad, texto libre ("Tegucigalpa"). Sirve para el filtro del mapa. */
+    city: text("city"),
+    /**
+     * Posición del marcador en el mapa general, de 0 a 1000 en cada eje. No
+     * son coordenadas reales: el mapa es un dibujo propio. Sin posición, el
+     * restaurante sale en la lista lateral pero no en el mapa.
+     */
+    mapX: integer("map_x"),
+    mapY: integer("map_y"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => [index("restaurants_brand_idx").on(t.brandId)],
+);
 
 // ---------------------------------------------------------------------------
 // Zonas / vistas
@@ -414,7 +454,12 @@ export const userRestaurants = sqliteTable(
 // Relaciones (para el API `db.query.*`)
 // ---------------------------------------------------------------------------
 
-export const restaurantsRelations = relations(restaurants, ({ many }) => ({
+export const brandsRelations = relations(brands, ({ many }) => ({
+  restaurants: many(restaurants),
+}));
+
+export const restaurantsRelations = relations(restaurants, ({ one, many }) => ({
+  brand: one(brands, { fields: [restaurants.brandId], references: [brands.id] }),
   layouts: many(tableLayouts),
   tables: many(tables),
   waitlistEntries: many(waitlistEntries),
