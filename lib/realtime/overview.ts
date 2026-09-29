@@ -5,9 +5,8 @@
 //
 //  - `lib/realtime/server.ts`, después de sentar o liberar una mesa;
 //  - las server actions del editor, después de guardar o copiar un plano;
-//  - (pendiente, Miembro B) los eventos `waitlist:add`, `waitlist:resolve` y
-//    `waitlist:undo` del modo rápido en vivo, porque cambian los clientes en
-//    espera. Basta con `void emitOverview(restaurantId)` después de escribir.
+//  - los eventos `waitlist:add`, `waitlist:resolve` y `waitlist:undo` del
+//    modo rápido en vivo, porque cambian los clientes en espera.
 //
 // Como `emitToRestaurant`, no hace nada si no hay servidor de tiempo real
 // (`next dev` a secas, un script), y NUNCA lanza: el cambio ya se guardó y

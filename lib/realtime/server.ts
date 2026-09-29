@@ -173,6 +173,8 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         const change = { action: "added" as const, entry: result.entry, undo };
         io.to(roomFor(restaurantId)).emit("waitlist:changed", change);
         io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
+        // Un cliente más en espera: contadores al mapa general.
+        void emitOverview(restaurantId);
         return { ok: true, entry: result.entry, actionId: result.actionId };
       });
     });
@@ -200,6 +202,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
           undo,
         });
         io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
+        void emitOverview(restaurantId);
         return { ok: true, entry: result.entry, actionId: result.actionId };
       });
     });
@@ -223,6 +226,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
           undo,
         });
         io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
+        void emitOverview(restaurantId);
         return { ok: true, action: result.action, entry: result.entry };
       });
     });
