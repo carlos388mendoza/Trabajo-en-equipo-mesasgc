@@ -127,7 +127,27 @@ check(`la app arranca en el puerto ${port}`, true);
 
 type Res = { status: number; location: string | null; text: string; setCookie: string | null };
 
+// Ninguna comprobación espera un 404: todas las rutas que se piden existen.
+// Un 404 aquí es `next dev` compilando (o recompilando) esa ruta en ese
+// momento, no la respuesta de la app. Se reintenta unas pocas veces; si una
+// ruta de verdad no existiera, seguiría dando 404 y la comprobación fallaría.
+const NOT_FOUND_RETRIES = 5;
+const NOT_FOUND_WAIT_MS = 1_000;
+
 async function http(
+  method: string,
+  path: string,
+  options: { cookie?: string; body?: unknown; headers?: Record<string, string> } = {},
+): Promise<Res> {
+  let res = await httpOnce(method, path, options);
+  for (let attempt = 1; res.status === 404 && attempt <= NOT_FOUND_RETRIES; attempt += 1) {
+    await new Promise((r) => setTimeout(r, NOT_FOUND_WAIT_MS));
+    res = await httpOnce(method, path, options);
+  }
+  return res;
+}
+
+async function httpOnce(
   method: string,
   path: string,
   { cookie, body, headers = {} }: { cookie?: string; body?: unknown; headers?: Record<string, string> } = {},
@@ -163,6 +183,46 @@ function landing(res: Res): string {
     return target.pathname;
   }
   return String(res.status);
+}
+
+// ---------------------------------------------------------------------------
+// Calentar las rutas
+//
+// `next dev` compila cada ruta la primera vez que se pide. Mientras compila
+// puede contestar 404, y eso hacía fallar al azar las primeras comprobaciones
+// de una ruta (típico: el PATCH de `/clientes/[clienteId]`). Se pide cada una
+// una vez, sin sesión, hasta que deja de dar 404. Sin sesión, las páginas
+// redirigen a /login y las API responden 401: no se escribe nada.
+// ---------------------------------------------------------------------------
+
+section("Calentar rutas");
+
+const WARM_UP: [string, string][] = [
+  ["GET", "/login"],
+  ["GET", "/inicio"],
+  ["GET", "/admin"],
+  ["GET", "/analiticas"],
+  ["GET", "/ajustes"],
+  ["GET", "/sin-acceso"],
+  ["GET", "/restaurante/rest_centro/rapido"],
+  ["GET", "/restaurante/rest_centro/editor"],
+  ["GET", "/api/analiticas"],
+  ["POST", "/api/assistant"],
+  ["GET", "/api/restaurante/rest_centro/clientes"],
+  ["PATCH", "/api/restaurante/rest_centro/clientes/wl_1"],
+];
+{
+  const deadline = Date.now() + 120_000;
+  const cold: string[] = [];
+  for (const [method, path] of WARM_UP) {
+    let res = await httpOnce(method, path, { body: method === "GET" ? undefined : {} });
+    while (res.status === 404 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, NOT_FOUND_WAIT_MS));
+      res = await httpOnce(method, path, { body: method === "GET" ? undefined : {} });
+    }
+    if (res.status === 404) cold.push(`${method} ${path}`);
+  }
+  check(`las ${WARM_UP.length} rutas responden antes de empezar`, cold.length === 0, cold.join(", "));
 }
 
 // ---------------------------------------------------------------------------
