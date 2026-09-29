@@ -454,8 +454,8 @@ los contará cuando la asignación de mesa con `assignTable` se integre en la
 siguiente rama. Las estadísticas también muestran actividad de hoy, el día
 más lento, top 10 de clientes y filtros por restaurante y marca (la búsqueda
 de marca coincide con el nombre del restaurante disponible en el esquema).
-La métrica de tiempo hasta avisar queda pendiente hasta que `called_at` llegue
-a `testing`.
+El tiempo hasta avisar se calcula desde `arrived_at` hasta `called_at` para
+clientes avisados durante el período.
 
 ## 12. Aspecto del editor (tablet)
 

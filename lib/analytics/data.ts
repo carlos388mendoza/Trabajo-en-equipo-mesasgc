@@ -1,6 +1,7 @@
 import { and, asc, eq, gte, inArray, lt, type SQL } from "drizzle-orm";
 
 import { db } from "@/lib/db";
+import { getBrandForRestaurant } from "@/lib/analytics/brand";
 import { restaurants, waitlistEntries } from "@/lib/db/schema";
 import {
   addCalendarDays,
@@ -47,6 +48,8 @@ export type AnalyticsData = {
     groups: number;
     todayGroups: number;
     averageWaitMinutes: number;
+    calledGroups: number;
+    averageCallMinutes: number;
     changePercent: number | null;
     fastestDay: DailyStat | null;
     slowestDay: DailyStat | null;
@@ -77,9 +80,9 @@ export async function getAnalytics(
     .orderBy(asc(restaurants.name));
   const scopedRestaurants = restaurantRows.filter((restaurant) => {
     if (restaurantId && restaurant.id !== restaurantId) return false;
-    // No existe una columna `brand` en el esquema actual; se puede filtrar
-    // por marca/nombre visible sin inventar una columna ni alterar el schema.
-    return !brand || restaurant.name.toLocaleLowerCase("es-HN").includes(brand.toLocaleLowerCase("es-HN"));
+    return !brand || getBrandForRestaurant(restaurant)
+      .toLocaleLowerCase("es-HN")
+      .includes(brand.toLocaleLowerCase("es-HN"));
   });
   const scopedIds = scopedRestaurants.map((restaurant) => restaurant.id);
   const scopedBySelection = Boolean(restaurantId || brand);
@@ -89,14 +92,22 @@ export async function getAnalytics(
     lt(waitlistEntries.seatedAt, end),
     ...(scopedBySelection ? [inArray(waitlistEntries.restaurantId, scopedIds)] : []),
   );
+  const calledConditions = (start: Date, end: Date): SQL | undefined => and(
+    gte(waitlistEntries.calledAt, start),
+    lt(waitlistEntries.calledAt, end),
+    ...(scopedBySelection ? [inArray(waitlistEntries.restaurantId, scopedIds)] : []),
+  );
 
-  const [currentRows, previousRows] = await Promise.all([
+  const [currentRows, previousRows, calledRows] = await Promise.all([
     db.select().from(waitlistEntries)
       .where(conditions(currentStart, currentEnd))
       .orderBy(asc(waitlistEntries.seatedAt)),
     db.select().from(waitlistEntries)
       .where(conditions(previousStart, currentStart))
       .orderBy(asc(waitlistEntries.seatedAt)),
+    db.select({ arrivedAt: waitlistEntries.arrivedAt, calledAt: waitlistEntries.calledAt })
+      .from(waitlistEntries)
+      .where(calledConditions(currentStart, currentEnd)),
   ]);
 
   const daily: DailyStat[] = Array.from({ length: DAYS }, (_, index) => {
@@ -149,9 +160,17 @@ export async function getAnalytics(
     .sort((a, b) => b.groups - a.groups || a.name.localeCompare(b.name, "es-HN"))
     .slice(0, 10);
 
-  const summary = currentRows.length
-    ? `En los últimos 14 días (hora de Honduras) se sentaron ${currentRows.length} grupos; la espera promedio fue de ${average(waits)} minutos. ${slowestDay ? `El día más lento fue ${slowestDay.day}, con ${slowestDay.minutes} minutos de espera.` : ""}${topCustomers[0] ? ` El cliente con más grupos fue ${topCustomers[0].name}, con ${topCustomers[0].groups}.` : ""}`.trim()
-    : "Todavía no hay grupos sentados en los últimos 14 días.";
+  const averageCallMinutes = average(calledRows.map((entry) => waitMinutes(entry.arrivedAt, entry.calledAt!)));
+  const summary = [
+    currentRows.length
+      ? `En los últimos 14 días (hora de Honduras) se sentaron ${currentRows.length} grupos; la espera promedio fue de ${average(waits)} minutos.`
+      : "Todavía no hay grupos sentados en los últimos 14 días.",
+    slowestDay ? `El día más lento fue ${slowestDay.day}, con ${slowestDay.minutes} minutos de espera.` : "",
+    topCustomers[0] ? `El cliente con más grupos fue ${topCustomers[0].name}, con ${topCustomers[0].groups}.` : "",
+    calledRows.length
+      ? `Se avisó a ${calledRows.length} grupos después de un promedio de ${averageCallMinutes} minutos desde su llegada.`
+      : "Todavía no hay avisos registrados en los últimos 14 días.",
+  ].filter(Boolean).join(" ");
 
   return {
     filters: { restaurantId, brand },
@@ -161,6 +180,8 @@ export async function getAnalytics(
       groups: currentRows.length,
       todayGroups: currentRows.filter((entry) => hondurasDateKey(entry.seatedAt!) === today).length,
       averageWaitMinutes: average(waits),
+      calledGroups: calledRows.length,
+      averageCallMinutes,
       changePercent,
       fastestDay,
       slowestDay,

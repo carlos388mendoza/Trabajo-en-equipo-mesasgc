@@ -112,8 +112,8 @@ export default function AnaliticasPage() {
     },
     {
       label: "Tiempo hasta avisar",
-      value: "Pendiente",
-      detail: "Se medirá cuando llegue called_at a testing",
+      value: `${analytics.totals.averageCallMinutes} min`,
+      detail: `${analytics.totals.calledGroups} clientes avisados · llegada hasta marcar listo`,
       Icon: CalendarDays,
     },
   ] : [];

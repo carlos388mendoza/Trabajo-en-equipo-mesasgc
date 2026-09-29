@@ -1,5 +1,4 @@
 // TODO(auth): validar sesión Better Auth y filtrar estadísticas por permisos del usuario.
-// TODO(metrics): agregar tiempo hasta avisar cuando `called_at` esté disponible en testing.
 import { NextResponse } from "next/server";
 
 import { getAnalytics } from "@/lib/analytics/data";
