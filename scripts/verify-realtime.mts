@@ -132,6 +132,7 @@ await db.insert(waitlistEntries).values([
   ...Array.from({ length: 10 }, (_, i) => cliente(`multitud-${i}`)),
   cliente("socket-a"),
   cliente("socket-b"),
+  cliente("quick-resolve"),
 ]);
 check("datos de partida insertados", true);
 
@@ -345,6 +346,7 @@ async function sessionCookie(email: string, roles: ("admin" | "restaurante" | "a
 const cookieA = await sessionCookie("admin@verify.test", ["admin"], []);
 const cookieB = await sessionCookie("rest1@verify.test", ["restaurante"], [REST]);
 const cookieOtro = await sessionCookie("rest2@verify.test", ["restaurante"], [REST_2]);
+const cookieAnalitica = await sessionCookie("analitica@verify.test", ["analitica"], []);
 
 {
   const rejected = await connect().then(
@@ -370,7 +372,8 @@ const settle = () => new Promise((r) => setTimeout(r, 300));
 const hostA = await connect(cookieA);
 const hostB = await connect(cookieB);
 const otro = await connect(cookieOtro);
-check("tres clientes conectados por WebSocket", hostA.connected && hostB.connected && otro.connected);
+const analitica = await connect(cookieAnalitica);
+check("cuatro clientes conectados por WebSocket", hostA.connected && hostB.connected && otro.connected && analitica.connected);
 
 {
   // Un host no entra en la room de otro restaurante.
@@ -381,6 +384,8 @@ check("tres clientes conectados por WebSocket", hostA.connected && hostB.connect
 {
   const r = await ask(hostA, "table:assign", { tableId: "m-socket", entryId: "socket-a" });
   check("asignar sin haber entrado en un restaurante se rechaza", !r.ok && /Primero/.test(r.error ?? ""));
+  const add = await ask(hostA, "waitlist:add", { customerName: "Sin room", partySize: 2 });
+  check("waitlist:add sin restaurante unido se rechaza", !add.ok && /Primero/.test(add.error ?? ""));
 }
 
 {
@@ -396,6 +401,81 @@ check(
     (await ask(hostB, "restaurant:join", { restaurantId: REST })).ok &&
     (await ask(otro, "restaurant:join", { restaurantId: REST_2 })).ok,
 );
+
+{
+  const denied = await ask(analitica, "restaurant:join", { restaurantId: REST });
+  check("analítica no puede entrar en la room operativa", !denied.ok && /acceso/.test(denied.error ?? ""));
+  const add = await ask(analitica, "waitlist:add", { customerName: "No autorizado", partySize: 2 });
+  const resolve = await ask(analitica, "waitlist:resolve", { entryId: "quick-resolve", status: "ausente" });
+  const undo = await ask(analitica, "waitlist:undo", { actionId: "analitica-undo" });
+  check("analítica sin acceso a room no modifica la lista con waitlist:*", !add.ok && !resolve.ok && !undo.ok);
+  check("las filas siguen intactas tras los eventos de analítica", (await entryRow("quick-resolve"))?.status === "esperando");
+}
+
+{
+  const changesA = counter(hostA, "waitlist:changed");
+  const changesB = counter(hostB, "waitlist:changed");
+  const changesOtro = counter(otro, "waitlist:changed");
+  const undoStatesA = counter(hostA, "waitlist:undo-state");
+
+  const invalid = await ask(hostA, "waitlist:add", {
+    customerName: "",
+    partySize: 2,
+  });
+  check("waitlist:add rechaza datos inválidos con Zod", !invalid.ok);
+
+  const added = await ask(hostA, "waitlist:add", {
+    customerName: "Grupo en vivo",
+    partySize: 3,
+    notes: "Carrito",
+  }) as AnyAck & { entry?: { id: string; status: string }; actionId?: string };
+  await settle();
+  check("waitlist:add crea un grupo esperando y devuelve actionId", added.ok && added.entry?.status === "esperando" && Boolean(added.actionId));
+  check("waitlist:add notifica ambas tablets del restaurante", changesA.length === 1 && changesB.length === 1);
+  check("waitlist:add no notifica otra room", changesOtro.length === 0);
+  check("waitlist:add publica el estado deshacible", undoStatesA.at(-1) != null);
+
+  const undoneAdd = await ask(hostB, "waitlist:undo", {
+    actionId: added.actionId,
+  }) as AnyAck & { action?: string; entry?: { id: string } };
+  await settle();
+  check("waitlist:undo elimina el cliente que se agregó", undoneAdd.ok && undoneAdd.action === "removed" && (await entryRow(added.entry!.id)) === undefined);
+  check("deshacer agregar llega a toda la room y no a otra", changesA.length === 2 && changesB.length === 2 && changesOtro.length === 0);
+
+  const resolved = await ask(hostB, "waitlist:resolve", {
+    entryId: "quick-resolve",
+    status: "listo",
+  }) as AnyAck & { entry?: { status: string }; actionId?: string };
+  await settle();
+  check("waitlist:resolve marca listo y emite cambio", resolved.ok && resolved.entry?.status === "listo" && changesA.length === 3 && changesB.length === 3);
+  check("waitlist:resolve actualiza el estado en Turso", (await entryRow("quick-resolve"))?.status === "listo");
+
+  const undoneResolve = await ask(hostA, "waitlist:undo", {
+    actionId: resolved.actionId,
+  }) as AnyAck & { action?: string; entry?: { status: string } };
+  await settle();
+  check("waitlist:undo restaura el estado anterior", undoneResolve.ok && undoneResolve.action === "restored" && undoneResolve.entry?.status === "esperando");
+  check("waitlist:undo lo notifica a todos los hosts", changesA.length === 4 && changesB.length === 4);
+  check("waitlist:undo restaura el dato en Turso", (await entryRow("quick-resolve"))?.status === "esperando");
+
+  // Revocar el permiso mientras el socket ya está en la room: cada evento
+  // debe volver a consultar RBAC, no confiar solo en el join inicial.
+  const session = await getAuth().api.getSession({ headers: new Headers({ cookie: cookieB }) });
+  // Cambiar a analítica mientras sigue conectado prueba una revocación real:
+  // conserva la sesión, pero el rol ya no tiene permiso de modificar.
+  await setUserAccess(session!.user.id, ["analitica"], []);
+  const deniedAdd = await ask(hostB, "waitlist:add", { customerName: "Revocado", partySize: 2 });
+  const deniedResolve = await ask(hostB, "waitlist:resolve", { entryId: "quick-resolve", status: "ausente" });
+  const deniedUndo = await ask(hostB, "waitlist:undo", { actionId: "stale-but-valid" });
+  check("waitlist:add exige permiso actualizado", !deniedAdd.ok && /permiso/.test(deniedAdd.error ?? ""));
+  check("waitlist:resolve exige permiso actualizado", !deniedResolve.ok && /permiso/.test(deniedResolve.error ?? ""));
+  check("waitlist:undo exige permiso actualizado", !deniedUndo.ok && /permiso/.test(deniedUndo.error ?? ""));
+  check("sin permiso no se cambia la espera", (await entryRow("quick-resolve"))?.status === "esperando");
+  await setUserAccess(session!.user.id, ["restaurante"], [REST]);
+
+  const staleUndo = await ask(hostA, "waitlist:undo", { actionId: added.actionId });
+  check("la misma acción no se puede deshacer dos veces", !staleUndo.ok);
+}
 
 {
   const r = await ask(hostA, "table:assign", { tableId: "", entryId: null });
@@ -434,7 +514,15 @@ check(
     "  el aviso dice qué mesa y qué cliente",
     aviso?.table?.tableId === "m-socket" && aviso.table.currentEntryId === winnerEntry,
     JSON.stringify(aviso),
-  );
+);
+
+{
+  const crossRestaurant = await ask(otro, "waitlist:resolve", {
+    entryId: "quick-resolve",
+    status: "ausente",
+  });
+  check("waitlist:resolve no puede modificar una fila de otro restaurante", !crossRestaurant.ok && (await entryRow("quick-resolve"))?.status === "esperando");
+}
 
   const releasedA = counter(hostA, "table:released");
   const releasedOtro = counter(otro, "table:released");
@@ -601,6 +689,7 @@ analitica.close();
 hostA.close();
 hostB.close();
 otro.close();
+analitica.close();
 await new Promise<void>((r) => io.close(() => r()));
 
 // ---------------------------------------------------------------------------

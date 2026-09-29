@@ -67,3 +67,11 @@ export async function canAssignTables(
 export async function canJoinOverview(identity: SocketIdentity): Promise<boolean> {
   return can(await loadAuthUser(identity.userId), "mapa:ver");
 }
+
+/** ¿Puede modificar la lista de espera de este restaurante? */
+export async function canModifyWaitlist(
+  identity: SocketIdentity,
+  restaurantId: string,
+): Promise<boolean> {
+  return can(await loadAuthUser(identity.userId), "rapido:modificar", restaurantId);
+}

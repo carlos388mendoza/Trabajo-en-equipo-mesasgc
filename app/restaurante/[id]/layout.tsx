@@ -3,18 +3,13 @@ import Link from "next/link";
 import { can } from "@/lib/auth/rbac";
 import { getCurrentUser } from "@/lib/auth/session";
 
-// Navegación del restaurante: solo los modos que este usuario puede usar.
-//
-// Es solo PRESENTACIÓN. Ocultar un enlace no protege nada; cada página y API
-// comprueba el permiso por su cuenta (y los layouts no se vuelven a ejecutar
-// al navegar, así que aquí no se decide el acceso).
-
+// El layout solo presenta enlaces; páginas, actions y APIs hacen la comprobación real.
 export default async function RestauranteLayout({
   children,
   params,
 }: {
-  children: React.ReactNode;
   params: Promise<{ id: string }>;
+  children: React.ReactNode;
 }) {
   const [{ id }, user] = await Promise.all([params, getCurrentUser()]);
   const links = [
@@ -22,19 +17,19 @@ export default async function RestauranteLayout({
     { href: `/restaurante/${id}/rapido`, label: "Modo sencillo", show: can(user, "rapido:ver", id) },
     { href: `/restaurante/${id}/mapa`, label: "Plano en vivo", show: can(user, "plano:ver", id) },
     { href: "/analiticas", label: "Estadísticas e IA", show: can(user, "analiticas:ver") },
-  ].filter((l) => l.show);
+  ].filter((link) => link.show);
 
   return (
     <div>
       {links.length > 0 ? (
         <nav className="mb-4 flex flex-wrap gap-2 text-sm">
-          {links.map((l) => (
+          {links.map((link) => (
             <Link
-              key={l.href}
-              href={l.href}
+              key={link.href}
+              href={link.href}
               className="rounded-full px-3 py-2 text-app-muted hover:bg-app-border/60 hover:text-app-text"
             >
-              {l.label}
+              {link.label}
             </Link>
           ))}
         </nav>
