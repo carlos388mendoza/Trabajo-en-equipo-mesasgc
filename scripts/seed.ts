@@ -292,6 +292,12 @@ const LIVE_PLAN: Record<string, { waitingMinutes: number[]; seated: number; rese
   rest_sps_dennys: { waitingMinutes: [55, 49, 44, 40], seated: 5, reserved: 2 },
 };
 
+/**
+ * Mesas que el seed deja siempre libres: son las de la demo a mano del README
+ * (`npm run demo:host -- sentar tbl_c_1 wl_1`, `carrera tbl_c_2 ...`).
+ */
+const KEEP_FREE = new Set(["tbl_c_1", "tbl_c_2"]);
+
 const DEMO_NAMES = [
   "María López", "José Martínez", "Carmen Flores", "Juan Hernández", "Rosa Mejía",
   "Carlos Reyes", "Lucía Castillo", "Pedro Zelaya", "Sofía Aguilar", "Miguel Cruz",
@@ -351,7 +357,9 @@ async function seedWorldMap() {
       .innerJoin(tableLayouts, eq(tableLayouts.id, tables.layoutId))
       .where(and(eq(tables.restaurantId, restaurantId), inArray(tables.elementTypeId, seatableIds)))
       .orderBy(asc(tableLayouts.sortOrder), asc(tables.y), asc(tables.x), asc(tables.id));
-    const free = restaurantTables.filter((t) => t.currentEntryId === null && t.status !== "reservada");
+    const free = restaurantTables.filter(
+      (t) => t.currentEntryId === null && t.status !== "reservada" && !KEEP_FREE.has(t.id),
+    );
 
     for (const entry of toSeat) {
       const table = free[0];
