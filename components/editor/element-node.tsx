@@ -16,7 +16,7 @@
 
 import { memo, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
-import { Arc, Circle, Group, Line, Rect, Text, Wedge } from "react-konva";
+import { Circle, Group, Line, Rect, Text } from "react-konva";
 import Konva from "konva";
 
 import { elementStyle, visibleSeats, visualStatus } from "@/lib/layout/element-style";
@@ -158,12 +158,14 @@ function ElementNodeBase({
           ring.radius(baseRadius);
           ring.strokeWidth(4);
           ring.opacity(0.9);
+          ring.visible(true);
           ring.to({
             radius: baseRadius * 2.2,
             strokeWidth: 1,
             opacity: 0,
             duration: 0.9,
             easing: Konva.Easings.EaseOut,
+            onFinish: () => ring.visible(false),
           });
         }, delay * 1000),
       );
@@ -331,26 +333,29 @@ function ElementNodeBase({
       // Puerta vista desde arriba: el hueco en la pared abajo, la hoja
       // abierta a la izquierda (bisagra en la esquina inferior izquierda) y
       // el arco que barre al abrirse, como en un plano de arquitectura.
+      // El arco va como polilínea y no con `Arc`/`Wedge` de Konva: esos miden
+      // el círculo entero, y el marco de selección salía cuatro veces mayor
+      // que la puerta.
       const r = Math.min(width, height);
+      const arc: number[] = [];
+      for (let i = 0; i <= 16; i += 1) {
+        const a = (Math.PI / 2) * (i / 16);
+        arc.push(Math.sin(a) * r, height - Math.cos(a) * r);
+      }
       body = (
         <>
-          <Wedge
-            x={0}
-            y={height}
-            radius={r}
-            angle={90}
-            rotation={-90}
+          <Line
+            points={[0, height, ...arc]}
+            closed
             fill={withAlpha(type.color, theme.dark ? 0.16 : 0.1)}
             listening={false}
           />
-          <Arc
-            x={0}
-            y={height}
-            innerRadius={r - 1.5}
-            outerRadius={r}
-            angle={90}
-            rotation={-90}
-            fill={type.color}
+          <Line
+            points={arc}
+            stroke={type.color}
+            strokeWidth={2}
+            dash={[6, 4]}
+            lineCap="round"
             listening={false}
             {...glow(type.color, theme, 0.6)}
           />
@@ -475,7 +480,9 @@ function ElementNodeBase({
       }}
       onDragEnd={onDragEnd}
     >
-      {/* Ondas del pulso en vivo. Invisibles salvo durante la animación. */}
+      {/* Ondas del pulso en vivo. Ocultas (`visible={false}`, no solo
+          transparentes) salvo durante la animación: si no, el Transformer
+          las mide y el marco de una barra o una pared sale cuadrado. */}
       <Circle
         ref={waveRef}
         x={width / 2}
@@ -484,6 +491,7 @@ function ElementNodeBase({
         stroke={colors.stroke}
         strokeWidth={4}
         opacity={0}
+        visible={false}
         listening={false}
       />
       <Circle
@@ -494,6 +502,7 @@ function ElementNodeBase({
         stroke={colors.stroke}
         strokeWidth={4}
         opacity={0}
+        visible={false}
         listening={false}
       />
 
