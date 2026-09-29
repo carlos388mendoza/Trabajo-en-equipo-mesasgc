@@ -14,16 +14,19 @@ import type { Server as HttpServer } from "node:http";
 import { Server } from "socket.io";
 
 import { restaurantExists } from "@/lib/db/queries/layouts";
+import { getCounters } from "@/lib/map/counters";
 import { assignTable, releaseTable } from "@/lib/tables/assign";
 
-import { canAssignTables, canJoinRestaurant, identifySocket } from "./auth";
+import { canAssignTables, canJoinOverview, canJoinRestaurant, identifySocket } from "./auth";
 import {
   type Ack,
+  OVERVIEW_ROOM,
   assignTableSchema,
   joinRestaurantSchema,
   releaseTableSchema,
   roomFor,
 } from "./events";
+import { emitOverview } from "./overview";
 import { type RealtimeServer, setRealtimeServer } from "./registry";
 
 export function attachRealtime(httpServer: HttpServer): RealtimeServer {
@@ -79,6 +82,19 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
       });
     });
 
+    // Mapa general: sala aparte, compatible con estar en un restaurante (el
+    // admin que abre el plano en vivo de uno sigue oyendo a todos). No lleva
+    // payload: no hay nada que elegir.
+    socket.on("overview:join", async (_raw, ack) => {
+      await respond(ack, async () => {
+        if (!(await canJoinOverview({ userId: socket.data.userId }))) {
+          return fail("No tienes acceso al mapa general.");
+        }
+        await socket.join(OVERVIEW_ROOM);
+        return { ok: true, counters: await getCounters() };
+      });
+    });
+
     // Asignar y liberar siguen el flujo del README: el cliente pide y espera,
     // el servidor decide, y solo si gana se avisa a toda la room. El que
     // pierde recibe el error por su ack y nadie más se entera.
@@ -103,6 +119,8 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
 
         const change = { table: result.table, entryId: result.entryId };
         io.to(roomFor(restaurantId)).emit("table:assigned", change);
+        // Contadores al mapa general, sin esperar: el ack no depende de eso.
+        void emitOverview(restaurantId);
         return { ok: true, ...change };
       });
     });
@@ -124,6 +142,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
 
         const change = { table: result.table, entryId: result.entryId };
         io.to(roomFor(restaurantId)).emit("table:released", change);
+        void emitOverview(restaurantId);
         return { ok: true, ...change };
       });
     });

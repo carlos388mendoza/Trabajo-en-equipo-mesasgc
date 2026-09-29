@@ -31,6 +31,7 @@ import { restaurantsAllowed } from "@/lib/auth/rbac";
 import { db } from "@/lib/db";
 import { getTableOccupant } from "@/lib/db/queries/layouts";
 import { tableLayouts } from "@/lib/db/schema";
+import { emitOverview } from "@/lib/realtime/overview";
 import { emitToRestaurant } from "@/lib/realtime/registry";
 import { applyLayoutStructure } from "@/lib/layout/save";
 import type { SaveResult } from "@/lib/layout/save";
@@ -69,6 +70,8 @@ export async function saveLayoutStructure(raw: unknown): Promise<SaveResult> {
       layoutId: input.layoutId,
       version: result.version,
     });
+    // Añadir o borrar mesas cambia el total del mapa general.
+    void emitOverview(input.restaurantId);
   }
 
   return result;
@@ -112,6 +115,7 @@ export async function copyStructureToRestaurant(
     // Solo cambia el destino. Quien copia está en la room del origen, así que
     // no se avisa a sí mismo.
     emitToRestaurant(parsed.data.targetRestaurantId, "structure:changed");
+    void emitOverview(parsed.data.targetRestaurantId);
   }
 
   return result;
@@ -141,6 +145,7 @@ export async function copyZoneIntoAnother(
   const result = await copyZoneIntoLayout(parsed.data);
   if (result.ok) {
     revalidatePath(`/restaurante/${parsed.data.sourceRestaurantId}/editor`);
+    if (target) void emitOverview(target.restaurantId);
   }
   return result;
 }
