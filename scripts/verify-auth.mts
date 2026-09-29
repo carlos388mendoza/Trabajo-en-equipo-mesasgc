@@ -206,6 +206,8 @@ const WARM_UP: [string, string][] = [
   ["GET", "/sin-acceso"],
   ["GET", "/restaurante/rest_centro/rapido"],
   ["GET", "/restaurante/rest_centro/editor"],
+  ["GET", "/mapa"],
+  ["GET", "/restaurante/rest_centro/mapa"],
   ["GET", "/api/analiticas"],
   ["POST", "/api/assistant"],
   ["GET", "/api/restaurante/rest_centro/clientes"],
