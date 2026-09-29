@@ -78,6 +78,7 @@ export default async function EditorPage({
         width={layout.width}
         height={layout.height}
         version={layout.version}
+        rotation={layout.rotation}
         elements={layout.elements}
         types={types}
         layouts={layouts}

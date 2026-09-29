@@ -7,6 +7,8 @@
 
 import { z } from "zod";
 
+import { LAYOUT_ROTATIONS, type LayoutRotation } from "@/lib/db/enums";
+
 /** Un id de la app es un UUID generado con crypto.randomUUID(). */
 const idSchema = z.string().min(1).max(64);
 
@@ -31,6 +33,17 @@ export const saveLayoutInputSchema = z.object({
   restaurantId: idSchema,
   width: z.number().finite().min(200).max(20_000),
   height: z.number().finite().min(200).max(20_000),
+  /**
+   * Giro del plano completo. Opcional para no romper a quien guarde sin él:
+   * si no viene, se conserva el que ya tenía la zona.
+   */
+  rotation: z
+    .number()
+    .int()
+    .refine((v): v is LayoutRotation => (LAYOUT_ROTATIONS as readonly number[]).includes(v), {
+      message: "El giro del plano tiene que ser 0, 90, 180 o 270.",
+    })
+    .optional(),
   elements: z.array(layoutElementInputSchema).max(500),
 });
 

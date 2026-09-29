@@ -172,7 +172,12 @@ export async function applyLayoutStructure(
 
     await tx
       .update(tableLayouts)
-      .set({ version: newVersion, updatedAt: new Date() })
+      .set({
+        version: newVersion,
+        // Sin `rotation` en el payload se deja la que había.
+        ...(input.rotation !== undefined ? { rotation: input.rotation } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(tableLayouts.id, input.layoutId));
   });
 

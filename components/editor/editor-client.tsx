@@ -45,7 +45,7 @@ import { CopyLayoutDialog } from "./copy-layout-dialog";
 import { KonvaCanvas } from "./lazy-konva-canvas";
 import { ICON_STROKE } from "./icons";
 import { useRestaurantSocket } from "@/components/realtime/use-restaurant-socket";
-import type { TableStatus } from "@/lib/db/enums";
+import { type LayoutRotation, type TableStatus, asLayoutRotation } from "@/lib/db/enums";
 import { nextLabel } from "@/lib/layout/element-style";
 import type { ElementTypeInfo, LayoutElement, LayoutSummary } from "@/lib/layout/types";
 // La action vive en la ruta (convención de Next para "use server"), y el
@@ -70,6 +70,8 @@ type Props = {
   width: number;
   height: number;
   version: number;
+  /** Giro guardado del plano completo (`table_layouts.rotation`). */
+  rotation: LayoutRotation;
   elements: LayoutElement[];
   types: ElementTypeInfo[];
   layouts: LayoutSummary[];
@@ -114,6 +116,7 @@ export function EditorClient({
   width,
   height,
   version,
+  rotation,
   elements: initialElements,
   types,
   layouts,
@@ -129,9 +132,12 @@ export function EditorClient({
   const [zoom, setZoom] = useState(100);
   const [feedback, setFeedback] = useState<Feedback>({ kind: "idle" });
   const [copyOpen, setCopyOpen] = useState(false);
-  // Giro de la VISTA del plano, en pasos de 90°. `table_layouts` no tiene
-  // dónde guardarlo, así que es solo de esta pantalla (ver README).
-  const [viewRotation, setViewRotation] = useState(0);
+  // Giro del plano completo, en pasos de 90°. Es un cambio más de la zona:
+  // marca "sin guardar" y se guarda con el botón Guardar
+  // (`table_layouts.rotation`). Deshacer no lo toca: es de la vista entera,
+  // no de un elemento, y se vuelve atrás con el botón contrario.
+  const [viewRotation, setViewRotation] = useState<LayoutRotation>(rotation);
+  const savedRotationRef = useRef<LayoutRotation>(rotation);
   // Versión de la zona que tiene este editor, y la última que otro
   // dispositivo anunció. Si la de fuera es mayor, lo de la pantalla es viejo.
   const [savedVersion, setSavedVersion] = useState(version);
@@ -191,6 +197,23 @@ export function EditorClient({
     setFeedback({ kind: "idle" });
   }, []);
 
+  // Deshacer necesita saber el giro actual sin recrearse en cada giro.
+  const viewRotationRef = useRef(viewRotation);
+  useEffect(() => {
+    viewRotationRef.current = viewRotation;
+  }, [viewRotation]);
+
+  /** Gira el plano completo un cuarto de vuelta. Se guarda con Guardar. */
+  const rotateLayout = useCallback(
+    (delta: number) => {
+      const next = asLayoutRotation(normalizeAngle(viewRotationRef.current + delta));
+      setViewRotation(next);
+      if (next !== savedRotationRef.current) markDirty();
+      else setDirty(structureKey(elementsRef.current) !== savedKeyRef.current);
+    },
+    [markDirty],
+  );
+
   const patchElement = useCallback(
     (id: string, patch: Partial<LayoutElement>) => {
       setElements((prev) =>
@@ -225,7 +248,10 @@ export function EditorClient({
     setSelectedId((current) =>
       current && restored.some((e) => e.id === current) ? current : null,
     );
-    setDirty(structureKey(restored) !== savedKeyRef.current);
+    setDirty(
+      structureKey(restored) !== savedKeyRef.current ||
+        viewRotationRef.current !== savedRotationRef.current,
+    );
     setFeedback({ kind: "idle" });
   }, [history]);
 
@@ -423,6 +449,7 @@ export function EditorClient({
       restaurantId,
       width,
       height,
+      rotation: viewRotation,
       elements: elements.map((e) => ({
         id: e.id,
         elementTypeId: e.elementTypeId,
@@ -442,6 +469,7 @@ export function EditorClient({
       setDirty(false);
       setSavedVersion(result.version);
       savedKeyRef.current = structureKey(elements);
+      savedRotationRef.current = viewRotation;
       setFeedback({
         kind: "saved",
         text:
@@ -452,7 +480,7 @@ export function EditorClient({
     } else {
       setFeedback({ kind: "error", text: result.error });
     }
-  }, [elements, height, layoutId, restaurantId, width]);
+  }, [elements, height, layoutId, restaurantId, viewRotation, width]);
 
   return (
     // `h-[70vh]` en vez de `h-full`: el alto tiene que estar DEFINIDO en algún
@@ -548,14 +576,14 @@ export function EditorClient({
             <ToolButton
               icon={RotateCcw}
               label="Girar ↺"
-              onClick={() => setViewRotation((r) => normalizeAngle(r - VIEW_STEP))}
-              title="Girar el plano 90° a la izquierda (solo la vista, no se guarda)"
+              onClick={() => rotateLayout(-VIEW_STEP)}
+              title="Girar el plano completo 90° a la izquierda (se guarda con Guardar)"
             />
             <ToolButton
               icon={RotateCw}
               label="Girar ↻"
-              onClick={() => setViewRotation((r) => normalizeAngle(r + VIEW_STEP))}
-              title="Girar el plano 90° a la derecha (solo la vista, no se guarda)"
+              onClick={() => rotateLayout(VIEW_STEP)}
+              title="Girar el plano completo 90° a la derecha (se guarda con Guardar)"
             />
             <ToolButton
               icon={Copy}
@@ -694,7 +722,7 @@ export function EditorClient({
             izquierda y la leyenda a la derecha). */}
         <div className={`pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap px-3 py-1.5 text-xs text-panel-muted ${FLOATING}`}>
           {layoutName} · {width}×{height} · v{savedVersion} · {elements.length} elemento(s)
-          {viewRotation !== 0 ? ` · vista girada ${viewRotation}°` : ""}
+          {viewRotation !== 0 ? ` · plano girado ${viewRotation}°` : ""}
         </div>
       </div>
 
