@@ -158,8 +158,8 @@ user / session / account / verification   (Better Auth)
 |---|---|
 | `brands` | Las marcas (China Wok, Pizza Hut, KFC, Denny's) con su `accent_color`. |
 | `restaurants` | Los locales. `slug` para la URL. `brand_id`, `city`, `map_x` y `map_y` (todas opcionales) son del mapa general y de las estadísticas por marca. |
-| `table_layouts` | Zonas/vistas del local (comedor, terraza). Es la unidad sobre la que trabaja el editor y la galería. `version` sube en cada guardado. |
-| `element_types` | Catálogo de los 5 tipos (mesa-sillas, mesa-butacas, area-juegos, bano, caja) con color, ícono y tamaño. Editable sin deploy. |
+| `table_layouts` | Zonas/vistas del local (comedor, terraza). Es la unidad sobre la que trabaja el editor y la galería. `version` sube en cada guardado. `rotation` (0, 90, 180 o 270) es el giro del plano completo. |
+| `element_types` | Catálogo de los 8 tipos (mesa-sillas, mesa-butacas, area-juegos, bano, caja, barra, puerta, pared) con color, ícono y tamaño. Editable sin deploy. |
 | `tables` | Mesas **y** baños/cajas/áreas: en el canvas se comportan igual, y `element_type_id` los distingue. Lleva la geometría (`x`, `y`, `width`, `height`, `rotation`). |
 | `waitlist_entries` | Clientes en la lista. `party_size` lo necesitan las estadísticas. |
 | `user`, `session`, `account`, `verification` | Las que espera Better Auth. `role` y `restaurant_id` son columnas de `user`. |
@@ -554,15 +554,43 @@ su `key` (`components/editor/icons.ts`), igual que la forma. La columna
 - **Las sombras solo van en el cuerpo del elemento.** En Konva son caras, y
   con 40 mesas se nota.
 
+### Giro del plano completo
+
+- **Se guarda.** Los botones **Girar ↺** y **Girar ↻** giran la zona entera un
+  cuarto de vuelta, como una foto en la galería. Es un cambio más: marca
+  «sin guardar» y se guarda con **Guardar** en `table_layouts.rotation`
+  (migración `0003_layout_rotation.sql`, solo aditiva).
+- **Los demás dispositivos se enteran.** El guardado sube la versión de la
+  zona y emite `layout:updated`: los otros editores ven el aviso de «otro
+  dispositivo guardó», y el plano en vivo se recarga solo.
+- **El minimapa gira con el plano**, tanto con ↺ ↻ como al abrir una zona ya
+  girada, y tocarlo lleva al punto correcto (`planToRotated` y
+  `rotatedToPlan` en `lib/layout/geometry.ts`).
+- **Se ve igual en todas partes.** Lo respetan el plano en vivo de
+  `/restaurante/[id]/mapa` y el zoom de `/mapa`, y **Copiar plano** lo copia
+  al otro restaurante.
+- **Qué no hace.** Deshacer no vuelve atrás un giro (se usa el botón
+  contrario). Copiar una zona sobre otra que ya existe conserva el giro de la
+  de destino.
+
+### Barra, puerta y pared
+
+- **Tres tipos nuevos** en `ELEMENT_TYPE_KEYS` y en el seed, que los añade
+  por clave sin duplicar. Ninguno admite clientes.
+
+  | Tipo | Ícono (lucide) | Cómo se dibuja |
+  |---|---|---|
+  | Barra | `Wine` | Mostrador alargado, con el canto de servicio marcado y banquetas a lo largo. |
+  | Puerta | `DoorOpen` | Hueco en la pared, la hoja abierta y el arco que barre al abrirse, como en un plano de arquitectura. |
+  | Pared | `BrickWall` (en la paleta) | Bloque sólido del color de las paredes del tema, sin etiqueta encima porque la taparía. |
+- **Se ven bien en todos los temas.** La pared usa el color de las líneas del
+  tema, y la barra y la puerta su color de tipo con relleno translúcido.
+- **El marco de selección se ajusta al elemento.** Las ondas del pulso en vivo
+  están ocultas cuando no se animan, y el arco de la puerta es una polilínea:
+  `Arc` y `Wedge` de Konva miden el círculo entero.
+
 ### Pendiente de este paso
 
-- **El giro del plano entero no se guarda.** `table_layouts` no tiene ningún
-  campo para ello, así que solo gira la vista de esa pantalla. Guardarlo
-  requiere añadir una columna, por ejemplo `table_layouts.rotation`, y hay que
-  coordinarlo porque toca `lib/db/schema.ts`.
-- **Barra, puerta y pared** no existen todavía como tipos. Hacen falta filas
-  nuevas en `element_types`, sus claves en `lib/db/enums.ts` y el seed. Van en
-  otra rama.
 - **Nada pone una mesa en "reservada" todavía.** Se pinta en gris y está en la
   leyenda, pero ninguna pantalla asigna ese estado.
 - El comentario de `element_types.icon` en `lib/db/schema.ts` todavía dice

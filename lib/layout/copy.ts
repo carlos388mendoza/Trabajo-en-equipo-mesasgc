@@ -180,6 +180,8 @@ export async function copyLayoutToRestaurant(
     isDefault: l.id === defaultSourceId,
     width: l.width,
     height: l.height,
+    // El giro es parte del plano: la copia se ve igual que el original.
+    rotation: l.rotation,
     sortOrder: l.sortOrder,
   }));
 

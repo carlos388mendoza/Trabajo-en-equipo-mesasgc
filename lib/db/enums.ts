@@ -60,6 +60,10 @@ export const ELEMENT_TYPE_KEYS = [
   "area-juegos",
   "bano",
   "caja",
+  // Estructura del local: se dibujan, pero no se sienta a nadie en ellas.
+  "barra",
+  "puerta",
+  "pared",
 ] as const;
 
 export type ElementTypeKey = (typeof ELEMENT_TYPE_KEYS)[number];
@@ -80,6 +84,22 @@ export const SEATABLE_ELEMENT_KEYS: readonly ElementTypeKey[] = [
 
 export function isSeatableElement(key: string): boolean {
   return (SEATABLE_ELEMENT_KEYS as readonly string[]).includes(key);
+}
+
+// ---------------------------------------------------------------------------
+// Giro del plano completo
+// ---------------------------------------------------------------------------
+
+/**
+ * Cómo está girada una zona entera (`table_layouts.rotation`), en grados. Solo
+ * cuartos de vuelta: es "girar la foto", como en una galería, no mover mesas.
+ */
+export const LAYOUT_ROTATIONS = [0, 90, 180, 270] as const;
+export type LayoutRotation = (typeof LAYOUT_ROTATIONS)[number];
+
+/** Cualquier otro valor (dato viejo, BD editada a mano) se lee como 0. */
+export function asLayoutRotation(value: unknown): LayoutRotation {
+  return LAYOUT_ROTATIONS.includes(value as LayoutRotation) ? (value as LayoutRotation) : 0;
 }
 
 // ---------------------------------------------------------------------------

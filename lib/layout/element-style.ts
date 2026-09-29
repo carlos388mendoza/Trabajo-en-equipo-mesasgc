@@ -8,7 +8,7 @@ import { isSeatableElement } from "@/lib/db/enums";
 import type { StatusKey } from "@/lib/theme/theme";
 import type { ElementTypeInfo } from "./types";
 
-export type ElementShape = "circle" | "rect" | "booth" | "zone";
+export type ElementShape = "circle" | "rect" | "booth" | "zone" | "bar" | "door" | "wall";
 
 export type ElementStyle = {
   shape: ElementShape;
@@ -23,6 +23,11 @@ export type ElementStyle = {
   /** Color del borde. */
   stroke: string;
   textColor: string;
+  /**
+   * Si lleva su etiqueta encima. La pared no: con 18 unidades de grueso, la
+   * etiqueta la taparía entera. Su nombre se ve al seleccionarla.
+   */
+  showLabel: boolean;
 };
 
 // Colores de estado de una mesa. Los pinta el editor, pero el que decide que
@@ -105,6 +110,7 @@ export function elementStyle(type: ElementTypeInfo): ElementStyle {
         fill: shade(color, 90),
         stroke: seatable ? FREE_STROKE : color,
         textColor: "#111827",
+        showLabel: true,
       };
     case "mesa-butacas":
       return {
@@ -115,6 +121,7 @@ export function elementStyle(type: ElementTypeInfo): ElementStyle {
         fill: shade(color, 90),
         stroke: FREE_STROKE,
         textColor: "#111827",
+        showLabel: true,
       };
     case "area-juegos":
       return {
@@ -125,6 +132,7 @@ export function elementStyle(type: ElementTypeInfo): ElementStyle {
         fill: shade(color, 110),
         stroke: color,
         textColor: "#111827",
+        showLabel: true,
       };
     case "bano":
       return {
@@ -135,6 +143,7 @@ export function elementStyle(type: ElementTypeInfo): ElementStyle {
         fill: shade(color, 120),
         stroke: color,
         textColor: "#111827",
+        showLabel: true,
       };
     case "caja":
       return {
@@ -145,6 +154,40 @@ export function elementStyle(type: ElementTypeInfo): ElementStyle {
         fill: shade(color, 90),
         stroke: color,
         textColor: "#111827",
+        showLabel: true,
+      };
+    case "barra":
+      return {
+        shape: "bar",
+        cornerRadius: 10,
+        dashed: false,
+        seatable,
+        fill: shade(color, 90),
+        stroke: color,
+        textColor: "#111827",
+        showLabel: true,
+      };
+    case "puerta":
+      return {
+        shape: "door",
+        cornerRadius: 0,
+        dashed: false,
+        seatable,
+        fill: shade(color, 110),
+        stroke: color,
+        textColor: "#111827",
+        showLabel: true,
+      };
+    case "pared":
+      return {
+        shape: "wall",
+        cornerRadius: 2,
+        dashed: false,
+        seatable,
+        fill: color,
+        stroke: color,
+        textColor: "#111827",
+        showLabel: false,
       };
     default:
       // Un tipo nuevo añadido al catálogo se dibuja como rectángulo genérico
@@ -157,6 +200,7 @@ export function elementStyle(type: ElementTypeInfo): ElementStyle {
         fill: shade(color, 90),
         stroke: color,
         textColor: "#111827",
+        showLabel: true,
       };
   }
 }
@@ -184,6 +228,9 @@ const SHORT_NAMES: Record<string, string> = {
   "area-juegos": "Juegos",
   bano: "Baño",
   caja: "Caja",
+  barra: "Barra",
+  puerta: "Puerta",
+  pared: "Pared",
 };
 
 export function shortName(typeKey: string): string {

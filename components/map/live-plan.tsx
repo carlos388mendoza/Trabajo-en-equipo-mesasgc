@@ -150,7 +150,8 @@ export function LivePlan({ restaurantId, initialPlan = null, refreshSignal, tool
             layoutId={zone.id}
             width={zone.width}
             height={zone.height}
-            viewRotation={0}
+            // El giro guardado de la zona: se ve como en el editor.
+            viewRotation={zone.rotation}
             elements={zone.elements}
             pulses={pulses}
             now={now}

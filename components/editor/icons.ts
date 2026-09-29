@@ -7,15 +7,18 @@
 // ícono podría verse distinto en la paleta y en el mapa.
 
 import type { LucideIcon } from "lucide-react";
-import { Banknote, Puzzle, Shapes, Sofa, Toilet, Utensils } from "lucide-react";
+import { Banknote, BrickWall, DoorOpen, Puzzle, Shapes, Sofa, Toilet, Utensils, Wine } from "lucide-react";
 import {
   Banknote as BanknoteNode,
+  BrickWall as BrickWallNode,
+  DoorOpen as DoorOpenNode,
   type IconNode,
   Puzzle as PuzzleNode,
   Shapes as ShapesNode,
   Sofa as SofaNode,
   Toilet as ToiletNode,
   Utensils as UtensilsNode,
+  Wine as WineNode,
 } from "lucide";
 
 /** Grosor de trazo de todos los íconos, en unidades del viewBox de 24. */
@@ -31,6 +34,9 @@ const TYPE_ICONS: Record<string, TypeIcon> = {
   "area-juegos": { component: Puzzle, node: PuzzleNode },
   bano: { component: Toilet, node: ToiletNode },
   caja: { component: Banknote, node: BanknoteNode },
+  barra: { component: Wine, node: WineNode },
+  puerta: { component: DoorOpen, node: DoorOpenNode },
+  pared: { component: BrickWall, node: BrickWallNode },
 };
 
 /** Un tipo nuevo del catálogo se ve con un ícono genérico, no vacío. */

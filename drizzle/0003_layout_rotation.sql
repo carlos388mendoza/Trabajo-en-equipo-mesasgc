@@ -1,0 +1,1 @@
+ALTER TABLE `table_layouts` ADD `rotation` integer DEFAULT 0 NOT NULL;

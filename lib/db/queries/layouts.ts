@@ -6,6 +6,7 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/lib/db";
+import { asLayoutRotation } from "@/lib/db/enums";
 import {
   elementTypes,
   restaurants,
@@ -84,6 +85,7 @@ export async function getLayout(
     width: layout.width,
     height: layout.height,
     version: layout.version,
+    rotation: asLayoutRotation(layout.rotation),
     elements: layout.tables.map((t) => ({
       id: t.id,
       elementTypeId: t.elementTypeId,

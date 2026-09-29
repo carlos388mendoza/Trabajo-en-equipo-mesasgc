@@ -37,6 +37,9 @@ const { applyLayoutStructure } = await import("@/lib/layout/save");
 const { saveLayoutInputSchema } = await import("@/lib/layout/validation");
 const { copyLayoutToRestaurant, copyZoneIntoLayout, getStructureCounts } =
   await import("@/lib/layout/copy");
+const { getLayout } = await import("@/lib/db/queries/layouts");
+const { planToRotated, rotatedSize, rotatedToPlan } = await import("@/lib/layout/geometry");
+const { ELEMENT_TYPE_KEYS, asLayoutRotation, isSeatableElement } = await import("@/lib/db/enums");
 const { elementStyle, nextLabel, visibleSeats } = await import(
   "@/lib/layout/element-style"
 );
@@ -806,6 +809,165 @@ check(
   !zoneBusy.ok && zoneBusy.error.includes("sentados"),
   zoneBusy.ok ? "lo aceptó" : zoneBusy.error,
 );
+
+
+// ---------------------------------------------------------------------------
+// Giro del plano completo (table_layouts.rotation)
+// ---------------------------------------------------------------------------
+
+section("Giro del plano completo");
+
+const ROT_REST = "rot-rest";
+const ROT_DEST = "rot-dest";
+const ROT_LAYOUT = "rot-layout";
+await db.insert(restaurants).values([
+  { id: ROT_REST, name: "Giro", slug: "giro" },
+  { id: ROT_DEST, name: "Giro destino", slug: "giro-destino" },
+]);
+await db.insert(tableLayouts).values([
+  { id: ROT_LAYOUT, restaurantId: ROT_REST, name: "Comedor", width: 1000, height: 700, isDefault: true, version: 1 },
+]);
+const rotElements = [
+  { id: "rot-mesa", elementTypeId: TYPES.mesa, label: "Mesa 1", x: 50, y: 50, width: 80, height: 80, rotation: 0, capacity: 4 },
+];
+const rotPayload = (rotation?: number) =>
+  saveLayoutInputSchema.safeParse({
+    layoutId: ROT_LAYOUT,
+    restaurantId: ROT_REST,
+    width: 1000,
+    height: 700,
+    ...(rotation === undefined ? {} : { rotation }),
+    elements: rotElements,
+  });
+
+check("una zona nueva nace sin girar", (await getLayout(ROT_LAYOUT, ROT_REST))?.rotation === 0);
+
+{
+  const parsed = rotPayload(90);
+  const saved = parsed.success ? await applyLayoutStructure(parsed.data) : null;
+  const reloaded = await getLayout(ROT_LAYOUT, ROT_REST);
+  check("el giro se guarda con el guardado normal", Boolean(saved?.ok), saved && !saved.ok ? saved.error : "");
+  check("  y se recarga igual (90°)", reloaded?.rotation === 90, String(reloaded?.rotation));
+  check("  y sube la versión (los demás reciben layout:updated)", reloaded?.version === 2, String(reloaded?.version));
+}
+
+{
+  const parsed = rotPayload(undefined);
+  if (parsed.success) await applyLayoutStructure(parsed.data);
+  check("guardar sin `rotation` conserva el giro que había", (await getLayout(ROT_LAYOUT, ROT_REST))?.rotation === 90);
+}
+
+check("un giro que no es un cuarto de vuelta se rechaza (45°)", !rotPayload(45).success);
+check("  y 360° también (se guarda como 0)", !rotPayload(360).success);
+check("asLayoutRotation lee un valor raro como 0", asLayoutRotation(45) === 0 && asLayoutRotation(270) === 270);
+
+// Geometría del minimapa: gira igual que el lienzo, y un toque en el minimapa
+// girado vuelve al punto correcto del plano.
+{
+  const W = 1000;
+  const H = 700;
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6;
+  const size90 = rotatedSize(W, H, 90);
+  check("girado 90° o 270°, el minimapa cruza ancho y alto", size90.width === H && size90.height === W && rotatedSize(W, H, 270).width === H);
+  check("  y con 0° o 180° se queda igual", rotatedSize(W, H, 180).width === W && rotatedSize(W, H, 0).height === H);
+  // Esquina superior izquierda del plano: a 90° a derechas acaba arriba a la
+  // derecha; a 180°, abajo a la derecha; a 270°, abajo a la izquierda.
+  const corner = { x: 0, y: 0 };
+  check(
+    "  la esquina superior izquierda va a su sitio con cada giro",
+    near(planToRotated(corner, W, H, 0), { x: 0, y: 0 }) &&
+      near(planToRotated(corner, W, H, 90), { x: H, y: 0 }) &&
+      near(planToRotated(corner, W, H, 180), { x: W, y: H }) &&
+      near(planToRotated(corner, W, H, 270), { x: 0, y: W }),
+  );
+  const probe = { x: 123, y: 456 };
+  check(
+    "  ida y vuelta: tocar el minimapa girado lleva al mismo punto del plano",
+    [0, 90, 180, 270].every((r) => near(rotatedToPlan(planToRotated(probe, W, H, r), W, H, r), probe)),
+  );
+}
+
+{
+  const parsed = rotPayload(270);
+  if (parsed.success) await applyLayoutStructure(parsed.data);
+  const copied = await copyLayoutToRestaurant({ sourceRestaurantId: ROT_REST, targetRestaurantId: ROT_DEST, replace: false });
+  const destLayout = await db.query.tableLayouts.findFirst({ where: (l, { eq }) => eq(l.restaurantId, ROT_DEST) });
+  check("copiar el plano a otro restaurante copia el giro", copied.ok && destLayout?.rotation === 270, String(destLayout?.rotation));
+}
+
+
+// ---------------------------------------------------------------------------
+// Barra, puerta y pared
+// ---------------------------------------------------------------------------
+
+section("Barra, puerta y pared");
+
+const NEW_TYPES = [
+  { id: "type-barra", key: "barra", label: "Barra", color: "#d97706", icon: "wine", width: 220, height: 56, defaultCapacity: null, sortOrder: 5 },
+  { id: "type-puerta", key: "puerta", label: "Puerta", color: "#0d9488", icon: "door-open", width: 80, height: 80, defaultCapacity: null, sortOrder: 6 },
+  { id: "type-pared", key: "pared", label: "Pared", color: "#64748b", icon: "brick-wall", width: 240, height: 18, defaultCapacity: null, sortOrder: 7 },
+] as const;
+await db.insert(elementTypes).values([...NEW_TYPES]);
+
+check(
+  "barra, puerta y pared están en ELEMENT_TYPE_KEYS",
+  ["barra", "puerta", "pared"].every((k) => (ELEMENT_TYPE_KEYS as readonly string[]).includes(k)),
+);
+check("  y ninguna admite clientes", ["barra", "puerta", "pared"].every((k) => !isSeatableElement(k)));
+{
+  const shapes = NEW_TYPES.map((t) => elementStyle({ ...t, defaultCapacity: null }).shape).join(",");
+  check("  cada una con su forma (bar, door, wall)", shapes === "bar,door,wall", shapes);
+  const wall = elementStyle({ ...NEW_TYPES[2], defaultCapacity: null });
+  check("  la pared no lleva etiqueta encima (la taparía)", wall.showLabel === false && elementStyle({ ...NEW_TYPES[0], defaultCapacity: null }).showLabel);
+  check("  numeración propia: Barra 1, Puerta 2, Pared 1", nextLabel("barra", []) === "Barra 1" && nextLabel("puerta", ["Puerta 1"]) === "Puerta 2" && nextLabel("pared", []) === "Pared 1");
+}
+
+const EST_REST = "est-rest";
+const EST_DEST = "est-dest";
+const EST_LAYOUT = "est-layout";
+await db.insert(restaurants).values([
+  { id: EST_REST, name: "Estructura", slug: "estructura" },
+  { id: EST_DEST, name: "Estructura destino", slug: "estructura-destino" },
+]);
+await db.insert(tableLayouts).values([
+  { id: EST_LAYOUT, restaurantId: EST_REST, name: "Salón", width: 1200, height: 800, isDefault: true, version: 1 },
+]);
+const structure = [
+  { id: "est-barra", elementTypeId: "type-barra", label: "Barra 1", x: 100, y: 60, width: 220, height: 56, rotation: 0, capacity: null },
+  { id: "est-puerta", elementTypeId: "type-puerta", label: "Puerta 1", x: 600, y: 700, width: 80, height: 80, rotation: 90, capacity: null },
+  { id: "est-pared", elementTypeId: "type-pared", label: "Pared 1", x: 400, y: 300, width: 240, height: 18, rotation: 0, capacity: null },
+  { id: "est-mesa", elementTypeId: TYPES.mesa, label: "Mesa 1", x: 200, y: 300, width: 80, height: 80, rotation: 0, capacity: 4 },
+];
+{
+  const parsed = saveLayoutInputSchema.safeParse({
+    layoutId: EST_LAYOUT,
+    restaurantId: EST_REST,
+    width: 1200,
+    height: 800,
+    elements: structure,
+  });
+  const saved = parsed.success ? await applyLayoutStructure(parsed.data) : null;
+  check("se añaden y se guardan una barra, una puerta y una pared", Boolean(saved?.ok) && saved?.ok === true && saved.saved === 4, saved && !saved.ok ? saved.error : JSON.stringify(saved));
+
+  const reloaded = await getLayout(EST_LAYOUT, EST_REST);
+  const byId = new Map((reloaded?.elements ?? []).map((e) => [e.id, e]));
+  check(
+    "  y se recargan con su tipo, tamaño y giro",
+    byId.get("est-barra")?.elementTypeId === "type-barra" &&
+      byId.get("est-puerta")?.rotation === 90 &&
+      byId.get("est-pared")?.height === 18,
+  );
+  check("  sin capacidad ni estado de mesa", ["est-barra", "est-puerta", "est-pared"].every((id) => byId.get(id)?.capacity === null && byId.get(id)?.status === "libre"));
+}
+
+{
+  const copied = await copyLayoutToRestaurant({ sourceRestaurantId: EST_REST, targetRestaurantId: EST_DEST, replace: false });
+  const destRows = await db.query.tables.findMany({ where: (t, { eq }) => eq(t.restaurantId, EST_DEST) });
+  const destTypes = destRows.map((r) => r.elementTypeId).sort().join(",");
+  check("copiar el plano copia la barra, la puerta y la pared", copied.ok && destTypes === ["type-barra", "type-pared", "type-puerta", TYPES.mesa].sort().join(","), destTypes);
+  check("  con ids nuevos", destRows.every((r) => !r.id.startsWith("est-")));
+}
 
 // ---------------------------------------------------------------------------
 

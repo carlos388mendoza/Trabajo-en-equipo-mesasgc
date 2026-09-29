@@ -5,10 +5,9 @@
 // ambos casos la regla tiene que ser idéntica o el paso 4 deshace lo que hizo
 // el 3.
 //
-// Lo único que vive aquí por ahora es el rectángulo que envuelve a todos los
-// elementos y la normalización, que usa la copia de una zona a otra de tamaño
-// distinto. La matemática de rotación se añade en el paso 4, cuando exista
-// quien la use, y no antes.
+// Aquí viven el rectángulo que envuelve a todos los elementos y la
+// normalización, que usa la copia de una zona a otra de tamaño distinto, y el
+// giro del plano completo, que usa el minimapa (abajo).
 
 export type Box = { x: number; y: number; width: number; height: number };
 
@@ -36,4 +35,54 @@ export function normalize(boxes: readonly Box[]): Box[] {
   const bounds = boundingBox(boxes);
   if (!bounds) return [];
   return boxes.map((b) => ({ ...b, x: b.x - bounds.x, y: b.y - bounds.y }));
+}
+
+// ---------------------------------------------------------------------------
+// Giro del plano completo (paso 4)
+//
+// El lienzo gira la zona alrededor de su centro (`viewRotation` en Konva). El
+// minimapa tiene que girar IGUAL, y al tocarlo volver del punto girado al del
+// plano. Las dos cuentas van aquí para que sean la misma en los dos sentidos.
+// ---------------------------------------------------------------------------
+
+/** Tamaño de la zona una vez girada: con 90° o 270° se cruzan ancho y alto. */
+export function rotatedSize(width: number, height: number, rotation: number): { width: number; height: number } {
+  return Math.abs(rotation) % 180 === 90 ? { width: height, height: width } : { width, height };
+}
+
+/**
+ * Un punto del plano (sin girar) a coordenadas de la zona girada, que empieza
+ * en (0, 0). Positivo es a derechas, como Konva y SVG (el eje y va hacia abajo).
+ */
+export function planToRotated(
+  point: { x: number; y: number },
+  width: number,
+  height: number,
+  rotation: number,
+): { x: number; y: number } {
+  const size = rotatedSize(width, height, rotation);
+  const rad = (rotation * Math.PI) / 180;
+  const dx = point.x - width / 2;
+  const dy = point.y - height / 2;
+  return {
+    x: size.width / 2 + dx * Math.cos(rad) - dy * Math.sin(rad),
+    y: size.height / 2 + dx * Math.sin(rad) + dy * Math.cos(rad),
+  };
+}
+
+/** Lo contrario de `planToRotated`: de la zona girada al plano. */
+export function rotatedToPlan(
+  point: { x: number; y: number },
+  width: number,
+  height: number,
+  rotation: number,
+): { x: number; y: number } {
+  const size = rotatedSize(width, height, rotation);
+  const rad = (-rotation * Math.PI) / 180;
+  const dx = point.x - size.width / 2;
+  const dy = point.y - size.height / 2;
+  return {
+    x: width / 2 + dx * Math.cos(rad) - dy * Math.sin(rad),
+    y: height / 2 + dx * Math.sin(rad) + dy * Math.cos(rad),
+  };
 }

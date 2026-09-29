@@ -606,6 +606,7 @@ export function KonvaCanvas({
           <Minimap
             width={width}
             height={height}
+            rotation={viewRotation}
             elements={elements}
             typesById={typesById}
             theme={theme}

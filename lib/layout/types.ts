@@ -1,3 +1,5 @@
+import type { LayoutRotation } from "@/lib/db/enums";
+
 // Tipos que viajan entre el servidor (page -> server action) y el editor.
 //
 // Se defines aquí y no dentro de un componente porque los necesitan las dos
@@ -62,5 +64,7 @@ export type LayoutPayload = {
   height: number;
   /** Se incrementa en cada guardado; el cliente lo manda para detectar losses. */
   version: number;
+  /** Giro del plano completo: 0, 90, 180 o 270. */
+  rotation: LayoutRotation;
   elements: LayoutElement[];
 };
