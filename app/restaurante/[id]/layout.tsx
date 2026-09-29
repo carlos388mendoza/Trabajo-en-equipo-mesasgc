@@ -1,15 +1,17 @@
+import { use } from "react";
+import { RestaurantNav } from "@/components/restaurant-nav";
+
 export default function RestauranteLayout({
+  params,
   children,
 }: {
+  params: Promise<{ id: string }>;
   children: React.ReactNode;
 }) {
+  const { id } = use(params);
   return (
     <div>
-      <nav className="mb-4 flex flex-wrap gap-2 text-sm">
-        <a href="editor" className="rounded-full px-3 py-2 text-app-muted hover:bg-app-border/60">Editor de mesas</a>
-        <a href="rapido" className="rounded-full bg-accent/15 px-3 py-2 font-semibold text-accent">Modo sencillo</a>
-        <a href="/analiticas" className="rounded-full px-3 py-2 text-app-muted hover:bg-app-border/60">Estadísticas e IA</a>
-      </nav>
+      <RestaurantNav restaurantId={id} />
       {children}
     </div>
   );

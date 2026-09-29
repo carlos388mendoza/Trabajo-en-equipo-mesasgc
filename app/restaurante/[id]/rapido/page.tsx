@@ -1,11 +1,12 @@
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Check, Plus, Undo2, UserRoundPlus } from "lucide-react";
+import { Check, CircleCheck, Plus, Undo2, UserRoundPlus } from "lucide-react";
 
 import { createRealtimeClient, type RealtimeClient } from "@/lib/realtime/client";
 import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
 import type { WaitlistUndoState } from "@/lib/realtime/events";
+import { HONDURAS_TIME_ZONE, hondurasDateKey, hondurasToday } from "@/lib/time/honduras";
 
 type Guest = {
   id: string;
@@ -51,6 +52,8 @@ export default function ModoRapidoPage({
     [guests],
   );
   const current = waiting[0];
+  const today = hondurasToday();
+  const todayEntries = guests.filter((guest) => hondurasDateKey(guest.arrived) === today);
 
   function fromSnapshot(entry: WaitlistEntrySnapshot): Guest {
     return {
@@ -232,7 +235,7 @@ export default function ModoRapidoPage({
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[.18em] text-accent">
@@ -243,32 +246,32 @@ export default function ModoRapidoPage({
           </h1>
           <p className="mt-1 text-app-muted">Gestiona la fila en unos pocos toques.</p>
         </div>
-        <div className="rounded-2xl bg-white px-5 py-3 shadow-sm ring-1 ring-slate-200">
-          <span className="text-2xl font-bold text-slate-900">{waiting.length}</span>
-          <span className="ml-2 text-sm text-slate-500">grupos esperando</span>
+        <div className="rounded-2xl border border-app-border bg-panel px-5 py-3 shadow-sm">
+          <span className="text-2xl font-bold text-panel-text">{waiting.length}</span>
+          <span className="ml-2 text-sm text-panel-muted">grupos esperando</span>
         </div>
       </div>
 
       {error && (
-        <p role="alert" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800">
+        <p role="alert" className="mt-4 rounded-xl border border-estado-ocupada/40 bg-panel px-4 py-3 text-sm text-panel-text">
           {error}
         </p>
       )}
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1.15fr_.85fr]">
-        <section className="rounded-3xl bg-slate-900 p-6 text-white shadow-xl sm:p-8">
+        <section className="rounded-3xl border border-app-border bg-panel p-6 text-panel-text shadow-xl sm:p-8">
           <div className="flex items-center justify-between">
-            <span className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold tracking-wide">
+            <span className="rounded-full bg-app-border/60 px-3 py-1.5 text-xs font-semibold tracking-wide text-panel-text">
               SIGUIENTE EN LA FILA
             </span>
-            <span className="text-sm text-slate-300">
+            <span className="text-sm text-panel-muted">
               {connected ? "En vivo" : "Reconectando"}
               <span className="mx-2">·</span>
               {current ? `#${guests.filter((guest) => guest.status !== "waiting").length + 1}` : "—"}
             </span>
           </div>
           {loading ? (
-            <div className="py-14 text-center text-slate-300">Cargando lista…</div>
+            <div className="py-14 text-center text-panel-muted">Cargando lista…</div>
           ) : current ? (
             <article
               onTouchStart={(event) => {
@@ -284,12 +287,12 @@ export default function ModoRapidoPage({
               className="mt-8 touch-pan-y"
             >
               <h2 className="text-3xl font-bold">{current.name}</h2>
-              <p className="mt-2 text-slate-300">
+              <p className="mt-2 text-panel-muted">
                 {current.party} personas <span className="mx-2">·</span> Llegó a las{" "}
-                {new Date(current.arrived).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}
+                {new Date(current.arrived).toLocaleTimeString("es-HN", { hour: "2-digit", minute: "2-digit", timeZone: HONDURAS_TIME_ZONE })}
               </p>
               {current.note && (
-                <p className="mt-4 inline-flex rounded-xl bg-white/10 px-3 py-2 text-sm">
+                <p className="mt-4 inline-flex rounded-xl bg-app-border/60 px-3 py-2 text-sm">
                   {current.note}
                 </p>
               )}
@@ -297,7 +300,7 @@ export default function ModoRapidoPage({
                 <button
                   disabled={resolving || !connected}
                   onClick={() => void mark("listo")}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-400 px-4 py-4 font-bold text-emerald-950 transition hover:bg-emerald-300 disabled:opacity-60"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-4 font-bold text-accent-text transition hover:bg-accent/85 disabled:opacity-60"
                 >
                   <Check aria-hidden size={18} />
                   Marcar listo
@@ -305,44 +308,44 @@ export default function ModoRapidoPage({
                 <button
                   disabled={resolving || !connected}
                   onClick={() => void mark("ausente")}
-                  className="rounded-2xl border border-white/20 px-4 py-4 font-semibold text-white transition hover:bg-white/10 disabled:opacity-60"
+                  className="rounded-2xl border border-app-border px-4 py-4 font-semibold text-panel-text transition hover:bg-app-border/60 disabled:opacity-60"
                 >
                   Marcar ausente
                 </button>
               </div>
-              <p className="mt-4 text-center text-xs text-slate-400">
+              <p className="mt-4 text-center text-xs text-panel-muted">
                 Desliza a la derecha para marcar listo · a la izquierda para marcar ausente.
               </p>
             </article>
           ) : (
             <div className="py-14 text-center">
               <p className="text-xl font-semibold">La fila está vacía</p>
-              <p className="mt-2 text-sm text-slate-400">Agrega el siguiente grupo para comenzar.</p>
+              <p className="mt-2 text-sm text-panel-muted">Agrega el siguiente grupo para comenzar.</p>
             </div>
           )}
           <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
             {waiting.slice(1).map((guest, index) => (
-              <div key={guest.id} className="min-w-44 rounded-xl bg-white/10 p-3">
-                <p className="text-xs text-slate-400">Después · #{index + 2}</p>
+              <div key={guest.id} className="min-w-44 rounded-xl bg-app-border/60 p-3">
+                <p className="text-xs text-panel-muted">Después · #{index + 2}</p>
                 <p className="mt-1 font-semibold">{guest.name}</p>
-                <p className="text-xs text-slate-300">{guest.party} personas</p>
+                <p className="text-xs text-panel-muted">{guest.party} personas</p>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200 sm:p-8">
+        <section className="rounded-3xl border border-app-border bg-panel p-6 text-panel-text shadow-sm sm:p-8">
           <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-2xl bg-emerald-50 text-emerald-700">
+            <span className="grid h-10 w-10 place-items-center rounded-2xl bg-accent/10 text-accent">
               <UserRoundPlus aria-hidden size={20} />
             </span>
             <div>
-              <h2 className="font-bold text-slate-900">Agregar cliente</h2>
-              <p className="text-sm text-slate-500">Registro rápido, sin pasos extra</p>
+              <h2 className="font-bold text-panel-text">Agregar cliente</h2>
+              <p className="text-sm text-panel-muted">Registro rápido, sin pasos extra</p>
             </div>
           </div>
           <form className="mt-6 space-y-4" onSubmit={addGuest}>
-            <label className="block text-sm font-medium text-slate-700">
+            <label className="block text-sm font-medium text-panel-text">
               Nombre
               <input
                 required
@@ -350,48 +353,48 @@ export default function ModoRapidoPage({
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Ej. Ana García"
-                className="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                className="mt-1.5 w-full rounded-xl border border-app-border bg-panel px-4 py-3 text-panel-text outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
               />
             </label>
             <div className="grid grid-cols-2 gap-3">
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-panel-text">
                 Personas
                 <select
                   value={party}
                   onChange={(event) => setParty(event.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-emerald-500"
+                  className="mt-1.5 w-full rounded-xl border border-app-border bg-panel px-4 py-3 text-panel-text outline-none focus:border-accent"
                 >
                   {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((count) => (
                     <option key={count} value={count}>{count} personas</option>
                   ))}
                 </select>
               </label>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-panel-text">
                 Nota (opcional)
                 <input
                   maxLength={500}
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
                   placeholder="Silla para bebé"
-                  className="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-emerald-500"
+                  className="mt-1.5 w-full rounded-xl border border-app-border bg-panel px-4 py-3 text-panel-text outline-none focus:border-accent"
                 />
               </label>
             </div>
             <button
               disabled={saving || !connected}
-              className="w-full rounded-xl bg-emerald-700 px-4 py-3.5 font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-60"
+              className="w-full rounded-xl bg-accent px-4 py-3.5 font-semibold text-accent-text transition hover:bg-accent/85 disabled:opacity-60"
             >
               <span className="inline-flex items-center justify-center gap-2">
                 <Plus aria-hidden size={18} />
                 {saving ? "Guardando…" : "Agregar a la fila"}
               </span>
             </button>
-            {message && <p role="status" className="text-center text-sm font-medium text-emerald-700">{message}</p>}
+            {message && <p role="status" className="text-center text-sm font-medium text-accent">{message}</p>}
           </form>
-          <div className="mt-7 border-t border-slate-100 pt-5">
+          <div className="mt-7 border-t border-app-border pt-5">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-800">Actividad de hoy</h3>
-              <button type="button" onClick={() => void loadGuests()} className="text-xs font-medium text-emerald-700 hover:underline">
+              <h3 className="text-sm font-semibold text-panel-text">Actividad de hoy</h3>
+              <button type="button" onClick={() => void loadGuests()} className="text-xs font-medium text-accent hover:underline">
                 Actualizar
               </button>
             </div>
@@ -400,24 +403,24 @@ export default function ModoRapidoPage({
                 type="button"
                 disabled={undoing || !connected}
                 onClick={() => void undoLastAction()}
-                className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl border border-app-border px-3 py-2 text-sm font-semibold text-panel-text transition hover:bg-app-border/60 disabled:opacity-50"
               >
                 <Undo2 aria-hidden size={17} />
                 {undoing ? "Deshaciendo…" : `Deshacer · ${undoState.label}`}
               </button>
             )}
-            <div className="mt-3 flex gap-3 text-sm text-slate-500">
-              <span className="text-emerald-600">●</span>
+            <div className="mt-3 flex gap-3 text-sm text-panel-muted">
+              <CircleCheck aria-hidden size={17} className="mt-0.5 shrink-0 text-accent" />
               <p>
-                {guests.filter((guest) => guest.status === "ready").length} grupos listos
+                {todayEntries.filter((guest) => guest.status === "ready").length} grupos listos
                 <span className="mx-1">·</span>
-                {guests.filter((guest) => guest.status === "absent").length} ausentes
+                {todayEntries.filter((guest) => guest.status === "absent").length} ausentes
               </p>
             </div>
           </div>
         </section>
       </div>
       <p className="mt-5 text-center text-xs text-app-muted">La lista se guarda en Turso para este restaurante.</p>
-    </main>
+    </div>
   );
 }
