@@ -145,7 +145,7 @@ export type Destination = {
   href: string;
   label: string;
   description: string;
-  kind: "admin" | "restaurante" | "analiticas";
+  kind: "admin" | "restaurante" | "analiticas" | "mapa";
 };
 
 /**
@@ -179,6 +179,16 @@ export function destinationsFor(
         });
       }
     }
+  }
+  // Mapa general: admin y analitica. Con él, ninguno de los dos tiene ya un
+  // único destino y los dos eligen en /inicio.
+  if (can(subject, "mapa:ver")) {
+    out.push({
+      href: "/mapa",
+      label: "Mapa general",
+      description: "Todos los restaurantes en vivo: ocupación y espera por marca y ciudad.",
+      kind: "mapa",
+    });
   }
   // Por ROL, no por permiso: el admin también puede ver estadísticas, pero su
   // destino es /admin. Solo quien tiene el rol analitica entra aquí directo

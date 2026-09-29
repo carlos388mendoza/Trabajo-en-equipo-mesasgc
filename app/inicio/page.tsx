@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { ChartColumn, ChevronRight, ShieldCheck, Store } from "lucide-react";
+import { ChartColumn, ChevronRight, Map as MapIcon, ShieldCheck, Store } from "lucide-react";
 
 import { type Destination, ROLE_LABELS, destinationsFor } from "@/lib/auth/rbac";
 import { requirePage } from "@/lib/auth/session";
 import { listRestaurants } from "@/lib/auth/users";
 
 // A dónde entra cada uno después del login. Con un solo destino se le lleva
-// directo (admin a /admin, un host a su modo rápido, analítica a
-// /analiticas); con varios roles o restaurantes, elige aquí.
+// directo (un host con un restaurante, a su modo rápido); con varios, elige
+// aquí. Admin y analitica tienen siempre dos o más, porque los dos ven el mapa
+// general.
 
 export const metadata = { title: "Inicio · Table Waitlist" };
 
@@ -17,6 +18,7 @@ const ICONS: Record<Destination["kind"], LucideIcon> = {
   admin: ShieldCheck,
   restaurante: Store,
   analiticas: ChartColumn,
+  mapa: MapIcon,
 };
 
 export default async function InicioPage() {
