@@ -63,7 +63,11 @@ export type Theme = {
   accent: string;
   accentText: string;
   status: Record<StatusKey, StatusTone>;
+  /** Alerta de espera del mapa general: más de 20 min (alerta) y de 40 (crítica). */
+  alert: Record<AlertKey, string>;
 };
+
+export type AlertKey = "alerta" | "critica";
 
 // ---------------------------------------------------------------------------
 // Utilidades de color
@@ -167,6 +171,16 @@ function statusFor(dark: boolean): Record<StatusKey, StatusTone> {
       };
 }
 
+/**
+ * Amarillo y rojo de la alerta de espera. Igual que los estados, no los elige
+ * el usuario: tonos 600 sobre fondo claro y 400 sobre oscuro. El mapa no se
+ * fía solo del color: la alerta también cambia de forma (anillo más grueso e
+ * ícono).
+ */
+function alertFor(dark: boolean): Record<AlertKey, string> {
+  return dark ? { alerta: "#facc15", critica: "#f87171" } : { alerta: "#ca8a04", critica: "#dc2626" };
+}
+
 // ---------------------------------------------------------------------------
 // Temas
 // ---------------------------------------------------------------------------
@@ -189,6 +203,7 @@ export const LIGHT_THEME: Theme = {
   accent: "#2563eb",
   accentText: "#ffffff",
   status: statusFor(false),
+  alert: alertFor(false),
 };
 
 export const DARK_THEME: Theme = {
@@ -209,6 +224,7 @@ export const DARK_THEME: Theme = {
   accent: "#38bdf8",
   accentText: "#04111f",
   status: statusFor(true),
+  alert: alertFor(true),
 };
 
 /** Los colores con los que arranca Personalizado y a los que vuelve "Restablecer". */
@@ -250,6 +266,7 @@ export function customTheme(c: CustomColors): Theme {
     accent,
     accentText: readableOn(accent),
     status: statusFor(dark),
+    alert: alertFor(dark),
   };
 }
 
@@ -327,6 +344,8 @@ export function themeVars(theme: Theme): Record<string, string> {
     "--c-libre": t(theme.status.libre.stroke),
     "--c-ocupada": t(theme.status.ocupada.stroke),
     "--c-reservada": t(theme.status.reservada.stroke),
+    "--c-alerta": t(theme.alert.alerta),
+    "--c-critica": t(theme.alert.critica),
   };
 }
 

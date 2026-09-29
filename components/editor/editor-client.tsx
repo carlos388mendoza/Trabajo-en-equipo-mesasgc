@@ -2,11 +2,9 @@
 
 // El editor de mesas: paleta + canvas + barra de herramientas.
 //
-// Este es el ÚNICO punto donde se decide cómo se carga Konva. Konva usa
-// `document` y el contexto 2D del canvas en el momento de importarse, así que
-// importarlo en el servidor peta. Next 15+ además prohíbe `ssr: false` dentro
-// de un Server Component, y la page lo es; por eso el `dynamic` vive aquí, en
-// un Client Component, y no en `editor/page.tsx`.
+// Konva se carga con el `dynamic({ ssr: false })` de `lazy-konva-canvas.tsx`,
+// que es el único sitio que lo decide (ver allí por qué). La page es un
+// Server Component y no puede hacerlo ella.
 //
 // Dos detalles que parecen arbitrarios y no lo son:
 //
@@ -22,7 +20,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -45,6 +42,7 @@ import {
 import type { CanvasHandle } from "./konva-canvas";
 import { DND_MIME, ElementPalette } from "./element-palette";
 import { CopyLayoutDialog } from "./copy-layout-dialog";
+import { KonvaCanvas } from "./lazy-konva-canvas";
 import { ICON_STROKE } from "./icons";
 import { useRestaurantSocket } from "@/components/realtime/use-restaurant-socket";
 import type { TableStatus } from "@/lib/db/enums";
@@ -58,19 +56,6 @@ import {
   saveLayoutStructure,
   type RestaurantOption,
 } from "@/app/restaurante/[id]/editor/actions";
-
-// `ssr: false` es imprescindible: ver la cabecera del archivo.
-const KonvaCanvas = dynamic(
-  () => import("./konva-canvas").then((mod) => mod.KonvaCanvas),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full w-full items-center justify-center bg-app-bg text-sm text-app-muted">
-        Cargando mapa…
-      </div>
-    ),
-  },
-);
 
 /** Pasos de giro: el plano entero va de 90 en 90; un elemento, de 45 en 45. */
 const VIEW_STEP = 90;

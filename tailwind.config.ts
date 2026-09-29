@@ -42,6 +42,9 @@ const config: Config = {
           ocupada: "rgb(var(--c-ocupada) / <alpha-value>)",
           reservada: "rgb(var(--c-reservada) / <alpha-value>)",
         },
+        // Alerta de espera del mapa general (ver `alertFor` en theme.ts).
+        alerta: "rgb(var(--c-alerta) / <alpha-value>)",
+        critica: "rgb(var(--c-critica) / <alpha-value>)",
       },
     },
   },
