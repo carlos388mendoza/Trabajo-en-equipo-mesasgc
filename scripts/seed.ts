@@ -111,6 +111,36 @@ const ELEMENT_TYPE_SEED: {
     height: 70,
     defaultCapacity: null,
   },
+  // Estructura del local (paso 4 de los requisitos: "distintos tipos de
+  // elementos"). Ninguno admite clientes. La pared es fina y larga, y la
+  // puerta es cuadrada porque dibuja su arco de apertura dentro.
+  {
+    key: "barra",
+    label: "Barra",
+    color: "#d97706",
+    icon: "wine",
+    width: 220,
+    height: 56,
+    defaultCapacity: null,
+  },
+  {
+    key: "puerta",
+    label: "Puerta",
+    color: "#0d9488",
+    icon: "door-open",
+    width: 80,
+    height: 80,
+    defaultCapacity: null,
+  },
+  {
+    key: "pared",
+    label: "Pared",
+    color: "#64748b",
+    icon: "brick-wall",
+    width: 240,
+    height: 18,
+    defaultCapacity: null,
+  },
 ];
 
 async function seedElementTypes() {

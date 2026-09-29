@@ -16,7 +16,7 @@
 
 import { memo, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
-import { Circle, Group, Rect, Text } from "react-konva";
+import { Arc, Circle, Group, Line, Rect, Text, Wedge } from "react-konva";
 import Konva from "konva";
 
 import { elementStyle, visibleSeats, visualStatus } from "@/lib/layout/element-style";
@@ -280,6 +280,123 @@ function ElementNodeBase({
       labelY = height / 2 + 14;
       break;
 
+    case "bar": {
+      // Barra: mostrador alargado con el canto de servicio marcado arriba y
+      // banquetas a lo largo del lado de los clientes. Las banquetas son
+      // dibujo, no puestos: en la barra no se sienta a nadie de la lista.
+      const stools = Math.max(1, Math.floor((width - 16) / 44));
+      const gap = width / stools;
+      body = (
+        <>
+          <Rect
+            x={0}
+            y={0}
+            width={width}
+            height={height}
+            cornerRadius={10}
+            fill={withAlpha(type.color, theme.dark ? 0.24 : 0.18)}
+            stroke={type.color}
+            strokeWidth={2.5}
+            listening={false}
+            {...glow(type.color, theme, 0.8)}
+          />
+          <Rect
+            x={4}
+            y={4}
+            width={width - 8}
+            height={Math.max(6, height * 0.16)}
+            cornerRadius={4}
+            fill={withAlpha(type.color, 0.7)}
+            listening={false}
+          />
+          {Array.from({ length: stools }, (_, i) => (
+            <Circle
+              key={`stool-${i}`}
+              x={gap * (i + 0.5)}
+              y={height - 11}
+              radius={6}
+              fill={withAlpha(type.color, 0.45)}
+              stroke={type.color}
+              strokeWidth={1.5}
+              listening={false}
+            />
+          ))}
+        </>
+      );
+      labelY = height * 0.45;
+      break;
+    }
+
+    case "door": {
+      // Puerta vista desde arriba: el hueco en la pared abajo, la hoja
+      // abierta a la izquierda (bisagra en la esquina inferior izquierda) y
+      // el arco que barre al abrirse, como en un plano de arquitectura.
+      const r = Math.min(width, height);
+      body = (
+        <>
+          <Wedge
+            x={0}
+            y={height}
+            radius={r}
+            angle={90}
+            rotation={-90}
+            fill={withAlpha(type.color, theme.dark ? 0.16 : 0.1)}
+            listening={false}
+          />
+          <Arc
+            x={0}
+            y={height}
+            innerRadius={r - 1.5}
+            outerRadius={r}
+            angle={90}
+            rotation={-90}
+            fill={type.color}
+            listening={false}
+            {...glow(type.color, theme, 0.6)}
+          />
+          <Line
+            points={[0, height, width, height]}
+            stroke={theme.line}
+            strokeWidth={4}
+            lineCap="round"
+            listening={false}
+          />
+          <Rect
+            x={-3}
+            y={height - r}
+            width={6}
+            height={r}
+            cornerRadius={2}
+            fill={type.color}
+            listening={false}
+            {...glow(type.color, theme, 0.8)}
+          />
+        </>
+      );
+      iconY = height / 2 - 6;
+      labelY = height / 2 + 20;
+      break;
+    }
+
+    case "wall":
+      // Pared: bloque sólido del color de las paredes del local (el mismo que
+      // el borde del plano), así se lee igual en Claro, Oscuro y Personalizado.
+      body = (
+        <Rect
+          x={0}
+          y={0}
+          width={width}
+          height={height}
+          cornerRadius={2}
+          fill={theme.line}
+          stroke={theme.line}
+          strokeWidth={1}
+          listening={false}
+          {...glow(theme.line, theme, 0.7)}
+        />
+      );
+      break;
+
     default:
       // Baño, caja y cualquier tipo nuevo: área translúcida con su ícono.
       body = (
@@ -407,7 +524,9 @@ function ElementNodeBase({
           <CanvasIcon node={icon} color={type.color} size={24} x={0} y={iconY - height / 2} />
         ) : null}
 
-        <LabelPill text={element.label} width={labelWidth} y={labelY - height / 2} theme={theme} />
+        {style.showLabel ? (
+          <LabelPill text={element.label} width={labelWidth} y={labelY - height / 2} theme={theme} />
+        ) : null}
 
         {marker ? (
           <Group x={marker.x} y={marker.y}>
@@ -459,7 +578,7 @@ function ElementNodeBase({
           stroke={theme.accent}
           strokeWidth={2}
           dash={[6, 4]}
-          cornerRadius={style.shape === "circle" ? (Math.min(width, height) + 12) / 2 : 16}
+          cornerRadius={style.shape === "circle" ? (Math.min(width, height) + 12) / 2 : style.shape === "wall" ? 4 : 16}
           listening={false}
         />
       ) : null}

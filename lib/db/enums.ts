@@ -60,6 +60,10 @@ export const ELEMENT_TYPE_KEYS = [
   "area-juegos",
   "bano",
   "caja",
+  // Estructura del local: se dibujan, pero no se sienta a nadie en ellas.
+  "barra",
+  "puerta",
+  "pared",
 ] as const;
 
 export type ElementTypeKey = (typeof ELEMENT_TYPE_KEYS)[number];

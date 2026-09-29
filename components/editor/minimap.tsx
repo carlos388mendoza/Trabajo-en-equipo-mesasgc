@@ -95,7 +95,12 @@ export function Minimap({
           const type = typesById.get(e.elementTypeId);
           if (!type) return null;
           const style = elementStyle(type);
-          const color = style.seatable ? theme.status[visualStatus(e)].stroke : type.color;
+          // La pared va del color de las paredes del local, como en el lienzo.
+          const color = style.seatable
+            ? theme.status[visualStatus(e)].stroke
+            : style.shape === "wall"
+              ? theme.line
+              : type.color;
           const cx = e.x + e.width / 2;
           const cy = e.y + e.height / 2;
           return style.shape === "circle" ? (
@@ -113,8 +118,8 @@ export function Minimap({
               y={e.y}
               width={e.width}
               height={e.height}
-              rx={10}
-              fill={withAlpha(color, style.seatable ? 1 : 0.6)}
+              rx={style.shape === "wall" ? 2 : 10}
+              fill={withAlpha(color, style.seatable || style.shape === "wall" ? 1 : 0.6)}
               transform={e.rotation ? `rotate(${e.rotation} ${cx} ${cy})` : undefined}
             />
           );
