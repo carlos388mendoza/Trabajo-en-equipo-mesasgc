@@ -20,16 +20,17 @@ Grupo Comidas.
 | Modo rápido (Miembro B) | Añadir clientes y marcarlos listos o ausentes, deslizando la tarjeta. | `components/quick-mode/`, README §11 |
 | Estadísticas e IA (Miembro B) | Espera media, días, restaurantes y asistente, con límite de uso. | `components/analytics/`, `app/api/` |
 | Aspecto | Estilo de mapa «radar», minimapa, íconos de lucide y temas Claro, Oscuro, Sistema y Personalizado, sin parpadeo. | `lib/theme/`, `/ajustes`, README §13 |
+| Mapa general y marcas | Tabla `brands` (4 marcas) y marca, ciudad y posición en `restaurants`. `/mapa` estilo radar con los 8 restaurantes en vivo por la sala `overview` (solo contadores), filtros, lista por espera y zoom al plano en vivo. `/restaurante/[id]/mapa` para el host. Analitica no ve nombres. **En `feat/world-map`, sin PR.** | `lib/map/`, `components/map/`, README §16, `docs/rbac.md` |
 | Autenticación y roles | **Terminado y probado a mano.** Better Auth con correo y contraseña; roles admin, restaurante y analitica; `/login`, `/inicio`, `/admin`, `/sin-acceso`; encabezado con sesión y favicon. | `lib/auth/`, `proxy.ts`, README §14–15, `docs/rbac.md` |
 
 Las verificaciones automáticas no usan ningún *runner* de tests: son scripts
-contra una base temporal. Estado al cerrar la rama de auth:
+contra una base temporal. Estado en `feat/world-map`:
 
 | Comando | Resultado |
 |---|---|
 | `npm run verify:editor` | 79/79 |
-| `npm run verify:realtime` | 60/60 |
-| `npm run verify:auth` | 92/92 (levanta la app real) |
+| `npm run verify:realtime` | 81/81 (60 + 21 de la sala `overview`) |
+| `npm run verify:auth` | 125/125 (levanta la app real; 92 + 33 del mapa) |
 | `npm run typecheck`, `npm run lint`, `npm run build` | pasan (solo la advertencia antigua de `postcss.config.mjs`) |
 
 ## Ramas y PR
@@ -44,6 +45,7 @@ contra una base temporal. Estado al cerrar la rama de auth:
 | #6 | `feat/quick-mode-statistics-ai` (Miembro B) | Fusionado |
 | #7 | `feat/editor-visual` (radar, íconos, temas) | Fusionado, como *squash* |
 | — | **`feat/auth-rbac`** (autenticación y roles) | **PR abierto hacia `testing`**, con `vbgjptt89g-beep` como revisor. Login probado a mano. |
+| — | **`feat/world-map`** (mapa general y marcas) | **Sin PR**, a la espera de aprobación. Sale de `feat/auth-rbac` porque necesita los roles: cuando se fusione la auth, se trae `testing` y el PR va hacia `testing`. |
 | — | `feat/quick-mode-live` (Miembro B) | En curso, sin PR. Modo rápido en vivo, Deshacer, tarjetas tipo Tinder y estadísticas de 14 días; usa `called_at`. |
 
 Reglas del equipo: nunca se trabaja ni se hace push en `main`; las ramas salen
@@ -101,6 +103,18 @@ claves.
   - Restablecer solo devuelve los colores de fábrica de Personalizado.
 - **Un solo servidor y un solo puerto** para Next y Socket.IO (`server.ts`),
   porque Railway expone un único `PORT`.
+- **Marcas en su propia tabla.** `brands` (`id`, `name`, `accent_color`) y,
+  en `restaurants`, `brand_id`, `city`, `map_x` y `map_y`, todas opcionales
+  (migración `0002_brands_world_map.sql`, solo aditiva). `brand_id` es la
+  columna para filtrar las estadísticas por marca.
+- **El mapa general solo recibe contadores.** Por la sala `overview` viajan
+  números por restaurante, nunca nombres ni ids de clientes. Así la pueden
+  ver admin y analitica.
+- **Analitica no ve nombres en el plano en vivo.** Los quita el servidor (el
+  id del cliente se cambia por `"oculto"`). Nuevo permiso `plano:clientes`,
+  solo para admin y el propio restaurante.
+- **/inicio cambia para admin y analitica.** Los dos tienen ahora el mapa
+  general como segundo destino, así que eligen en vez de entrar directo.
 
 ## Lo que falta
 
@@ -129,15 +143,22 @@ claves.
   montándose desde `components/quick-mode/` con la página de servidor que
   comprueba el permiso.
 
-### Lo siguiente: mapa general con marcas
+### Mapa general: lo que queda (`feat/world-map`)
 
-- **Tabla `brands`**, con 4 marcas: **China Wok, Pizza Hut, KFC y Denny's**.
-  Cada restaurante pertenece a una marca (columna nueva en `restaurants`).
-- **Mapa general** con todos los restaurantes, agrupados o filtrados por marca.
-- **Vista por marca en las estadísticas**, que hoy no existe porque
-  `restaurants` no tenía ese dato.
-- Es un cambio de esquema: hay que acordar las columnas con el Miembro B y
-  generar la migración con `drizzle-kit generate`.
+- **Revisión y PR.** El PR hacia `testing` se abre cuando se apruebe, y
+  después de fusionar `feat/auth-rbac`.
+- **Miembro B: llamar a `emitOverview`.** `emitOverview(restaurantId)`
+  (`lib/realtime/overview.ts`) está exportada y documentada. En
+  `feat/quick-mode-live`, los eventos `waitlist:add`, `waitlist:resolve` y
+  `waitlist:undo` tienen que llamar a `void emitOverview(restaurantId)` después
+  de escribir, para que el mapa vea al momento los clientes nuevos o
+  resueltos. Mientras no lo hagan, `/mapa` se pone al día con el respaldo de
+  30 s.
+- **Miembro B: estadísticas por marca**, filtrando por `restaurants.brand_id`.
+- **Producción:** aplicar la migración 0002 con `npm run db:migrate`. Los
+  restaurantes que ya existan quedan sin marca ni posición: salen en la lista
+  del mapa, pero no en el dibujo, hasta que se les ponga.
+- **Sin pantalla para marcas y posiciones.** Hoy las pone el seed.
 
 ### Más adelante
 
