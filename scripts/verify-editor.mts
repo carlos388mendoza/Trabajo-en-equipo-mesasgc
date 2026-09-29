@@ -38,6 +38,7 @@ const { saveLayoutInputSchema } = await import("@/lib/layout/validation");
 const { copyLayoutToRestaurant, copyZoneIntoLayout, getStructureCounts } =
   await import("@/lib/layout/copy");
 const { getLayout } = await import("@/lib/db/queries/layouts");
+const { planToRotated, rotatedSize, rotatedToPlan } = await import("@/lib/layout/geometry");
 const { ELEMENT_TYPE_KEYS, asLayoutRotation, isSeatableElement } = await import("@/lib/db/enums");
 const { elementStyle, nextLabel, visibleSeats } = await import(
   "@/lib/layout/element-style"
@@ -859,6 +860,33 @@ check("una zona nueva nace sin girar", (await getLayout(ROT_LAYOUT, ROT_REST))?.
 check("un giro que no es un cuarto de vuelta se rechaza (45°)", !rotPayload(45).success);
 check("  y 360° también (se guarda como 0)", !rotPayload(360).success);
 check("asLayoutRotation lee un valor raro como 0", asLayoutRotation(45) === 0 && asLayoutRotation(270) === 270);
+
+// Geometría del minimapa: gira igual que el lienzo, y un toque en el minimapa
+// girado vuelve al punto correcto del plano.
+{
+  const W = 1000;
+  const H = 700;
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6;
+  const size90 = rotatedSize(W, H, 90);
+  check("girado 90° o 270°, el minimapa cruza ancho y alto", size90.width === H && size90.height === W && rotatedSize(W, H, 270).width === H);
+  check("  y con 0° o 180° se queda igual", rotatedSize(W, H, 180).width === W && rotatedSize(W, H, 0).height === H);
+  // Esquina superior izquierda del plano: a 90° a derechas acaba arriba a la
+  // derecha; a 180°, abajo a la derecha; a 270°, abajo a la izquierda.
+  const corner = { x: 0, y: 0 };
+  check(
+    "  la esquina superior izquierda va a su sitio con cada giro",
+    near(planToRotated(corner, W, H, 0), { x: 0, y: 0 }) &&
+      near(planToRotated(corner, W, H, 90), { x: H, y: 0 }) &&
+      near(planToRotated(corner, W, H, 180), { x: W, y: H }) &&
+      near(planToRotated(corner, W, H, 270), { x: 0, y: W }),
+  );
+  const probe = { x: 123, y: 456 };
+  check(
+    "  ida y vuelta: tocar el minimapa girado lleva al mismo punto del plano",
+    [0, 90, 180, 270].every((r) => near(rotatedToPlan(planToRotated(probe, W, H, r), W, H, r), probe)),
+  );
+}
 
 {
   const parsed = rotPayload(270);
