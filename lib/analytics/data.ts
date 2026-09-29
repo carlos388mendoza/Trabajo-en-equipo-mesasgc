@@ -1,8 +1,8 @@
 import { and, asc, eq, gte, inArray, lt, type SQL } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { getBrandForRestaurant } from "@/lib/analytics/brand";
-import { restaurants, waitlistEntries } from "@/lib/db/schema";
+import { getBrandForRestaurant, type AnalyticsBrand } from "@/lib/analytics/brand";
+import { brands, restaurants, waitlistEntries } from "@/lib/db/schema";
 import {
   addCalendarDays,
   hondurasDateKey,
@@ -16,8 +16,8 @@ const MINUTE_MS = 60_000;
 
 export type AnalyticsFilters = {
   restaurantId?: string | null;
-  /** En el esquema actual la marca se identifica por el nombre del restaurante. */
-  brand?: string;
+  brandId?: string;
+  city?: string;
 };
 
 export type DailyStat = {
@@ -30,6 +30,8 @@ export type DailyStat = {
 export type RestaurantStat = {
   id: string;
   name: string;
+  brand: AnalyticsBrand | null;
+  city: string | null;
   groups: number;
   minutes: number;
 };
@@ -41,9 +43,11 @@ export type CustomerStat = {
 };
 
 export type AnalyticsData = {
-  filters: { restaurantId: string | null; brand: string };
+  filters: { restaurantId: string | null; brandId: string; city: string };
   period: { startDate: string; endDate: string; timeZone: "America/Tegucigalpa" };
-  restaurantsAvailable: { id: string; name: string }[];
+  restaurantsAvailable: { id: string; name: string; brand: AnalyticsBrand | null; city: string | null }[];
+  brandsAvailable: AnalyticsBrand[];
+  citiesAvailable: string[];
   totals: {
     groups: number;
     todayGroups: number;
@@ -72,20 +76,35 @@ export async function getAnalytics(
   const currentEnd = hondurasMidnightUtc(endDate);
   const previousStart = hondurasMidnightUtc(previousStartDate);
   const restaurantId = filters.restaurantId?.trim() || null;
-  const brand = filters.brand?.trim() ?? "";
+  const brandId = filters.brandId?.trim() ?? "";
+  const city = filters.city?.trim() ?? "";
 
-  const restaurantRows = await db
-    .select({ id: restaurants.id, name: restaurants.name })
-    .from(restaurants)
-    .orderBy(asc(restaurants.name));
-  const scopedRestaurants = restaurantRows.filter((restaurant) => {
+  const [brandRows, restaurantRows] = await Promise.all([
+    db.select({ id: brands.id, name: brands.name, accentColor: brands.accentColor })
+      .from(brands)
+      .orderBy(asc(brands.name)),
+    db.select({
+      id: restaurants.id,
+      name: restaurants.name,
+      brandId: restaurants.brandId,
+      city: restaurants.city,
+      brand: { id: brands.id, name: brands.name, accentColor: brands.accentColor },
+    })
+      .from(restaurants)
+      .leftJoin(brands, eq(restaurants.brandId, brands.id))
+      .orderBy(asc(restaurants.name)),
+  ]);
+  const restaurantsWithBrand = restaurantRows.map((restaurant) => ({
+    ...restaurant,
+    brand: getBrandForRestaurant(restaurant),
+  }));
+  const scopedRestaurants = restaurantsWithBrand.filter((restaurant) => {
     if (restaurantId && restaurant.id !== restaurantId) return false;
-    return !brand || getBrandForRestaurant(restaurant)
-      .toLocaleLowerCase("es-HN")
-      .includes(brand.toLocaleLowerCase("es-HN"));
+    if (brandId && restaurant.brand?.id !== brandId) return false;
+    return !city || restaurant.city?.toLocaleLowerCase("es-HN") === city.toLocaleLowerCase("es-HN");
   });
   const scopedIds = scopedRestaurants.map((restaurant) => restaurant.id);
-  const scopedBySelection = Boolean(restaurantId || brand);
+  const scopedBySelection = Boolean(restaurantId || brandId || city);
   const conditions = (start: Date, end: Date): SQL | undefined => and(
     eq(waitlistEntries.status, "sentado"),
     gte(waitlistEntries.seatedAt, start),
@@ -139,6 +158,8 @@ export async function getAnalytics(
     return {
       id: restaurant.id,
       name: restaurant.name,
+      brand: restaurant.brand,
+      city: restaurant.city,
       groups: entries.length,
       minutes: averageWait(entries),
     };
@@ -163,19 +184,21 @@ export async function getAnalytics(
   const averageCallMinutes = average(calledRows.map((entry) => waitMinutes(entry.arrivedAt, entry.calledAt!)));
   const summary = [
     currentRows.length
-      ? `En los últimos 14 días (hora de Honduras) se sentaron ${currentRows.length} grupos; la espera promedio fue de ${average(waits)} minutos.`
+      ? `En los últimos 14 días (hora de Honduras) se sentaron ${currentRows.length} ${currentRows.length === 1 ? "grupo" : "grupos"}; la espera promedio fue de ${average(waits)} minutos.`
       : "Todavía no hay grupos sentados en los últimos 14 días.",
     slowestDay ? `El día más lento fue ${slowestDay.day}, con ${slowestDay.minutes} minutos de espera.` : "",
-    topCustomers[0] ? `El cliente con más grupos fue ${topCustomers[0].name}, con ${topCustomers[0].groups}.` : "",
+    topCustomers[0] ? `El cliente con más grupos acumuló ${topCustomers[0].groups} ${topCustomers[0].groups === 1 ? "grupo" : "grupos"}.` : "",
     calledRows.length
-      ? `Se avisó a ${calledRows.length} grupos después de un promedio de ${averageCallMinutes} minutos desde su llegada.`
+      ? `Se avisó a ${calledRows.length} ${calledRows.length === 1 ? "grupo" : "grupos"} después de un promedio de ${averageCallMinutes} minutos desde su llegada.`
       : "Todavía no hay avisos registrados en los últimos 14 días.",
   ].filter(Boolean).join(" ");
 
   return {
-    filters: { restaurantId, brand },
+    filters: { restaurantId, brandId, city },
     period: { startDate, endDate: today, timeZone: "America/Tegucigalpa" },
-    restaurantsAvailable: restaurantRows,
+    restaurantsAvailable: restaurantsWithBrand.map(({ id, name, brand, city }) => ({ id, name, brand, city })),
+    brandsAvailable: brandRows,
+    citiesAvailable: [...new Set(restaurantRows.map((restaurant) => restaurant.city).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b, "es-HN")),
     totals: {
       groups: currentRows.length,
       todayGroups: currentRows.filter((entry) => hondurasDateKey(entry.seatedAt!) === today).length,

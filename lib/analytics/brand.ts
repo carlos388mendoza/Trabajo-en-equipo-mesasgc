@@ -1,5 +1,15 @@
-/** Devuelve la marca temporal mientras el modelo de marcas del proyecto llega. */
-export function getBrandForRestaurant(restaurant: { name: string }): string {
-  // TODO: usar restaurants.brand_id cuando Carlos agregue la tabla brands.
-  return restaurant.name;
+export type AnalyticsBrand = {
+  id: string;
+  name: string;
+  accentColor: string;
+};
+
+/** Devuelve la marca asociada por restaurants.brand_id, si sigue existiendo. */
+export function getBrandForRestaurant(restaurant: {
+  brandId: string | null;
+  brand: AnalyticsBrand | null;
+}): AnalyticsBrand | null {
+  return restaurant.brandId && restaurant.brand?.id === restaurant.brandId
+    ? restaurant.brand
+    : null;
 }

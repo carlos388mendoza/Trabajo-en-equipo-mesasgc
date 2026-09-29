@@ -12,8 +12,9 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const restaurantId = url.searchParams.get("restaurantId")?.trim() ?? "";
-  const brand = url.searchParams.get("brand")?.trim() ?? "";
-  if (restaurantId.length > 64 || brand.length > 100) {
+  const brandId = url.searchParams.get("brandId")?.trim() ?? "";
+  const city = url.searchParams.get("city")?.trim() ?? "";
+  if (restaurantId.length > 64 || brandId.length > 64 || city.length > 100) {
     return NextResponse.json({ error: "El filtro no es válido." }, { status: 400 });
   }
 
@@ -21,7 +22,8 @@ export async function GET(request: Request) {
     // El filtro de 14 días y de restaurante se aplica en getAnalytics.
     const analytics = await getAnalytics({
       restaurantId: restaurantId || null,
-      brand,
+      brandId,
+      city,
     });
     return NextResponse.json(analytics);
   } catch (error) {

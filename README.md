@@ -481,7 +481,14 @@ que todavía no hay actividad; no presenta cifras de demostración.
 El asistente (`/api/assistant`) recibe ese resumen para contestar preguntas en
 español. Si se configura `OPENROUTER_API_KEY`, consulta OpenRouter; sin esa
 clave, responde localmente las preguntas comunes sobre espera y volumen. La
-clave se define solo en `.env.local` y no se envía al navegador.
+clave se define solo en `.env.local` y no se envía al navegador. Cuando usa
+OpenRouter, envía la pregunta (después de quitar datos privados conocidos),
+totales, fechas, promedios, actividad por día y cifras por restaurante, marca y
+ciudad. El top se manda con alias como «Cliente 1», junto con grupos y espera
+promedio; la respuesta cambia esos alias por los nombres solo para mostrarla
+en pantalla. No se envían nombres reales, teléfonos ni notas de clientes. Los
+teléfonos y notas tampoco forman parte del contexto estadístico que se manda al
+proveedor.
 
 No se añadieron tablas ni columnas: el esquema de `testing` ya contiene lo
 necesario. `waitlist_entries.party_size` guarda cuántas personas hay en el
@@ -495,8 +502,7 @@ Los clientes marcados como `listo` todavía no cuentan en las estadísticas:
 estas solo incluyen grupos con estado `sentado` y `seated_at`. El modo rápido
 los contará cuando la asignación de mesa con `assignTable` se integre en la
 siguiente rama. Las estadísticas también muestran actividad de hoy, el día
-más lento, top 10 de clientes y filtros por restaurante y marca (la búsqueda
-de marca coincide con el nombre del restaurante disponible en el esquema).
+más lento, top 10 de clientes y filtros por restaurante, marca real y ciudad.
 El tiempo hasta avisar se calcula desde `arrived_at` hasta `called_at` para
 clientes avisados durante el período.
 
