@@ -15,11 +15,13 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 
 const PUBLIC_PAGES = new Set(["/login"]);
+const PUBLIC_APIS = new Set(["/api/health"]);
 
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   if (PUBLIC_PAGES.has(pathname)) return NextResponse.next();
+  if (PUBLIC_APIS.has(pathname)) return NextResponse.next();
   if (getSessionCookie(request)) return NextResponse.next();
 
   if (pathname.startsWith("/api/")) {
