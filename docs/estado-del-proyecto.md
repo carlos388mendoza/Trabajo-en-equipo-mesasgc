@@ -17,20 +17,20 @@ Grupo Comidas.
 | Editor de mesas | Plano con Konva: arrastrar, redimensionar, girar, deshacer y copiar a otro restaurante. Pensado para tablet. | `components/editor/`, README §8–9, §12 |
 | Tiempo real | Next y Socket.IO en un solo servidor (`server.ts`), con una room por restaurante. | `lib/realtime/`, README §10 |
 | Conflictos | Asignación de mesa con bloqueo optimista: gana el primero y el otro recibe «Esta mesa ya fue asignada». | `lib/tables/assign.ts` |
-| Modo rápido (Miembro B) | Añadir clientes y marcarlos listos o ausentes, deslizando la tarjeta. | `components/quick-mode/`, README §11 |
-| Estadísticas e IA (Miembro B) | Espera media, días, restaurantes y asistente, con límite de uso. | `components/analytics/`, `app/api/` |
+| Modo rápido (Miembro B) | En vivo por Socket.IO (`waitlist:add`, `waitlist:resolve` y `waitlist:undo`, con `canModifyWaitlist`), tarjetas tipo Tinder con `motion` y Deshacer (botón y Ctrl+Z). Fusionado en el #9. | `components/quick-mode/`, `lib/waitlist/`, README §11 |
+| Estadísticas e IA (Miembro B) | Últimos 14 días en hora de Honduras, «tiempo hasta avisar» con `called_at`, top 10 de clientes y asistente. Fusionado en el #9. | `components/analytics/`, `lib/analytics/`, `app/api/` |
 | Aspecto | Estilo de mapa «radar», minimapa, íconos de lucide y temas Claro, Oscuro, Sistema y Personalizado, sin parpadeo. | `lib/theme/`, `/ajustes`, README §13 |
-| Mapa general y marcas | Tabla `brands` (4 marcas) y marca, ciudad y posición en `restaurants`. `/mapa` estilo radar con los 8 restaurantes en vivo por la sala `overview` (solo contadores), filtros, lista por espera y zoom al plano en vivo. `/restaurante/[id]/mapa` para el host. Analitica no ve nombres. **En `feat/world-map`, sin PR.** | `lib/map/`, `components/map/`, README §16, `docs/rbac.md` |
+| Mapa general y marcas | Tabla `brands` (4 marcas) y marca, ciudad y posición en `restaurants`. `/mapa` estilo radar con los 8 restaurantes en vivo por la sala `overview` (solo contadores), filtros, lista por espera y zoom al plano en vivo. `/restaurante/[id]/mapa` para el host. Analitica no ve nombres. **PR de `feat/world-map` hacia `testing`, en revisión.** | `lib/map/`, `components/map/`, README §16, `docs/rbac.md` |
 | Autenticación y roles | **Terminado y probado a mano.** Better Auth con correo y contraseña; roles admin, restaurante y analitica; `/login`, `/inicio`, `/admin`, `/sin-acceso`; encabezado con sesión y favicon. | `lib/auth/`, `proxy.ts`, README §14–15, `docs/rbac.md` |
 
 Las verificaciones automáticas no usan ningún *runner* de tests: son scripts
-contra una base temporal. Estado en `feat/world-map`:
+contra una base temporal. Estado en `feat/world-map`, ya con `testing` y el #9 dentro:
 
 | Comando | Resultado |
 |---|---|
 | `npm run verify:editor` | 79/79 |
-| `npm run verify:realtime` | 81/81 (60 + 21 de la sala `overview`) |
-| `npm run verify:auth` | 125/125 (levanta la app real; 92 + 33 del mapa) |
+| `npm run verify:realtime` | 113/113 (82 del modo rápido en vivo + 31 de la sala `overview`) |
+| `npm run verify:auth` | 124/124 (levanta la app real; 92 + 32 del mapa) |
 | `npm run typecheck`, `npm run lint`, `npm run build` | pasan (solo la advertencia antigua de `postcss.config.mjs`) |
 
 ## Ramas y PR
@@ -44,9 +44,10 @@ contra una base temporal. Estado en `feat/world-map`:
 | #5 | `feat/realtime-server` (tiempo real y conflictos) | Fusionado |
 | #6 | `feat/quick-mode-statistics-ai` (Miembro B) | Fusionado |
 | #7 | `feat/editor-visual` (radar, íconos, temas) | Fusionado, como *squash* |
-| — | **`feat/auth-rbac`** (autenticación y roles) | **PR abierto hacia `testing`**, con `vbgjptt89g-beep` como revisor. Login probado a mano. |
-| — | **`feat/world-map`** (mapa general y marcas) | **Sin PR**, a la espera de aprobación. Sale de `feat/auth-rbac` porque necesita los roles: cuando se fusione la auth, se trae `testing` y el PR va hacia `testing`. |
-| — | `feat/quick-mode-live` (Miembro B) | En curso, sin PR. Modo rápido en vivo, Deshacer, tarjetas tipo Tinder y estadísticas de 14 días; usa `called_at`. |
+| #8 | `feat/auth-rbac` (autenticación y roles) | Fusionado |
+| #9 | `feat/quick-mode-live` (Miembro B) | Fusionado, con merge normal. Revisado y aprobado por el Miembro A. |
+| — | **`feat/world-map`** (mapa general y marcas) | **PR abierto hacia `testing`**, con `vbgjptt89g-beep` como revisor. Ya trae `testing` (con el #9). |
+| — | `feat/layout-rotation` (giro guardado; barra, puerta y pared) | Sale de `feat/world-map`. |
 
 Reglas del equipo: nunca se trabaja ni se hace push en `main`; las ramas salen
 de `testing` y los PR van hacia `testing`; commits con prefijo (`feat`, `fix`,
@@ -129,33 +130,23 @@ claves.
   `npm run db:migrate` (nunca `db:push` contra Turso) y crear el primer admin
   con `npm run create-admin`.
 
-### En curso: `feat/quick-mode-live` (Miembro B)
+### Pendientes del #9 (Miembro B, no bloquean)
 
-- Modo rápido **en vivo** por Socket.IO.
-- **Deshacer** (Ctrl+Z).
-- **Tarjetas tipo Tinder** para marcar listo o ausente.
-- **Estadísticas de los últimos 14 días**, usando `called_at` (la hora en que se
-  avisó al cliente).
-- **A coordinar:** la rama sale de antes del #7 y de la auth, y añade eventos a
-  `lib/realtime/`, justo donde la auth puso los permisos del socket
-  (`lib/realtime/auth.ts` y `server.ts`). Al traer `testing`, sus eventos
-  nuevos tienen que pasar por `can()`: leer la lista con `rapido:ver` y
-  modificarla con `rapido:modificar`. Además, sus pantallas tienen que seguir
-  montándose desde `components/quick-mode/` con la página de servidor que
-  comprueba el permiso.
+- **El asistente y los filtros.** Con «Todos los restaurantes» ya
+  seleccionado, «Compara restaurantes» pide quitar los filtros.
+- **Singulares:** «1 clientes avisados», «1 personas».
 
 ### Mapa general: lo que queda (`feat/world-map`)
 
-- **Revisión y PR.** El PR hacia `testing` se abre cuando se apruebe, y
-  después de fusionar `feat/auth-rbac`.
-- **Miembro B: llamar a `emitOverview`.** `emitOverview(restaurantId)`
-  (`lib/realtime/overview.ts`) está exportada y documentada. En
-  `feat/quick-mode-live`, los eventos `waitlist:add`, `waitlist:resolve` y
-  `waitlist:undo` tienen que llamar a `void emitOverview(restaurantId)` después
-  de escribir, para que el mapa vea al momento los clientes nuevos o
-  resueltos. Mientras no lo hagan, `/mapa` se pone al día con el respaldo de
-  30 s.
-- **Miembro B: estadísticas por marca**, filtrando por `restaurants.brand_id`.
+- **Revisión del PR** por el Miembro B.
+- **`emitOverview`: hecho.** Los eventos `waitlist:add`, `waitlist:resolve` y
+  `waitlist:undo` ya lo llaman, solo cuando la acción sale bien, así que
+  `/mapa` ve al momento los clientes nuevos, resueltos o restaurados. Lo
+  comprueba `verify:realtime`.
+- **Miembro B: solo le queda `lib/analytics/brand.ts`.** Hoy
+  `getBrandForRestaurant` devuelve el nombre del restaurante como marca
+  provisional. Cuando entre este PR, basta con cambiarlo para leer la tabla
+  `brands` por `restaurants.brand_id`.
 - **Producción:** aplicar la migración 0002 con `npm run db:migrate`. Los
   restaurantes que ya existan quedan sin marca ni posición: salen en la lista
   del mapa, pero no en el dibujo, hasta que se les ponga.
@@ -165,9 +156,8 @@ claves.
 
 - **Sentar con mesa desde el modo rápido**, con `assignTable` por el socket
   (Miembro B). Así «listo» pasa a «sentado» y cuenta en las estadísticas.
-- **Estadísticas en hora de Honduras** (UTC-6), «Actividad de hoy» solo de hoy,
-  el `<main>` anidado y el «Cargando…» que no se ve (Miembro B; revisar qué
-  resuelve ya `feat/quick-mode-live`).
+- **«Actividad de hoy» solo de hoy**, el `<main>` anidado y el «Cargando…»
+  que no se ve (Miembro B; las estadísticas ya van en hora de Honduras).
 - **Pasar al tema el modo rápido y las estadísticas** (tarjetas, íconos de
   lucide) y la pantalla de clientes «listos» (Miembro B).
 - **Guardar el giro del plano y el tema por usuario** en la base de datos: hoy

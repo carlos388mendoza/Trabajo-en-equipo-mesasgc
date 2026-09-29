@@ -768,7 +768,8 @@ solo ve el plano de los suyos.
   en espera y la hora media de llegada. El navegador calcula la espera media
   con esa hora, así que avanza sola.
 - **Quién avisa.** `emitOverview(restaurantId)` (`lib/realtime/overview.ts`) se
-  llama después de sentar o liberar una mesa, y al guardar o copiar un plano.
+  llama después de sentar o liberar una mesa, al guardar o copiar un plano, y
+  cuando el modo rápido agrega, resuelve o deshace (solo si la acción salió bien).
 - **Respaldo.** `/mapa` pide además los contadores cada 30 s.
 - **El plano en vivo no aplica los eventos uno a uno.** Cuando llega un aviso,
   vuelve a pedir el plano a la server action `loadLivePlan`, que decide en el
@@ -817,10 +818,7 @@ solo ve el plano de los suyos.
 
 ### Pendiente de este paso
 
-- **Clientes nuevos (Miembro B).** Los eventos `waitlist:add`,
-  `waitlist:resolve` y `waitlist:undo` del modo rápido en vivo tienen que
-  llamar a `void emitOverview(restaurantId)`. Hasta entonces, un cliente nuevo
-  llega al mapa por el respaldo de 30 s.
-- **Estadísticas por marca (Miembro B)**, filtrando por `restaurants.brand_id`.
+- **Marca en las estadísticas (Miembro B).** `lib/analytics/brand.ts` usa todavía
+  el nombre del restaurante como marca: falta leer `restaurants.brand_id`.
 - **Gestión de marcas y posiciones.** No hay pantalla para crear marcas ni
   para mover un restaurante en el mapa: hoy lo pone el seed.
