@@ -1,8 +1,25 @@
 # Table Waitlist
 
+[![CI](https://github.com/carlos388mendoza/Trabajo-en-equipo-mesasgc/actions/workflows/ci.yml/badge.svg?branch=testing)](https://github.com/carlos388mendoza/Trabajo-en-equipo-mesasgc/actions/workflows/ci.yml)
+
 Aplicación en tiempo real para el manejo de listas de espera de clientes en restaurantes: estructura de mesas por local, modo rápido de check-in/check-out, roles con permisos distintos, estadísticas y un asistente de IA para consultas en lenguaje natural.
 
 **Plazo:** 1 semana.
+
+---
+
+## CI
+
+GitHub Actions ejecuta estas comprobaciones en cada pull request dirigido a `testing` o `main`, y en cada push a esas ramas:
+
+- `npm run typecheck`
+- `npm run lint`
+- `npm run build`
+- `npm run verify:editor`
+- `npm run verify:realtime`
+- `npm run verify:auth`
+
+El workflow usa Node.js 22 y `npm ci`. Las verificaciones usan bases SQLite temporales y aplican las migraciones del repositorio; no necesitan credenciales de Turso ni de OpenRouter. Para ver el resultado, abre la pestaña **Actions** del repositorio y selecciona la ejecución del workflow **CI**. Una marca verde indica que terminó bien; una roja señala que falló un paso y permite abrir sus logs.
 
 ---
 
