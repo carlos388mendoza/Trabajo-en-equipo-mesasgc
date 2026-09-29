@@ -47,6 +47,7 @@ const { attachRealtime } = await import("@/lib/realtime/server");
 const { emitToRestaurant } = await import("@/lib/realtime/registry");
 const { emitOverview } = await import("@/lib/realtime/overview");
 const { getCounters, getRestaurantCounters, averageWaitMinutes, waitLevel } = await import("@/lib/map/counters");
+type RestaurantCountersT = import("@/lib/realtime/events").RestaurantCounters;
 
 let passed = 0;
 const failures: string[] = [];
@@ -599,9 +600,7 @@ section("Sala overview: contadores del mapa general");
   check("  un restaurante sin nada da ceros", none.tablesTotal === 0 && none.waiting === 0 && none.averageArrivedAt === null);
 }
 
-const cookieAnalitica = await sessionCookie("analitica@verify.test", ["analitica"], []);
-const analitica = await connect(cookieAnalitica);
-
+// `analitica` es el socket de analitica que se conectó arriba.
 {
   const r = (await ask(hostB, "overview:join", {})) as AnyAck;
   check("el rol restaurante NO entra en la sala overview", !r.ok && /mapa general/.test(r.error ?? ""), r.error);
@@ -659,6 +658,46 @@ const COUNTER_KEYS = ["averageArrivedAt", "restaurantId", "tablesOccupied", "tab
 }
 
 {
+  // El modo rápido también avisa al mapa general: agregar, resolver y
+  // deshacer cambian los clientes en espera. Solo viajan contadores.
+  const got = counter(analitica, "overview:counters");
+  const before = await getRestaurantCounters(REST);
+  const noData = (c: unknown, ...secrets: string[]) =>
+    JSON.stringify(Object.keys(c as object).sort()) === JSON.stringify(COUNTER_KEYS) &&
+    secrets.every((x) => !JSON.stringify(c).includes(x));
+
+  const added = (await ask(hostB, "waitlist:add", { customerName: "Grupo del mapa", partySize: 3 })) as AnyAck & {
+    entry?: { id: string };
+    actionId?: string;
+  };
+  await settle();
+  const afterAdd = got[0] as RestaurantCountersT | undefined;
+  check("waitlist:add manda contadores a la sala overview", added.ok && got.length === 1 && afterAdd?.restaurantId === REST, `${got.length}`);
+  check("  con un cliente más en espera", afterAdd?.waiting === before.waiting + 1, JSON.stringify(afterAdd));
+  check("  sin datos del cliente", noData(afterAdd, "Grupo del mapa", added.entry?.id ?? "-"));
+
+  const resolved = (await ask(hostB, "waitlist:resolve", { entryId: added.entry?.id ?? "", status: "ausente" })) as AnyAck & {
+    actionId?: string;
+  };
+  await settle();
+  const afterResolve = got[1] as RestaurantCountersT | undefined;
+  check("waitlist:resolve manda contadores a la sala overview", resolved.ok && got.length === 2, `${got.length}`);
+  check("  y el ausente ya no cuenta en espera", afterResolve?.waiting === before.waiting, JSON.stringify(afterResolve));
+  check("  sin datos del cliente", noData(afterResolve, "Grupo del mapa", added.entry?.id ?? "-"));
+
+  const undone = (await ask(hostB, "waitlist:undo", { actionId: resolved.actionId ?? "" })) as AnyAck;
+  await settle();
+  const afterUndo = got[2] as RestaurantCountersT | undefined;
+  check("waitlist:undo manda contadores a la sala overview", undone.ok && got.length === 3, `${got.length}`);
+  check("  y el cliente vuelve a contar en espera", afterUndo?.waiting === before.waiting + 1, JSON.stringify(afterUndo));
+  check("  sin datos del cliente", noData(afterUndo, "Grupo del mapa", added.entry?.id ?? "-"));
+
+  const failed = await ask(hostB, "waitlist:undo", { actionId: resolved.actionId ?? "" });
+  await settle();
+  check("una acción que falla no manda contadores", !failed.ok && got.length === 3, `${got.length}`);
+}
+
+{
   // Si le quitan el rol con el mapa abierto, deja de recibir y sale de la sala.
   const session = await getAuth().api.getSession({ headers: new Headers({ cookie: cookieAnalitica }) });
   await setUserAccess(session!.user.id, ["restaurante"], [REST_2]);
@@ -670,8 +709,6 @@ const COUNTER_KEYS = ["averageArrivedAt", "restaurantId", "tablesOccupied", "tab
   check("sin mapa:ver ya no recibe contadores", got.length === 0 && gotAdmin.length === 2, `${got.length}/${gotAdmin.length}`);
   check("  y sale de la sala overview", !(await io.in("overview").fetchSockets()).some((s) => s.data.userId === session!.user.id));
 }
-
-analitica.close();
 
 {
   // Desactivado: su sesión se cierra y el socket ya no conecta.
