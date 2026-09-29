@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { ChartColumn, ChevronRight, ShieldCheck, Store } from "lucide-react";
+import { ChartColumn, ChevronRight, Map as MapIcon, ShieldCheck, Store } from "lucide-react";
 
-import { type Destination, ROLE_LABELS, destinationsFor } from "@/lib/auth/rbac";
+import { type Destination, ROLE_LABELS, destinationsFor, landingFor } from "@/lib/auth/rbac";
 import { requirePage } from "@/lib/auth/session";
 import { listRestaurants } from "@/lib/auth/users";
 
-// A dónde entra cada uno después del login. Con un solo destino se le lleva
-// directo (admin a /admin, un host a su modo rápido, analítica a
-// /analiticas); con varios roles o restaurantes, elige aquí.
+// A dónde entra cada uno después del login (ver `landingFor`): el admin al
+// mapa general, analitica a las estadísticas y un host con un solo
+// restaurante a su modo rápido. Con varios roles o varios restaurantes, elige
+// aquí.
 
 export const metadata = { title: "Inicio · Table Waitlist" };
 
@@ -17,13 +18,15 @@ const ICONS: Record<Destination["kind"], LucideIcon> = {
   admin: ShieldCheck,
   restaurante: Store,
   analiticas: ChartColumn,
+  mapa: MapIcon,
 };
 
 export default async function InicioPage() {
   const user = await requirePage("/inicio");
   const destinations = destinationsFor(user, await listRestaurants());
 
-  if (destinations.length === 1) redirect(destinations[0].href);
+  const landing = landingFor(user, destinations);
+  if (landing) redirect(landing);
 
   return (
     <div className="mx-auto mt-6 max-w-2xl">

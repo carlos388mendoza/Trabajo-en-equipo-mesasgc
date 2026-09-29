@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { ChartColumn, LogOut, Settings, ShieldCheck, Store } from "lucide-react";
+import { ChartColumn, LogOut, Map as MapIcon, Settings, ShieldCheck, Store } from "lucide-react";
 
 import { signOutAction } from "@/app/login/actions";
 import { ROLE_LABELS, can } from "@/lib/auth/rbac";
@@ -30,6 +30,14 @@ export async function AppHeader() {
           ? { href: `/restaurante/${user.restaurantIds[0]}/rapido`, label: "Mi restaurante", icon: Store }
           : { href: "/inicio", label: "Mis restaurantes", icon: Store },
       );
+    }
+    // "Mapa": el general para admin y analitica; para un host con un solo
+    // restaurante, el plano en vivo del suyo. Con varios, lo elige desde
+    // la navegación de cada restaurante.
+    if (can(user, "mapa:ver")) {
+      links.push({ href: "/mapa", label: "Mapa", icon: MapIcon });
+    } else if (user.restaurantIds.length === 1 && can(user, "plano:ver", user.restaurantIds[0])) {
+      links.push({ href: `/restaurante/${user.restaurantIds[0]}/mapa`, label: "Mapa", icon: MapIcon });
     }
     if (can(user, "analiticas:ver")) {
       links.push({ href: "/analiticas", label: "Estadísticas", icon: ChartColumn });

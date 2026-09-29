@@ -88,6 +88,12 @@ type Props = {
    * que Next reenvíe los refs a través del `dynamic`.
    */
   controllerRef: RefObject<CanvasHandle | null>;
+  /**
+   * Plano en vivo (/mapa, /restaurante/[id]/mapa): se puede mirar, panear y
+   * hacer zoom, pero las mesas no se arrastran ni se redimensionan. El
+   * llamador pasa además `selectedId={null}` y un `onSelect` vacío.
+   */
+  readOnly?: boolean;
 };
 
 /**
@@ -122,6 +128,7 @@ export function KonvaCanvas({
   onChange,
   onZoomChange,
   controllerRef,
+  readOnly = false,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -566,6 +573,7 @@ export function KonvaCanvas({
                     minutes={minutesSeated(element, now)}
                     pulse={pulses[element.id] ?? 0}
                     onSelect={onSelect}
+                    draggable={!readOnly}
                     onDragStart={() => {
                       onEditStart();
                       setDragging(true);
@@ -581,12 +589,14 @@ export function KonvaCanvas({
               })}
             </Group>
 
-            <Transformer
-              {...transformerConfig}
-              ref={transformerRef}
-              onTransformStart={onEditStart}
-              onTransformEnd={handleTransformEnd}
-            />
+            {readOnly ? null : (
+              <Transformer
+                {...transformerConfig}
+                ref={transformerRef}
+                onTransformStart={onEditStart}
+                onTransformEnd={handleTransformEnd}
+              />
+            )}
           </Layer>
         </Stage>
       ) : null}

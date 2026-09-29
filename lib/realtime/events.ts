@@ -22,6 +22,32 @@ export function roomFor(restaurantId: string): string {
   return `restaurant:${restaurantId}`;
 }
 
+/**
+ * Sala del mapa general. Recibe los contadores de TODOS los restaurantes, así
+ * que solo entra quien tiene `mapa:ver`, y solo viajan números.
+ */
+export const OVERVIEW_ROOM = "overview";
+
+/**
+ * Lo que el mapa general sabe de un restaurante: contadores agregados, sin
+ * nombres ni ids de clientes. Lo calcula `lib/map/counters.ts`.
+ */
+export type RestaurantCounters = {
+  restaurantId: string;
+  /** Mesas (tipos sentables) de todas las zonas. */
+  tablesTotal: number;
+  tablesOccupied: number;
+  /** Reservadas y sin cliente sentado. */
+  tablesReserved: number;
+  /** Clientes en la sala: `esperando` + `listo`. */
+  waiting: number;
+  /**
+   * Hora media de llegada de los que esperan, en ms (null si no hay nadie).
+   * El navegador calcula con ella la espera media, que así avanza sola.
+   */
+  averageArrivedAt: number | null;
+};
+
 /** Respuesta (ack) de un evento que el cliente espera. */
 export type Ack<T extends object = object> =
   | ({ ok: true } & T)
@@ -106,6 +132,15 @@ export interface ClientToServerEvents {
   "table:assign": (payload: AssignTableInput, ack: (res: Ack<TableChange>) => void) => void;
   /** Liberar una mesa. Mismo contrato que `table:assign`. */
   "table:release": (payload: ReleaseTableInput, ack: (res: Ack<TableChange>) => void) => void;
+  /**
+   * Entrar en la sala del mapa general (exige `mapa:ver`). El ack trae los
+   * contadores de todos los restaurantes, para no pintar nada viejo mientras
+   * llega el primer aviso. Es compatible con estar en un restaurante.
+   */
+  "overview:join": (
+    payload: Record<string, never>,
+    ack: (res: Ack<{ counters: RestaurantCounters[] }>) => void,
+  ) => void;
   /** Agregar un grupo a la lista rápida. */
   "waitlist:add": (payload: AddWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
   /** Marcar un grupo listo o ausente. */
@@ -127,6 +162,8 @@ export interface ServerToClientEvents {
    * local). Las zonas que el cliente tenga abiertas pueden no existir ya.
    */
   "structure:changed": () => void;
+  /** Sala `overview`: cambiaron los contadores de un restaurante. */
+  "overview:counters": (payload: RestaurantCounters) => void;
   /** Cambio de lista aplicado; se envía a todas las tablets del local. */
   "waitlist:changed": (payload: WaitlistChange) => void;
   /** Acción que cualquier host de la room puede deshacer. */

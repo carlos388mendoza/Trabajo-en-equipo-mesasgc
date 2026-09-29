@@ -59,6 +59,15 @@ export async function canAssignTables(
   return can(await loadAuthUser(identity.userId), "mesas:asignar", restaurantId);
 }
 
+/**
+ * ¿Puede entrar en la sala `overview` (mapa general)? Quien tiene
+ * `mapa:ver`: admin y analitica. El rol restaurante no, aunque la sala solo
+ * lleve números: son los de TODOS los restaurantes.
+ */
+export async function canJoinOverview(identity: SocketIdentity): Promise<boolean> {
+  return can(await loadAuthUser(identity.userId), "mapa:ver");
+}
+
 /** ¿Puede modificar la lista de espera de este restaurante? */
 export async function canModifyWaitlist(
   identity: SocketIdentity,

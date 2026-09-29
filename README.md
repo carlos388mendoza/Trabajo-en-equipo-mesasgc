@@ -137,6 +137,7 @@ valores viven en `lib/db/enums.ts`, que es la única fuente de verdad: el schema
 solo usa tipos y la UI compara contra esas constantes.
 
 ```
+brands ──── restaurants  (brand_id, opcional)
 restaurants ──┬── table_layouts ──── tables ──┐
               │        (zonas/vistas)   ▲     │
               │                        │     │
@@ -149,7 +150,8 @@ user / session / account / verification   (Better Auth)
 
 | Tabla | Para qué |
 |---|---|
-| `restaurants` | Los locales. `slug` para la URL. |
+| `brands` | Las marcas (China Wok, Pizza Hut, KFC, Denny's) con su `accent_color`. |
+| `restaurants` | Los locales. `slug` para la URL. `brand_id`, `city`, `map_x` y `map_y` (todas opcionales) son del mapa general y de las estadísticas por marca. |
 | `table_layouts` | Zonas/vistas del local (comedor, terraza). Es la unidad sobre la que trabaja el editor y la galería. `version` sube en cada guardado. |
 | `element_types` | Catálogo de los 5 tipos (mesa-sillas, mesa-butacas, area-juegos, bano, caja) con color, ícono y tamaño. Editable sin deploy. |
 | `tables` | Mesas **y** baños/cajas/áreas: en el canvas se comportan igual, y `element_type_id` los distingue. Lleva la geometría (`x`, `y`, `width`, `height`, `rotation`). |
@@ -210,7 +212,8 @@ local, con pan arrastrando el fondo y zoom con la rueda.
 | `lib/layout/validation.ts` | Schema Zod del payload. |
 | `lib/layout/element-style.ts` | Funciones puras: forma, color y numeración de cada tipo. |
 | `lib/db/queries/layouts.ts` | Lecturas del editor. |
-| `components/editor/editor-client.tsx` | Estado del editor y **el `dynamic({ ssr: false })` de Konva**. |
+| `components/editor/editor-client.tsx` | Estado del editor. |
+| `components/editor/lazy-konva-canvas.tsx` | **El `dynamic({ ssr: false })` de Konva**, que comparten el editor y el plano en vivo. |
 | `components/editor/konva-canvas.tsx` | Stage, pan, zoom y retícula. |
 | `components/editor/element-node.tsx` | Un elemento (memoizado, con sus sillas). |
 | `components/editor/element-palette.tsx` | Paleta con drag & drop HTML5. |
@@ -220,7 +223,8 @@ local, con pan arrastrando el fondo y zoom con la rueda.
 Konva toca `document` y el canvas 2D en el momento de importarse, así que no
 puede ejecutarse en el servidor. Next 15+ además prohíbe `ssr: false` dentro de
 un Server Component, y `page.tsx` lo es. Por eso el `dynamic` vive en
-`editor-client.tsx`, que es un Client Component. El resultado verificado: en el
+`lazy-konva-canvas.tsx`, que es un Client Component y lo usan el editor y el
+plano en vivo del mapa. El resultado verificado: en el
 build de producción **Konva no aparece en el bundle del servidor** y sí en un
 chunk de cliente de 330 KB que solo se descarga al abrir el editor.
 
@@ -366,6 +370,8 @@ solo quieres la web, pero sin tiempo real.
 | `table:assign` / `table:release` | cliente | Pide sentar / liberar. Contesta por ack. |
 | `table:assigned` / `table:released` | servidor | Aviso a toda la room cuando alguien gana. |
 | `layout:updated` / `structure:changed` | servidor | Otro dispositivo guardó o copió. |
+| `overview:join` | cliente | Entra en la sala `overview` del mapa general (exige `mapa:ver`). El ack trae los contadores de todos. |
+| `overview:counters` | servidor | Contadores nuevos de un restaurante, a la sala `overview`. Ver sección 16. |
 
 ### Archivos
 
@@ -376,6 +382,7 @@ solo quieres la web, pero sin tiempo real.
 | `lib/realtime/server.ts` | Rooms y handlers. No importa nada de Next. |
 | `lib/realtime/registry.ts` | `io` en `globalThis`, para emitir desde las actions. |
 | `lib/realtime/auth.ts` | Permisos del socket. **Único sitio a tocar con Better Auth.** |
+| `lib/realtime/overview.ts` | `emitOverview(restaurantId)`: contadores a la sala del mapa general. |
 | `lib/tables/assign.ts` | Asignar y liberar con bloqueo optimista. |
 | `components/realtime/use-restaurant-socket.ts` | Hook del navegador. El modo rápido puede usarlo igual. |
 
@@ -686,7 +693,8 @@ Drizzle y libSQL. No hay registro público: los usuarios los crea un admin en
 - **Un solo archivo de reglas.** Páginas, actions, API y socket llaman a
   `can()`: si cambia un permiso, cambia en `rbac.ts` y nada más.
 - **Los destinos de `/inicio` salen del rol, no del permiso.** El admin
-  puede ver estadísticas, pero su casa es `/admin`.
+  puede ver estadísticas, pero su casa es el mapa general (`/mapa`). Ver
+  `landingFor` en `rbac.ts`.
 - **El límite del asistente cuenta por usuario**, no por IP: la cabecera
   `X-Forwarded-For` la manda el cliente y se podía falsear.
 
@@ -720,6 +728,10 @@ Todos tienen la contraseña **`12345abc`**:
 | `analitica@grupocomidas.test` | Analista | analitica | todos (solo lectura) |
 | `gerente@grupocomidas.test` | Gerente Centro | restaurante, analitica | rest_centro |
 
+`rest_centro` es **China Wok Centro** (Tegucigalpa) y `rest_norte` es **Pizza
+Hut Norte** (San Pedro Sula): conservan sus ids, así que estos usuarios siguen
+valiendo. Los otros 6 restaurantes del mapa no tienen host de prueba.
+
 `npm run seed:reset` borra los restaurantes, y con ellos las asignaciones de
 `user_restaurants`. El seed se las devuelve a estos usuarios sin tocar su
 contraseña.
@@ -736,3 +748,94 @@ npm run create-admin
 - Si el correo ya existe, solo le da el rol admin y lo reactiva, sin cambiar
   su contraseña.
 - Después, los demás usuarios se crean desde `/admin`.
+
+## 16. Mapa general y marcas
+
+`/mapa` muestra todos los restaurantes sobre un mapa radar, y
+`/restaurante/[id]/mapa` es el plano en vivo de uno. Quién ve qué está en
+`docs/rbac.md`: admin y analitica ven el mapa general, y el rol restaurante
+solo ve el plano de los suyos.
+
+### Qué se ve
+
+- **Mapa propio.** Es un dibujo en SVG (`lib/map/world.ts`), sin mapas reales
+  ni imágenes de terceros: San Pedro Sula arriba a la izquierda y Tegucigalpa
+  abajo a la derecha, con sus distritos y la CA-5. Los colores salen del tema.
+- **Un marcador por restaurante**, del color de su marca:
+  - el número de clientes en espera;
+  - un anillo con el % de mesas ocupadas;
+  - debajo, la espera media actual.
+- **Alerta de espera.** Se distingue también por la forma, no solo por el
+  color:
+  - más de 20 min: halo amarillo que pulsa y un triángulo;
+  - más de 40 min: halo rojo más grueso y más rápido, y un octógono.
+
+  Con «reducir movimiento» del sistema, el halo se queda quieto.
+- **Filtros y lista.** Se filtra por marca y por ciudad, y hay una leyenda. La
+  lista lateral ordena los restaurantes por espera.
+- **Zoom al plano.** Al tocar un marcador, el `viewBox` se acerca a él y
+  aparece el plano en vivo del restaurante: el mismo lienzo del editor, en
+  solo lectura. «Volver al mapa general» (o Esc) hace el zoom inverso.
+
+### Tiempo real
+
+- **La sala `overview`** recibe los cambios de todos los restaurantes. Solo
+  entra quien tiene `mapa:ver`.
+- **Solo viajan contadores:** mesas totales, ocupadas y reservadas, clientes
+  en espera y la hora media de llegada. El navegador calcula la espera media
+  con esa hora, así que avanza sola.
+- **Quién avisa.** `emitOverview(restaurantId)` (`lib/realtime/overview.ts`) se
+  llama después de sentar o liberar una mesa, al guardar o copiar un plano, y
+  cuando el modo rápido agrega, resuelve o deshace (solo si la acción salió bien).
+- **Respaldo.** `/mapa` pide además los contadores cada 30 s.
+- **El plano en vivo no aplica los eventos uno a uno.** Cuando llega un aviso,
+  vuelve a pedir el plano a la server action `loadLivePlan`, que decide en el
+  servidor si incluye los nombres.
+
+### Archivos
+
+| Fichero | Para qué |
+| --- | --- |
+| `lib/map/counters.ts` | Contadores por restaurante, espera media y umbrales (20 y 40 min). |
+| `lib/map/queries.ts` | Restaurantes con su marca y `getLivePlan` (quita los nombres si no hay `plano:clientes`). |
+| `lib/map/world.ts` | El dibujo: ciudades, distritos y carretera. |
+| `lib/realtime/overview.ts` | `emitOverview`. |
+| `app/mapa/page.tsx`, `app/mapa/actions.ts` | Página y actions (`loadOverviewCounters`, `loadLivePlan`). |
+| `app/restaurante/[id]/mapa/page.tsx` | Plano en vivo de un restaurante. |
+| `components/map/world-map.tsx` | Mapa, marcadores, filtros, lista y zoom. |
+| `components/map/live-plan.tsx` | Plano en vivo (Konva en solo lectura). |
+| `components/map/use-overview-socket.ts` | Socket de la sala `overview` y respaldo de 30 s. |
+
+### Decisiones que conviene no deshacer sin pensarlo
+
+- **SVG y no Konva en el mapa general.** Son pocas figuras y casi no se mueven.
+  Además, con clases de Tailwind el primer HTML ya trae el tema bueno, sin
+  destello.
+- **Los nombres se quitan en el servidor.** Analitica recibe el plano con el
+  id del cliente cambiado por `"oculto"` y sin nombre ni hora. Ocultarlos solo
+  en la interfaz se vería en la respuesta.
+- **Analitica no entra en las rooms de restaurante.** Por ellas viajan los ids
+  de los clientes. Se entera de los cambios por la sala `overview`.
+- **Migración solo aditiva** (`0002_brands_world_map.sql`, generada con
+  `drizzle-kit generate`). El `ON DELETE set null` de `brand_id` se añadió a
+  mano: drizzle-kit lo omite en el `ALTER TABLE ... ADD` de SQLite, y el
+  snapshot ya lo espera.
+
+### Seed
+
+- **4 marcas y 8 restaurantes**, 2 por marca, repartidos entre Tegucigalpa y
+  San Pedro Sula.
+- **Planos:** los 6 nuevos copian el suyo de `rest_centro` o `rest_norte` con
+  `copyLayoutToRestaurant`.
+- **Clientes y mesas:** todos tienen clientes en espera con horas de llegada
+  distintas, así que se ven los tres niveles de alerta. Algunas mesas están
+  ocupadas (con `assignTable`) y otras reservadas.
+- **La demo del README sigue igual:** `tbl_c_1` y `tbl_c_2` quedan siempre
+  libres.
+
+### Pendiente de este paso
+
+- **Marca en las estadísticas (Miembro B).** `lib/analytics/brand.ts` usa todavía
+  el nombre del restaurante como marca: falta leer `restaurants.brand_id`.
+- **Gestión de marcas y posiciones.** No hay pantalla para crear marcas ni
+  para mover un restaurante en el mapa: hoy lo pone el seed.

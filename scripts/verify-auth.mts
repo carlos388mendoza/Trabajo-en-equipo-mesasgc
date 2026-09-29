@@ -270,6 +270,8 @@ const PAGES = [
   "/restaurante/rest_centro/rapido",
   "/restaurante/rest_centro/editor",
   "/restaurante/rest_norte/rapido",
+  "/mapa",
+  "/restaurante/rest_centro/mapa",
 ];
 for (const page of PAGES) {
   const res = await http("GET", page);
@@ -287,6 +289,8 @@ const EXPECTED: Record<Who, Expect> = {
     "/restaurante/rest_centro/editor": "200",
     "/restaurante/rest_norte/rapido": "200",
     "/restaurante/rest_norte/editor": "200",
+    "/mapa": "200",
+    "/restaurante/rest_norte/mapa": "200",
   },
   centro: {
     "/restaurante/rest_centro/rapido": "200",
@@ -295,6 +299,10 @@ const EXPECTED: Record<Who, Expect> = {
     "/restaurante/rest_norte/editor": "/sin-acceso",
     "/admin": "/sin-acceso",
     "/analiticas": "/sin-acceso",
+    // Mapa: solo el plano en vivo del suyo.
+    "/restaurante/rest_centro/mapa": "200",
+    "/mapa": "/sin-acceso",
+    "/restaurante/rest_norte/mapa": "/sin-acceso",
   },
   norte: {
     "/restaurante/rest_norte/rapido": "200",
@@ -302,9 +310,14 @@ const EXPECTED: Record<Who, Expect> = {
     "/restaurante/rest_centro/rapido": "/sin-acceso",
     "/restaurante/rest_centro/editor": "/sin-acceso",
     "/admin": "/sin-acceso",
+    "/restaurante/rest_norte/mapa": "200",
+    "/mapa": "/sin-acceso",
+    "/restaurante/rest_centro/mapa": "/sin-acceso",
   },
   analitica: {
     "/analiticas": "200",
+    "/mapa": "200",
+    "/restaurante/rest_centro/mapa": "200",
     "/restaurante/rest_centro/rapido": "/sin-acceso",
     "/restaurante/rest_centro/editor": "/sin-acceso",
     "/admin": "/sin-acceso",
@@ -315,6 +328,8 @@ const EXPECTED: Record<Who, Expect> = {
     "/analiticas": "200",
     "/admin": "/sin-acceso",
     "/restaurante/rest_norte/rapido": "/sin-acceso",
+    // Su rol analitica le da el mapa general (los permisos se suman).
+    "/mapa": "200",
   },
 };
 for (const [who, pages] of Object.entries(EXPECTED) as [Who, Expect][]) {
@@ -327,8 +342,9 @@ for (const [who, pages] of Object.entries(EXPECTED) as [Who, Expect][]) {
 section("Destino después del login (/inicio)");
 
 {
+  // Un solo rol entra directo; el gerente (dos roles) elige.
   const INICIO: Record<Who, string> = {
-    admin: "/admin",
+    admin: "/mapa",
     centro: "/restaurante/rest_centro/rapido",
     norte: "/restaurante/rest_norte/rapido",
     analitica: "/analiticas",
@@ -342,6 +358,9 @@ section("Destino después del login (/inicio)");
         "  gerente elige entre su restaurante y las estadísticas",
         res.text.includes("/restaurante/rest_centro/rapido") && res.text.includes("/analiticas") && !res.text.includes("/admin\""),
       );
+    }
+    if (who === "gerente") {
+      check("  y entre ellos está el mapa general (su rol analitica)", res.text.includes("href=\"/mapa\""));
     }
   }
 }
@@ -425,7 +444,7 @@ for (const [who, method, path, body, expected] of API) {
 section("Server actions del editor");
 
 /** Busca el id de una server action en el manifiesto de la app de prueba. */
-function findActionId(exportName: string): string | null {
+function findActionId(exportName: string, fileHint = "editor"): string | null {
   const dir = join(ROOT, DIST_DIR);
   const stack = [dir];
   while (stack.length) {
@@ -439,7 +458,7 @@ function findActionId(exportName: string): string | null {
           node?: Record<string, { exportedName?: string; filename?: string }>;
         };
         for (const [id, entry] of Object.entries(manifest.node ?? {})) {
-          if (entry.exportedName === exportName && (entry.filename ?? "").includes("editor")) return id;
+          if (entry.exportedName === exportName && (entry.filename ?? "").includes(fileHint)) return id;
         }
       }
     }
@@ -494,6 +513,59 @@ if (saveId) {
 }
 
 // ---------------------------------------------------------------------------
+// Mapa: quién ve nombres de clientes
+// ---------------------------------------------------------------------------
+
+section("Mapa: nombres de clientes");
+
+// Los clientes sentados ahora en rest_centro (los sienta el seed).
+const { db } = await import("@/lib/db");
+const { waitlistEntries, tables: tablesTable, elementTypes } = await import("@/lib/db/schema");
+const { and, eq, inArray, isNotNull, isNull } = await import("drizzle-orm");
+const seatedAtCentro = await db
+  .select({ id: waitlistEntries.id, name: waitlistEntries.customerName })
+  .from(tablesTable)
+  .innerJoin(waitlistEntries, eq(waitlistEntries.id, tablesTable.currentEntryId))
+  .where(and(eq(tablesTable.restaurantId, "rest_centro"), isNotNull(tablesTable.currentEntryId)));
+check("el seed deja clientes sentados en rest_centro", seatedAtCentro.length > 0, `${seatedAtCentro.length}`);
+
+function mentionsAnyCustomer(text: string): boolean {
+  return seatedAtCentro.some((c) => text.includes(c.name) || text.includes(c.id));
+}
+
+{
+  const page = (who: Who) => http("GET", "/restaurante/rest_centro/mapa", { cookie: cookies[who] });
+  check("centro ve los nombres en el plano en vivo de su restaurante", mentionsAnyCustomer((await page("centro")).text));
+  check("admin ve los nombres en el plano en vivo", mentionsAnyCustomer((await page("admin")).text));
+  check("analitica NO recibe nombres ni ids de clientes en la página del plano", !mentionsAnyCustomer((await page("analitica")).text));
+}
+
+const planId = findActionId("loadLivePlan", "mapa");
+check("se localiza la server action loadLivePlan", planId !== null);
+
+async function callPlan(who: Who, restaurantId: string): Promise<{ status: string; text: string }> {
+  const res = await http("POST", "/mapa", {
+    cookie: cookies[who],
+    body: JSON.stringify([{ restaurantId }]),
+    headers: { "Next-Action": planId ?? "", "Content-Type": "text/plain;charset=UTF-8", Accept: "text/x-component" },
+  });
+  if (res.text.includes("No tienes permiso")) return { status: "sin permiso", text: res.text };
+  if (/"ok":true/.test(res.text)) return { status: "ok", text: res.text };
+  return { status: `HTTP ${res.status}`, text: res.text };
+}
+
+if (planId) {
+  const analitica = await callPlan("analitica", "rest_centro");
+  check("analitica pide el plano en vivo por la action", analitica.status === "ok", analitica.status);
+  check("  y no trae nombres ni ids de clientes", !mentionsAnyCustomer(analitica.text));
+  check("  pero sí las mesas ocupadas", analitica.text.includes('"currentEntryId":"oculto"'));
+  const admin = await callPlan("admin", "rest_centro");
+  check("admin recibe los nombres por la action", admin.status === "ok" && mentionsAnyCustomer(admin.text));
+  check("centro no puede pedir el plano de rest_norte por la action", (await callPlan("centro", "rest_norte")).status === "sin permiso");
+  check("gerente (restaurante + analitica) ve el plano de rest_norte sin nombres", (await callPlan("gerente", "rest_norte")).text.includes('"showNames":false'));
+}
+
+// ---------------------------------------------------------------------------
 // Socket.IO
 // ---------------------------------------------------------------------------
 
@@ -532,8 +604,39 @@ check("sin sesión, el socket no conecta", (await connect()) === null);
       !(await emit(analitica, "table:assign", { tableId: "tbl_c_1", entryId: "wl_1" })).ok,
     );
     check("admin entra en la room de rest_norte", (await emit(admin, "restaurant:join", { restaurantId: "rest_norte" })).ok);
-    const seat = await emit(centro, "table:assign", { tableId: "tbl_c_1", entryId: "wl_1" });
+
+    // Sala overview (mapa general): solo mapa:ver.
+    const overviewCentro = await emit(centro, "overview:join", {});
+    check("centro NO entra en la sala overview (socket)", !overviewCentro.ok, overviewCentro.error);
+    const overviewAnalitica = (await emit(analitica, "overview:join", {})) as { ok: boolean; counters?: unknown[] };
+    check("analitica entra en la sala overview", overviewAnalitica.ok && (overviewAnalitica.counters?.length ?? 0) === 8);
+    check("  y el ack no trae datos de clientes", !mentionsAnyCustomer(JSON.stringify(overviewAnalitica)));
+    check("admin entra en la sala overview", (await emit(admin, "overview:join", {})).ok);
+
+    // Una mesa libre de verdad: el seed ya ocupa y reserva algunas.
+    const [free] = await db
+      .select({ id: tablesTable.id })
+      .from(tablesTable)
+      .innerJoin(elementTypes, eq(elementTypes.id, tablesTable.elementTypeId))
+      .where(
+        and(
+          eq(tablesTable.restaurantId, "rest_centro"),
+          isNull(tablesTable.currentEntryId),
+          eq(tablesTable.status, "libre"),
+          inArray(elementTypes.key, ["mesa-sillas", "mesa-butacas"]),
+        ),
+      )
+      .limit(1);
+    const got: unknown[] = [];
+    centro.on("overview:counters", (c: unknown) => got.push(c));
+    const countersAnalitica: unknown[] = [];
+    analitica.on("overview:counters", (c: unknown) => countersAnalitica.push(c));
+    const seat = await emit(centro, "table:assign", { tableId: free?.id ?? "", entryId: "wl_1" });
     check("centro sienta a un cliente en su restaurante", seat.ok, seat.error);
+    await new Promise((r) => setTimeout(r, 400));
+    check("  analitica recibe los contadores nuevos por la sala overview", countersAnalitica.length === 1);
+    check("  sin datos del cliente", !JSON.stringify(countersAnalitica).includes("wl_1") && !JSON.stringify(countersAnalitica).includes("Ana Torres"));
+    check("  centro no recibe los contadores de todos (no está en la sala)", got.length === 0);
   }
   for (const s of [centro, norte, analitica, admin]) s?.close();
 }
