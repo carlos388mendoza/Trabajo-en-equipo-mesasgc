@@ -29,7 +29,7 @@ contra una base temporal. Estado en `feat/layout-rotation` (sale de `feat/world-
 
 | Comando | Resultado |
 |---|---|
-| `npm run verify:editor` | 98/98 (79 + 9 del giro + 10 de barra, puerta y pared) |
+| `npm run verify:editor` | 102/102 (79 + 13 del giro y el minimapa + 10 de barra, puerta y pared) |
 | `npm run verify:realtime` | 113/113 (82 del modo rápido en vivo + 31 de la sala `overview`) |
 | `npm run verify:auth` | 124/124 (levanta la app real; 92 + 32 del mapa) |
 | `npm run typecheck`, `npm run lint`, `npm run build` | pasan (solo la advertencia antigua de `postcss.config.mjs`) |
@@ -170,7 +170,6 @@ claves.
   lucide) y la pantalla de clientes «listos» (Miembro B).
 - **Guardar el tema por usuario** en la base de datos: hoy vive en el
   navegador.
-- **Que el minimapa gire con el plano** (hoy dibuja la zona sin girar).
 - **`verify:auth` a veces da 404** en el primer PATCH de la API del modo rápido,
   mientras Next compila esa ruta. Al repetirlo pasa. Convendría «calentar» la
   ruta antes de comprobar los permisos.

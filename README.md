@@ -540,6 +540,9 @@ su `key` (`components/editor/icons.ts`), igual que la forma. La columna
 - **Los demás dispositivos se enteran.** El guardado sube la versión de la
   zona y emite `layout:updated`: los otros editores ven el aviso de «otro
   dispositivo guardó», y el plano en vivo se recarga solo.
+- **El minimapa gira con el plano**, tanto con ↺ ↻ como al abrir una zona ya
+  girada, y tocarlo lleva al punto correcto (`planToRotated` y
+  `rotatedToPlan` en `lib/layout/geometry.ts`).
 - **Se ve igual en todas partes.** Lo respetan el plano en vivo de
   `/restaurante/[id]/mapa` y el zoom de `/mapa`, y **Copiar plano** lo copia
   al otro restaurante.
@@ -565,7 +568,6 @@ su `key` (`components/editor/icons.ts`), igual que la forma. La columna
 
 ### Pendiente de este paso
 
-- **El minimapa no gira con el plano.** Sigue dibujando la zona sin girar.
 - **Nada pone una mesa en "reservada" todavía.** Se pinta en gris y está en la
   leyenda, pero ninguna pantalla asigna ese estado.
 - El comentario de `element_types.icon` en `lib/db/schema.ts` todavía dice
