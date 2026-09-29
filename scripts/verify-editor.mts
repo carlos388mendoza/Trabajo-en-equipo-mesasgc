@@ -38,7 +38,7 @@ const { saveLayoutInputSchema } = await import("@/lib/layout/validation");
 const { copyLayoutToRestaurant, copyZoneIntoLayout, getStructureCounts } =
   await import("@/lib/layout/copy");
 const { getLayout } = await import("@/lib/db/queries/layouts");
-const { asLayoutRotation } = await import("@/lib/db/enums");
+const { ELEMENT_TYPE_KEYS, asLayoutRotation, isSeatableElement } = await import("@/lib/db/enums");
 const { elementStyle, nextLabel, visibleSeats } = await import(
   "@/lib/layout/element-style"
 );
@@ -866,6 +866,79 @@ check("asLayoutRotation lee un valor raro como 0", asLayoutRotation(45) === 0 &&
   const copied = await copyLayoutToRestaurant({ sourceRestaurantId: ROT_REST, targetRestaurantId: ROT_DEST, replace: false });
   const destLayout = await db.query.tableLayouts.findFirst({ where: (l, { eq }) => eq(l.restaurantId, ROT_DEST) });
   check("copiar el plano a otro restaurante copia el giro", copied.ok && destLayout?.rotation === 270, String(destLayout?.rotation));
+}
+
+
+// ---------------------------------------------------------------------------
+// Barra, puerta y pared
+// ---------------------------------------------------------------------------
+
+section("Barra, puerta y pared");
+
+const NEW_TYPES = [
+  { id: "type-barra", key: "barra", label: "Barra", color: "#d97706", icon: "wine", width: 220, height: 56, defaultCapacity: null, sortOrder: 5 },
+  { id: "type-puerta", key: "puerta", label: "Puerta", color: "#0d9488", icon: "door-open", width: 80, height: 80, defaultCapacity: null, sortOrder: 6 },
+  { id: "type-pared", key: "pared", label: "Pared", color: "#64748b", icon: "brick-wall", width: 240, height: 18, defaultCapacity: null, sortOrder: 7 },
+] as const;
+await db.insert(elementTypes).values([...NEW_TYPES]);
+
+check(
+  "barra, puerta y pared están en ELEMENT_TYPE_KEYS",
+  ["barra", "puerta", "pared"].every((k) => (ELEMENT_TYPE_KEYS as readonly string[]).includes(k)),
+);
+check("  y ninguna admite clientes", ["barra", "puerta", "pared"].every((k) => !isSeatableElement(k)));
+{
+  const shapes = NEW_TYPES.map((t) => elementStyle({ ...t, defaultCapacity: null }).shape).join(",");
+  check("  cada una con su forma (bar, door, wall)", shapes === "bar,door,wall", shapes);
+  const wall = elementStyle({ ...NEW_TYPES[2], defaultCapacity: null });
+  check("  la pared no lleva etiqueta encima (la taparía)", wall.showLabel === false && elementStyle({ ...NEW_TYPES[0], defaultCapacity: null }).showLabel);
+  check("  numeración propia: Barra 1, Puerta 2, Pared 1", nextLabel("barra", []) === "Barra 1" && nextLabel("puerta", ["Puerta 1"]) === "Puerta 2" && nextLabel("pared", []) === "Pared 1");
+}
+
+const EST_REST = "est-rest";
+const EST_DEST = "est-dest";
+const EST_LAYOUT = "est-layout";
+await db.insert(restaurants).values([
+  { id: EST_REST, name: "Estructura", slug: "estructura" },
+  { id: EST_DEST, name: "Estructura destino", slug: "estructura-destino" },
+]);
+await db.insert(tableLayouts).values([
+  { id: EST_LAYOUT, restaurantId: EST_REST, name: "Salón", width: 1200, height: 800, isDefault: true, version: 1 },
+]);
+const structure = [
+  { id: "est-barra", elementTypeId: "type-barra", label: "Barra 1", x: 100, y: 60, width: 220, height: 56, rotation: 0, capacity: null },
+  { id: "est-puerta", elementTypeId: "type-puerta", label: "Puerta 1", x: 600, y: 700, width: 80, height: 80, rotation: 90, capacity: null },
+  { id: "est-pared", elementTypeId: "type-pared", label: "Pared 1", x: 400, y: 300, width: 240, height: 18, rotation: 0, capacity: null },
+  { id: "est-mesa", elementTypeId: TYPES.mesa, label: "Mesa 1", x: 200, y: 300, width: 80, height: 80, rotation: 0, capacity: 4 },
+];
+{
+  const parsed = saveLayoutInputSchema.safeParse({
+    layoutId: EST_LAYOUT,
+    restaurantId: EST_REST,
+    width: 1200,
+    height: 800,
+    elements: structure,
+  });
+  const saved = parsed.success ? await applyLayoutStructure(parsed.data) : null;
+  check("se añaden y se guardan una barra, una puerta y una pared", Boolean(saved?.ok) && saved?.ok === true && saved.saved === 4, saved && !saved.ok ? saved.error : JSON.stringify(saved));
+
+  const reloaded = await getLayout(EST_LAYOUT, EST_REST);
+  const byId = new Map((reloaded?.elements ?? []).map((e) => [e.id, e]));
+  check(
+    "  y se recargan con su tipo, tamaño y giro",
+    byId.get("est-barra")?.elementTypeId === "type-barra" &&
+      byId.get("est-puerta")?.rotation === 90 &&
+      byId.get("est-pared")?.height === 18,
+  );
+  check("  sin capacidad ni estado de mesa", ["est-barra", "est-puerta", "est-pared"].every((id) => byId.get(id)?.capacity === null && byId.get(id)?.status === "libre"));
+}
+
+{
+  const copied = await copyLayoutToRestaurant({ sourceRestaurantId: EST_REST, targetRestaurantId: EST_DEST, replace: false });
+  const destRows = await db.query.tables.findMany({ where: (t, { eq }) => eq(t.restaurantId, EST_DEST) });
+  const destTypes = destRows.map((r) => r.elementTypeId).sort().join(",");
+  check("copiar el plano copia la barra, la puerta y la pared", copied.ok && destTypes === ["type-barra", "type-pared", "type-puerta", TYPES.mesa].sort().join(","), destTypes);
+  check("  con ids nuevos", destRows.every((r) => !r.id.startsWith("est-")));
 }
 
 // ---------------------------------------------------------------------------
