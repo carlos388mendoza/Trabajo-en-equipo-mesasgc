@@ -11,6 +11,8 @@ import { getLivePlan } from "@/lib/map/queries";
 // /sin-acceso), pero admin y analitica también pueden abrirla. Los nombres de
 // los clientes solo salen del servidor con `plano:clientes`.
 
+export const metadata = { title: "Plano en vivo · Table Waitlist" };
+
 export default async function PlanoEnVivoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requirePage(`/restaurante/${id}/mapa`, "plano:ver", id);
