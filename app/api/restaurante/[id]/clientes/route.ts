@@ -1,8 +1,10 @@
-// TODO(auth): validar sesión Better Auth y permisos sobre el restaurante en GET y POST.
+// Permisos sobre ESTE restaurante: leer la lista pide "rapido:ver"; añadir un
+// cliente, "rapido:modificar". Sin sesión, 401; sin permiso, 403.
 import { asc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { guardApi } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { waitlistEntries } from "@/lib/db/schema";
 
@@ -14,8 +16,10 @@ const newEntrySchema = z.object({
   notes: z.string().trim().max(500).optional().default(""),
 });
 
-export async function GET(_request: Request, { params }: Context) {
+export async function GET(request: Request, { params }: Context) {
   const { id } = await params;
+  const guard = await guardApi(request, "rapido:ver", id);
+  if (!guard.ok) return guard.response;
   try {
     const entries = await db
       .select()
@@ -39,6 +43,8 @@ export async function GET(_request: Request, { params }: Context) {
 
 export async function POST(request: Request, { params }: Context) {
   const { id } = await params;
+  const guard = await guardApi(request, "rapido:modificar", id);
+  if (!guard.ok) return guard.response;
   let body: unknown;
   try {
     body = await request.json();

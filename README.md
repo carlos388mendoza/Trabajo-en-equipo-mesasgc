@@ -29,6 +29,9 @@ Aplicación en tiempo real para el manejo de listas de espera de clientes en res
 | **Usuario de restaurante** | Accede solo a su restaurante, modos sencillo y completo |
 | **Usuario de analíticas** | Ve estadísticas de todos los restaurantes/marcas, vista completa o filtrada por restaurante |
 
+Un usuario puede tener varios roles a la vez. Cómo está hecho: sección 14 y
+[`docs/rbac.md`](docs/rbac.md), con la tabla completa de permisos.
+
 ---
 
 ## 3. Reparto de tareas
@@ -154,11 +157,19 @@ user / session / account / verification   (Better Auth)
 ### Puesta en marcha de la base de datos
 
 ```bash
-cp .env.example .env.local   # y llenar TURSO_DATABASE_URL / TURSO_AUTH_TOKEN
+cp .env.example .env.local   # llenar TURSO_DATABASE_URL y BETTER_AUTH_SECRET
 npm install
-npm run db:push              # aplica el esquema
-npm run db:seed              # tipos de elemento + 2 restaurantes de ejemplo
+npm run db:push              # aplica el esquema (en local, file:./local.db)
+npm run db:seed              # tipos de elemento, 2 restaurantes y los usuarios de prueba
 ```
+
+En local basta `TURSO_DATABASE_URL=file:./local.db`. `BETTER_AUTH_SECRET` es
+obligatorio para iniciar sesión (`openssl rand -base64 32`).
+
+**Contra una base remota (Turso) no se usa `db:push`**: los cambios de esquema
+se generan con `npm run db:generate` (quedan en `drizzle/`) y se aplican con
+`npm run db:migrate`. El primer admin de producción se crea con
+`npm run create-admin` (sección 15).
 
 Otros scripts: `db:generate` (genera SQL en `drizzle/`), `db:studio`,
 `seed:reset` (borra los datos de layout y vuelve a sembrar; **no** toca las
@@ -393,7 +404,9 @@ la izquierda las dos dicen «● en vivo».
 - **Guardar:** añade una mesa en una pestaña y pulsa Guardar. La otra muestra
   «Otro dispositivo guardó cambios en esta zona».
 - **Asignar:** mientras no exista el modo rápido, `demo:host` hace de otro host
-  desde la terminal. Pasa por los mismos eventos que el navegador.
+  desde la terminal. Pasa por los mismos eventos y permisos que el navegador,
+  así que primero inicia sesión: por defecto como el admin de prueba
+  (`DEMO_EMAIL` y `DEMO_PASSWORD` lo cambian).
 
 ```bash
 npm run demo:host -- sentar tbl_c_1 wl_1          # Mesa 1 se pinta OCUPADA en las dos pestañas
@@ -599,3 +612,110 @@ su `key` (`components/editor/icons.ts`), igual que la forma. La columna
 - **La elección vive solo en el navegador.** Cuando esté Better Auth, hay que
   guardarla por usuario (ver el TODO en `lib/theme/theme.ts`), coordinándolo
   con quien lleva el esquema. No se tocó `lib/db/schema.ts`.
+
+## 14. Autenticación y roles
+
+Con [Better Auth](https://www.better-auth.com), correo y contraseña, sobre
+Drizzle y libSQL. No hay registro público: los usuarios los crea un admin en
+`/admin`. La tabla de permisos está en [`docs/rbac.md`](docs/rbac.md).
+
+### Cómo funciona
+
+1. **Login** (`/login`): una server action llama a Better Auth, que deja una
+   cookie de sesión `httpOnly` y `SameSite=Lax` (además `Secure` en https).
+   La contraseña pide al menos 8 caracteres. Un usuario desactivado recibe
+   «Usuario desactivado» aunque la contraseña sea correcta.
+2. **Destino** (`/inicio`): cada uno va a lo suyo según su rol. Con varios
+   roles o restaurantes, elige.
+3. **Cada petición** pasa por dos barreras:
+   - `proxy.ts` (el antiguo `middleware.ts` de Next 16) solo mira si hay
+     cookie. Sin ella, una página redirige a `/login` y una API responde 401.
+     No consulta la base: corre en cada petición, también en los prefetch.
+   - La comprobación de verdad está en `lib/auth/session.ts`, que se llama
+     dentro de cada página, server action y API route. Lee la sesión y el
+     usuario de la base, así que desactivar o quitar un rol vale al momento.
+     Sin permiso: `/sin-acceso` en las páginas y 403 en las API.
+4. **Socket.IO** lee la misma cookie en el handshake (`lib/realtime/auth.ts`).
+   Entrar en la room de un restaurante y cada asignación vuelven a comprobar
+   el permiso.
+
+### Archivos
+
+| Fichero | Para qué |
+| --- | --- |
+| `lib/auth/auth.ts` | Configuración de Better Auth (se crea al primer uso). |
+| `lib/auth/rbac.ts` | **Todas las reglas**: `can(usuario, acción, restaurantId)`. |
+| `lib/auth/session.ts` | DAL para Next: `requirePage`, `guardAction`, `guardApi`. |
+| `lib/auth/users.ts` | Usuarios con roles y restaurantes; crear, cambiar contraseña, desactivar. Sin Next. |
+| `proxy.ts` | Comprobación optimista de la cookie. |
+| `app/admin/` | Gestión de usuarios (solo admin). |
+| `scripts/create-admin.mts` | Primer admin en producción. |
+| `scripts/verify-auth.mts` | `npm run verify:auth`. |
+
+### Esquema
+
+- Roles y restaurantes están en `user_roles` y `user_restaurants` (migración
+  `drizzle/0001_auth_rbac.sql`, solo aditiva).
+- Las columnas viejas `user.role` y `user.restaurant_id` siguen en la base,
+  pero están **obsoletas**: el código ya no las usa.
+
+### Decisiones que conviene no deshacer sin pensarlo
+
+- **El proxy no es la seguridad.** Una server action es un POST a su página: si
+  un cambio del *matcher* la dejara fuera del proxy, `guardAction` la sigue
+  protegiendo. Lo explica la guía de autenticación de Next 16.
+- **No se protege en los layouts.** No se vuelven a ejecutar al navegar. El
+  layout del restaurante solo decide qué enlaces enseñar.
+- **Un solo archivo de reglas.** Páginas, actions, API y socket llaman a
+  `can()`: si cambia un permiso, cambia en `rbac.ts` y nada más.
+- **Los destinos de `/inicio` salen del rol, no del permiso.** El admin
+  puede ver estadísticas, pero su casa es `/admin`.
+- **El límite del asistente cuenta por usuario**, no por IP: la cabecera
+  `X-Forwarded-For` la manda el cliente y se podía falsear.
+
+### Verificación
+
+```bash
+npm run verify:auth
+```
+
+- Levanta la app real en un puerto libre, con una base temporal
+  (`.verify-auth.db`) y los usuarios de prueba.
+- Comprueba 92 cosas: login correcto e incorrecto; cada rol solo en lo suyo,
+  por página, API, server action y socket; sin sesión, 401 o `/login`; y que
+  un usuario desactivado ya no entra.
+- Compila en `.next-verify/`, así que puede correr mientras `npm run dev`
+  sigue abierto: Next 16 no deja dos servidores sobre la misma carpeta.
+
+## 15. Usuarios de prueba
+
+> **Solo para desarrollo.** El seed los crea únicamente si `NODE_ENV` no es
+> `production`, y solo si no existen. La contraseña `12345abc` es pública, está
+> en este README: **nunca** la uses en producción.
+
+Todos tienen la contraseña **`12345abc`**:
+
+| Correo | Nombre | Roles | Restaurantes |
+|---|---|---|---|
+| `admin@grupocomidas.test` | Administrador | admin | todos |
+| `centro@grupocomidas.test` | Host Centro | restaurante | rest_centro |
+| `norte@grupocomidas.test` | Host Norte | restaurante | rest_norte |
+| `analitica@grupocomidas.test` | Analista | analitica | todos (solo lectura) |
+| `gerente@grupocomidas.test` | Gerente Centro | restaurante, analitica | rest_centro |
+
+`npm run seed:reset` borra los restaurantes, y con ellos las asignaciones de
+`user_restaurants`. El seed se las devuelve a estos usuarios sin tocar su
+contraseña.
+
+### Producción: el primer admin
+
+```bash
+npm run create-admin
+```
+
+- Lee `ADMIN_EMAIL`, `ADMIN_PASSWORD` y `ADMIN_NAME` del entorno, o los
+  pregunta (la contraseña, sin mostrarla).
+- No hay ninguna contraseña escrita en el código.
+- Si el correo ya existe, solo le da el rol admin y lo reactiva, sin cambiar
+  su contraseña.
+- Después, los demás usuarios se crean desde `/admin`.

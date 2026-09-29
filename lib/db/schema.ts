@@ -20,6 +20,7 @@ import { relations, sql } from "drizzle-orm";
 import {
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
@@ -258,11 +259,11 @@ export const waitlistEntries = sqliteTable(
 // exactos). La app las declara a mano para controlar los tipos de Drizzle y
 // los campos propios, en vez de dejar que las genere su CLI.
 //
-// `role` y `restaurantId` son columnas de `user`, NO una tabla `roles`: el
-// conjunto son tres valores cerrados, así que una tabla solo añadiría un join
-// en cada verificación de permisos sin ganar nada. Si más adelante hacen falta
-// roles configurables por restaurante, se migra sin romper nada porque la
-// columna ya está.
+// Roles y restaurantes de cada usuario viven en `user_roles` y
+// `user_restaurants` (abajo), porque un usuario puede tener varios de cada.
+// Las columnas `user.role` y `user.restaurant_id` del principio solo admitían
+// uno: quedan OBSOLETAS, el código ya no las lee ni las escribe, y se dejaron
+// para que la migración fuera solo aditiva. Se pueden quitar más adelante.
 // ---------------------------------------------------------------------------
 
 export const user = sqliteTable(
@@ -274,8 +275,8 @@ export const user = sqliteTable(
     emailVerified: integer("email_verified", { mode: "boolean" }).notNull().default(false),
     image: text("image"),
     // --- Campos propios de la app ---
-    // `role` es una de ROLES. `restaurantId` es null para ADMIN y ANALITICA, y
-    // obligatorio para RESTAURANTE (lo valida el servidor, no el navegador).
+    // OBSOLETAS: `role` y `restaurantId` (ver arriba). Usa `userRoles` y
+    // `userRestaurants`.
     role: text("role").notNull().default(ROLES.RESTAURANTE),
     restaurantId: text("restaurant_id").references(() => restaurants.id, {
       onDelete: "set null",
@@ -367,6 +368,49 @@ export const verification = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// Roles y restaurantes de cada usuario (RBAC)
+//
+// Un usuario puede tener varios roles (p. ej. restaurante + analitica) y, con
+// el rol restaurante, uno o más restaurantes. Qué permite cada rol está en
+// `lib/auth/rbac.ts`; aquí solo quién tiene qué. `role` es uno de ROLES y se
+// valida en el servidor con Zod (no hay `check()` en libSQL).
+// ---------------------------------------------------------------------------
+
+export const userRoles = sqliteTable(
+  "user_roles",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.role] })],
+);
+
+export const userRestaurants = sqliteTable(
+  "user_restaurants",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.restaurantId] }),
+    // "¿Quién trabaja en este restaurante?", la pregunta de /admin.
+    index("user_restaurants_restaurant_idx").on(t.restaurantId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Relaciones (para el API `db.query.*`)
 // ---------------------------------------------------------------------------
 
@@ -431,6 +475,20 @@ export const userRelations = relations(user, ({ one, many }) => ({
   }),
   sessions: many(session),
   accounts: many(account),
+  roles: many(userRoles),
+  restaurants: many(userRestaurants),
+}));
+
+export const userRolesRelations = relations(userRoles, ({ one }) => ({
+  user: one(user, { fields: [userRoles.userId], references: [user.id] }),
+}));
+
+export const userRestaurantsRelations = relations(userRestaurants, ({ one }) => ({
+  user: one(user, { fields: [userRestaurants.userId], references: [user.id] }),
+  restaurant: one(restaurants, {
+    fields: [userRestaurants.restaurantId],
+    references: [restaurants.id],
+  }),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({

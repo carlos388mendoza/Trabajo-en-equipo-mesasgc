@@ -12,21 +12,27 @@
 // 2. Dos restaurantes de ejemplo con sus zonas y mesas. Sirven para probar el
 //    editor (paso 2), el copiado entre restaurantes (paso 3) y la galería de
 //    zonas (paso 4) sin tener que crear nada a mano.
+// 3. Usuarios de prueba (ver README, "Usuarios de prueba"), SOLO si NODE_ENV
+//    no es production. En producción el primer admin se crea con
+//    `npm run create-admin`, sin contraseñas escritas en el código.
 //
 // Los ids son fijos y deterministas a propósito: el seed se puede correr las
 // veces que haga falta sin duplicar nada.
 
 import { config } from "dotenv";
 
-import { ELEMENT_TYPE_KEYS, type ElementTypeKey } from "../lib/db/enums";
+import { ELEMENT_TYPE_KEYS, type ElementTypeKey, type Role } from "../lib/db/enums";
 import { db } from "../lib/db";
 import {
   elementTypes,
   restaurants,
   tableLayouts,
   tables,
+  userRestaurants,
+  userRoles,
   waitlistEntries,
 } from "../lib/db/schema";
+import { createUserWithPassword, findUserIdByEmail } from "../lib/auth/users";
 
 // dotenv no lee solo `.env`, y Next usa `.env.local`: se le pasan los dos.
 config({ path: [".env.local", ".env"] });
@@ -215,9 +221,9 @@ async function seedDemoData() {
  * Borra solo los datos de layout y lista de espera.
  *
  * NO toca `user`/`session`/`account`: las cuentas las crea el admin y no son
- * datos de demostración. Aviso: al borrar `restaurants`, las FK `ON DELETE SET
- * NULL` dejarán a los usuarios de restaurante sin restaurante, así que
- * habrá que reasignarlos.
+ * datos de demostración. Aviso: al borrar `restaurants` se borran también, en
+ * cascada, las asignaciones de `user_restaurants`. Los usuarios de prueba las
+ * recuperan solos en `seedTestUsers`; los creados a mano hay que reasignarlos.
  */
 async function resetLayoutData() {
   await db.delete(waitlistEntries);
@@ -225,6 +231,53 @@ async function resetLayoutData() {
   await db.delete(tableLayouts);
   await db.delete(restaurants);
   console.log("  datos de layout y lista de espera borrados");
+}
+
+// ---------------------------------------------------------------------------
+// Usuarios de prueba (solo desarrollo)
+//
+// La contraseña es la misma para todos y está aquí a la vista A PROPÓSITO:
+// son cuentas de desarrollo. Por eso no se crean nunca con NODE_ENV=production.
+// ---------------------------------------------------------------------------
+
+const TEST_PASSWORD = "12345abc";
+
+const TEST_USERS: { email: string; name: string; roles: Role[]; restaurantIds: string[] }[] = [
+  { email: "admin@grupocomidas.test", name: "Administrador", roles: ["admin"], restaurantIds: [] },
+  { email: "centro@grupocomidas.test", name: "Host Centro", roles: ["restaurante"], restaurantIds: ["rest_centro"] },
+  { email: "norte@grupocomidas.test", name: "Host Norte", roles: ["restaurante"], restaurantIds: ["rest_norte"] },
+  { email: "analitica@grupocomidas.test", name: "Analista", roles: ["analitica"], restaurantIds: [] },
+  { email: "gerente@grupocomidas.test", name: "Gerente Centro", roles: ["restaurante", "analitica"], restaurantIds: ["rest_centro"] },
+];
+
+async function seedTestUsers() {
+  if (process.env.NODE_ENV === "production") {
+    console.log("  usuarios de prueba: omitidos (NODE_ENV=production)");
+    return;
+  }
+  let created = 0;
+  for (const u of TEST_USERS) {
+    const existing = await findUserIdByEmail(u.email);
+    if (!existing) {
+      await createUserWithPassword({ ...u, password: TEST_PASSWORD });
+      created += 1;
+      continue;
+    }
+    // Ya existe: no se duplica ni se toca su contraseña, pero se le vuelven a
+    // poner sus roles y restaurantes. `--reset` borra los restaurantes y, por
+    // el ON DELETE CASCADE, también sus asignaciones.
+    await db
+      .insert(userRoles)
+      .values(u.roles.map((role) => ({ userId: existing, role })))
+      .onConflictDoNothing();
+    if (u.restaurantIds.length > 0) {
+      await db
+        .insert(userRestaurants)
+        .values(u.restaurantIds.map((restaurantId) => ({ userId: existing, restaurantId })))
+        .onConflictDoNothing();
+    }
+  }
+  console.log(`  usuarios de prueba: ${created} creados, ${TEST_USERS.length - created} ya existían`);
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +290,7 @@ async function main() {
 
   await seedElementTypes();
   await seedDemoData();
+  await seedTestUsers();
 
   // Comprobación de que el catálogo quedó bien: si falta algún tipo, el editor
   // se romperá más tarde y será menos obvio llegar hasta aquí.

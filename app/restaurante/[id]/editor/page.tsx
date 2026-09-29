@@ -1,4 +1,6 @@
 import { EditorClient } from "@/components/editor/editor-client";
+import { restaurantsAllowed } from "@/lib/auth/rbac";
+import { requirePage } from "@/lib/auth/session";
 import { getElementTypes, getLayout, getLayoutsForRestaurant, restaurantExists } from "@/lib/db/queries/layouts";
 import { getRestaurantsWithoutLayout } from "@/lib/layout/copy";
 
@@ -18,12 +20,18 @@ export default async function EditorPage({
 }) {
   const [{ id }, { zona }] = await Promise.all([params, searchParams]);
 
-  const [exists, layouts, types, copyTargets] = await Promise.all([
+  // Antes de leer nada: sin permiso sobre ESTE restaurante no se carga su
+  // plano (redirige a /login o /sin-acceso).
+  const user = await requirePage(`/restaurante/${id}/editor`, "editor:ver", id);
+
+  const [exists, layouts, types, allTargets] = await Promise.all([
     restaurantExists(id),
     getLayoutsForRestaurant(id),
     getElementTypes(),
     getRestaurantsWithoutLayout(id),
   ]);
+  // Solo se ofrece copiar a los restaurantes que este usuario puede editar.
+  const copyTargets = restaurantsAllowed(user, "editor:guardar", allTargets);
 
   if (!exists) {
     return (

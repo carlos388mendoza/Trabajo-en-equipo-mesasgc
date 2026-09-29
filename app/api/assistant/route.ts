@@ -1,7 +1,8 @@
-// TODO(auth): validar la sesión Better Auth y limitar los datos analíticos al acceso del usuario.
+// Permiso `asistente:usar`: solo admin y analítica pueden consultar estas estadísticas.
 import { NextResponse } from "next/server";
 
 import { getAnalytics, type AnalyticsData } from "@/lib/analytics/data";
+import { guardApi } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
 
@@ -9,10 +10,13 @@ const MAX_REQUEST_BYTES = 20 * 1024;
 const MAX_QUESTIONS_PER_MINUTE = 10;
 const RATE_WINDOW_MS = 60_000;
 
-const questionRequestsByIp = new Map<string, { count: number; expiresAt: number }>();
+const questionRequestsByUser = new Map<string, { count: number; expiresAt: number }>();
 
 
 export async function POST(request: Request) {
+  const guard = await guardApi(request, "asistente:usar");
+  if (!guard.ok) return guard.response;
+
   const contentLength = Number(request.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTES) {
     return tooLargeResponse();
@@ -53,8 +57,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "El filtro no es válido." }, { status: 400 });
   }
 
-  const ip = getClientIp(request);
-  if (!allowQuestion(ip)) {
+  if (!allowQuestion(guard.user.id)) {
     return NextResponse.json(
       { error: "Demasiadas preguntas, espera un minuto" },
       { status: 429 },
@@ -123,21 +126,14 @@ function tooLargeResponse() {
   );
 }
 
-function getClientIp(request: Request) {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  return forwardedFor?.split(",")[0]?.trim()
-    || request.headers.get("x-real-ip")?.trim()
-    || "unknown";
-}
-
-function allowQuestion(ip: string, now = Date.now()) {
-  for (const [key, limit] of questionRequestsByIp) {
-    if (limit.expiresAt <= now) questionRequestsByIp.delete(key);
+function allowQuestion(userId: string, now = Date.now()) {
+  for (const [key, limit] of questionRequestsByUser) {
+    if (limit.expiresAt <= now) questionRequestsByUser.delete(key);
   }
 
-  const current = questionRequestsByIp.get(ip);
+  const current = questionRequestsByUser.get(userId);
   if (!current || current.expiresAt <= now) {
-    questionRequestsByIp.set(ip, { count: 1, expiresAt: now + RATE_WINDOW_MS });
+    questionRequestsByUser.set(userId, { count: 1, expiresAt: now + RATE_WINDOW_MS });
     return true;
   }
   if (current.count >= MAX_QUESTIONS_PER_MINUTE) return false;
