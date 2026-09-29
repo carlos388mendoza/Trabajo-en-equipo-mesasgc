@@ -23,6 +23,12 @@ El workflow usa Node.js 22 y `npm ci`. Las verificaciones usan bases SQLite temp
 
 ---
 
+## Despliegue
+
+La guía paso a paso para desplegar en Railway está en [`docs/despliegue.md`](docs/despliegue.md).
+
+---
+
 ## 1. Stack tecnológico
 
 | Capa | Tecnología |
