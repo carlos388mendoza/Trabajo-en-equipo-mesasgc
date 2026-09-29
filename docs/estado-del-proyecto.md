@@ -20,15 +20,16 @@ Grupo Comidas.
 | Modo rápido (Miembro B) | En vivo por Socket.IO (`waitlist:add`, `waitlist:resolve` y `waitlist:undo`, con `canModifyWaitlist`), tarjetas tipo Tinder con `motion` y Deshacer (botón y Ctrl+Z). Fusionado en el #9. | `components/quick-mode/`, `lib/waitlist/`, README §11 |
 | Estadísticas e IA (Miembro B) | Últimos 14 días en hora de Honduras, «tiempo hasta avisar» con `called_at`, top 10 de clientes y asistente. Fusionado en el #9. | `components/analytics/`, `lib/analytics/`, `app/api/` |
 | Aspecto | Estilo de mapa «radar», minimapa, íconos de lucide y temas Claro, Oscuro, Sistema y Personalizado, sin parpadeo. | `lib/theme/`, `/ajustes`, README §13 |
+| Giro guardado y estructura | El giro del plano completo se guarda (`table_layouts.rotation`), se avisa en vivo, se copia y lo respeta el plano en vivo. Tipos barra, puerta y pared. **En `feat/layout-rotation`.** | `components/editor/`, `lib/layout/`, README §12 |
 | Mapa general y marcas | Tabla `brands` (4 marcas) y marca, ciudad y posición en `restaurants`. `/mapa` estilo radar con los 8 restaurantes en vivo por la sala `overview` (solo contadores), filtros, lista por espera y zoom al plano en vivo. `/restaurante/[id]/mapa` para el host. Analitica no ve nombres. **PR de `feat/world-map` hacia `testing`, en revisión.** | `lib/map/`, `components/map/`, README §16, `docs/rbac.md` |
 | Autenticación y roles | **Terminado y probado a mano.** Better Auth con correo y contraseña; roles admin, restaurante y analitica; `/login`, `/inicio`, `/admin`, `/sin-acceso`; encabezado con sesión y favicon. | `lib/auth/`, `proxy.ts`, README §14–15, `docs/rbac.md` |
 
 Las verificaciones automáticas no usan ningún *runner* de tests: son scripts
-contra una base temporal. Estado en `feat/world-map`, ya con `testing` y el #9 dentro:
+contra una base temporal. Estado en `feat/layout-rotation` (sale de `feat/world-map`, que ya trae `testing` y el #9):
 
 | Comando | Resultado |
 |---|---|
-| `npm run verify:editor` | 79/79 |
+| `npm run verify:editor` | 98/98 (79 + 9 del giro + 10 de barra, puerta y pared) |
 | `npm run verify:realtime` | 113/113 (82 del modo rápido en vivo + 31 de la sala `overview`) |
 | `npm run verify:auth` | 124/124 (levanta la app real; 92 + 32 del mapa) |
 | `npm run typecheck`, `npm run lint`, `npm run build` | pasan (solo la advertencia antigua de `postcss.config.mjs`) |
@@ -47,7 +48,7 @@ contra una base temporal. Estado en `feat/world-map`, ya con `testing` y el #9 d
 | #8 | `feat/auth-rbac` (autenticación y roles) | Fusionado |
 | #9 | `feat/quick-mode-live` (Miembro B) | Fusionado, con merge normal. Revisado y aprobado por el Miembro A. |
 | — | **`feat/world-map`** (mapa general y marcas) | **PR abierto hacia `testing`**, con `vbgjptt89g-beep` como revisor. Ya trae `testing` (con el #9). |
-| — | `feat/layout-rotation` (giro guardado; barra, puerta y pared) | Sale de `feat/world-map`. |
+| — | **`feat/layout-rotation`** (giro guardado; barra, puerta y pared) | Subida, **sin PR** hasta que se fusione el de `feat/world-map` (sale de ella). |
 
 Reglas del equipo: nunca se trabaja ni se hace push en `main`; las ramas salen
 de `testing` y los PR van hacia `testing`; commits con prefijo (`feat`, `fix`,
@@ -55,6 +56,13 @@ de `testing` y los PR van hacia `testing`; commits con prefijo (`feat`, `fix`,
 claves.
 
 ## Decisiones que tomamos
+
+- **El giro es de la zona, no del usuario.** `table_layouts.rotation` (0, 90, 180
+  o 270; migración `0003`, solo aditiva) se guarda con el guardado normal y
+  lo ve igual todo el mundo. Si viene sin `rotation`, el guardado conserva el
+  que había, para no romper a quien guarde con un payload viejo.
+- **Barra, puerta y pared no admiten clientes.** Son estructura del local: el
+  modo rápido y los contadores del mapa solo cuentan mesas.
 
 - **Roles y restaurantes en tablas propias.** `user_roles` y `user_restaurants`
   (migración `0001_auth_rbac.sql`, generada con `drizzle-kit generate`) permiten
@@ -160,9 +168,12 @@ claves.
   que no se ve (Miembro B; las estadísticas ya van en hora de Honduras).
 - **Pasar al tema el modo rápido y las estadísticas** (tarjetas, íconos de
   lucide) y la pantalla de clientes «listos» (Miembro B).
-- **Guardar el giro del plano y el tema por usuario** en la base de datos: hoy
-  el giro es solo de la vista y el tema vive en el navegador.
-- **Barra, puerta y pared** como tipos de elemento.
+- **Guardar el tema por usuario** en la base de datos: hoy vive en el
+  navegador.
+- **Que el minimapa gire con el plano** (hoy dibuja la zona sin girar).
+- **`verify:auth` a veces da 404** en el primer PATCH de la API del modo rápido,
+  mientras Next compila esa ruta. Al repetirlo pasa. Convendría «calentar» la
+  ruta antes de comprobar los permisos.
 - **Que alguna pantalla ponga mesas en «reservada».**
 - **CI/CD con GitHub Actions**: build y verificaciones en cada push, y deploy al
   fusionar a `main`.
