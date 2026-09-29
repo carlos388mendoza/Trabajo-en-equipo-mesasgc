@@ -149,8 +149,8 @@ export type Destination = {
 };
 
 /**
- * A dónde puede entrar después del login. Con un solo destino se le lleva
- * directo; con varios, se le deja elegir.
+ * A dónde puede entrar después del login: las tarjetas de /inicio. Si se le
+ * lleva directo o elige lo decide `landingFor`.
  */
 export function destinationsFor(
   subject: (Subject & { roles: Role[] }) | null | undefined,
@@ -180,8 +180,7 @@ export function destinationsFor(
       }
     }
   }
-  // Mapa general: admin y analitica. Con él, ninguno de los dos tiene ya un
-  // único destino y los dos eligen en /inicio.
+  // Mapa general: admin y analitica.
   if (can(subject, "mapa:ver")) {
     out.push({
       href: "/mapa",
@@ -202,4 +201,29 @@ export function destinationsFor(
     });
   }
   return out;
+}
+
+/**
+ * A dónde se le lleva directo desde /inicio, o null para dejarle elegir.
+ *
+ * Con un solo rol, cada uno entra a su pantalla principal aunque tenga más
+ * destinos: el admin al mapa general (llega a /admin por el encabezado) y
+ * analitica a las estadísticas (y al mapa, por el encabezado). Un host entra
+ * directo solo si tiene un único restaurante. Con varios roles distintos
+ * (el gerente), elige.
+ */
+export function landingFor(
+  subject: (Subject & { roles: Role[] }) | null | undefined,
+  destinations: Destination[],
+): string | null {
+  if (!subject || !subject.active) return null;
+  const roles = [...new Set(subject.roles)];
+  if (roles.length === 1) {
+    const [only] = roles;
+    const preferred: Destination["kind"] | null =
+      only === ROLES.ADMIN ? "mapa" : only === ROLES.ANALITICA ? "analiticas" : null;
+    const match = preferred ? destinations.find((d) => d.kind === preferred) : undefined;
+    if (match) return match.href;
+  }
+  return destinations.length === 1 ? destinations[0].href : null;
 }

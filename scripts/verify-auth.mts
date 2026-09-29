@@ -282,12 +282,12 @@ for (const [who, pages] of Object.entries(EXPECTED) as [Who, Expect][]) {
 section("Destino después del login (/inicio)");
 
 {
-  // Admin y analitica eligen: los dos tienen además el mapa general.
+  // Un solo rol entra directo; el gerente (dos roles) elige.
   const INICIO: Record<Who, string> = {
-    admin: "200",
+    admin: "/mapa",
     centro: "/restaurante/rest_centro/rapido",
     norte: "/restaurante/rest_norte/rapido",
-    analitica: "200",
+    analitica: "/analiticas",
     gerente: "200",
   };
   for (const [who, expected] of Object.entries(INICIO) as [Who, string][]) {
@@ -299,11 +299,8 @@ section("Destino después del login (/inicio)");
         res.text.includes("/restaurante/rest_centro/rapido") && res.text.includes("/analiticas") && !res.text.includes("/admin\""),
       );
     }
-    if (who === "admin") {
-      check("  admin elige entre administración y el mapa general", res.text.includes("href=\"/admin\"") && res.text.includes("href=\"/mapa\""));
-    }
-    if (who === "analitica") {
-      check("  analitica elige entre estadísticas y el mapa general", res.text.includes("href=\"/analiticas\"") && res.text.includes("href=\"/mapa\""));
+    if (who === "gerente") {
+      check("  y entre ellos está el mapa general (su rol analitica)", res.text.includes("href=\"/mapa\""));
     }
   }
 }

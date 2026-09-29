@@ -113,8 +113,9 @@ claves.
 - **Analitica no ve nombres en el plano en vivo.** Los quita el servidor (el
   id del cliente se cambia por `"oculto"`). Nuevo permiso `plano:clientes`,
   solo para admin y el propio restaurante.
-- **/inicio cambia para admin y analitica.** Los dos tienen ahora el mapa
-  general como segundo destino, así que eligen en vez de entrar directo.
+- **Destino después del login.** Con un solo rol se entra directo: admin a
+  `/mapa`, analitica a `/analiticas` y un host con un restaurante a su modo
+  rápido. Con varios roles distintos (el gerente), se elige en `/inicio`.
 
 ## Lo que falta
 

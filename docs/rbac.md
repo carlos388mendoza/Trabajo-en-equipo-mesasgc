@@ -98,10 +98,12 @@ Dos casos que vale la pena tener presentes:
 
 | Usuario | Va a |
 |---|---|
-| Solo admin | Pantalla para elegir: `/admin` o `/mapa` |
+| Solo admin | `/mapa` (a `/admin` llega por el encabezado) |
 | Solo restaurante, con 1 restaurante | `/restaurante/[id]/rapido` |
-| Solo analitica | Pantalla para elegir: `/analiticas` o `/mapa` |
-| Varios roles o varios restaurantes | Pantalla para elegir |
+| Solo analitica | `/analiticas` (al mapa llega por el encabezado) |
+| Varios roles o varios restaurantes | Pantalla para elegir (el gerente ve también el mapa general) |
+
+La regla está en `landingFor` (`lib/auth/rbac.ts`).
 
 El enlace «Mapa» del encabezado lleva a `/mapa` a quien tiene `mapa:ver`, y a
 `/restaurante/[id]/mapa` al host que tiene un solo restaurante.

@@ -666,7 +666,8 @@ Drizzle y libSQL. No hay registro público: los usuarios los crea un admin en
 - **Un solo archivo de reglas.** Páginas, actions, API y socket llaman a
   `can()`: si cambia un permiso, cambia en `rbac.ts` y nada más.
 - **Los destinos de `/inicio` salen del rol, no del permiso.** El admin
-  puede ver estadísticas, pero su casa es `/admin`.
+  puede ver estadísticas, pero su casa es el mapa general (`/mapa`). Ver
+  `landingFor` en `rbac.ts`.
 - **El límite del asistente cuenta por usuario**, no por IP: la cabecera
   `X-Forwarded-For` la manda el cliente y se podía falsear.
 
