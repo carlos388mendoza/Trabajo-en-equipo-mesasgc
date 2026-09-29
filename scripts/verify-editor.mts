@@ -37,6 +37,8 @@ const { applyLayoutStructure } = await import("@/lib/layout/save");
 const { saveLayoutInputSchema } = await import("@/lib/layout/validation");
 const { copyLayoutToRestaurant, copyZoneIntoLayout, getStructureCounts } =
   await import("@/lib/layout/copy");
+const { getLayout } = await import("@/lib/db/queries/layouts");
+const { asLayoutRotation } = await import("@/lib/db/enums");
 const { elementStyle, nextLabel, visibleSeats } = await import(
   "@/lib/layout/element-style"
 );
@@ -806,6 +808,65 @@ check(
   !zoneBusy.ok && zoneBusy.error.includes("sentados"),
   zoneBusy.ok ? "lo aceptó" : zoneBusy.error,
 );
+
+
+// ---------------------------------------------------------------------------
+// Giro del plano completo (table_layouts.rotation)
+// ---------------------------------------------------------------------------
+
+section("Giro del plano completo");
+
+const ROT_REST = "rot-rest";
+const ROT_DEST = "rot-dest";
+const ROT_LAYOUT = "rot-layout";
+await db.insert(restaurants).values([
+  { id: ROT_REST, name: "Giro", slug: "giro" },
+  { id: ROT_DEST, name: "Giro destino", slug: "giro-destino" },
+]);
+await db.insert(tableLayouts).values([
+  { id: ROT_LAYOUT, restaurantId: ROT_REST, name: "Comedor", width: 1000, height: 700, isDefault: true, version: 1 },
+]);
+const rotElements = [
+  { id: "rot-mesa", elementTypeId: TYPES.mesa, label: "Mesa 1", x: 50, y: 50, width: 80, height: 80, rotation: 0, capacity: 4 },
+];
+const rotPayload = (rotation?: number) =>
+  saveLayoutInputSchema.safeParse({
+    layoutId: ROT_LAYOUT,
+    restaurantId: ROT_REST,
+    width: 1000,
+    height: 700,
+    ...(rotation === undefined ? {} : { rotation }),
+    elements: rotElements,
+  });
+
+check("una zona nueva nace sin girar", (await getLayout(ROT_LAYOUT, ROT_REST))?.rotation === 0);
+
+{
+  const parsed = rotPayload(90);
+  const saved = parsed.success ? await applyLayoutStructure(parsed.data) : null;
+  const reloaded = await getLayout(ROT_LAYOUT, ROT_REST);
+  check("el giro se guarda con el guardado normal", Boolean(saved?.ok), saved && !saved.ok ? saved.error : "");
+  check("  y se recarga igual (90°)", reloaded?.rotation === 90, String(reloaded?.rotation));
+  check("  y sube la versión (los demás reciben layout:updated)", reloaded?.version === 2, String(reloaded?.version));
+}
+
+{
+  const parsed = rotPayload(undefined);
+  if (parsed.success) await applyLayoutStructure(parsed.data);
+  check("guardar sin `rotation` conserva el giro que había", (await getLayout(ROT_LAYOUT, ROT_REST))?.rotation === 90);
+}
+
+check("un giro que no es un cuarto de vuelta se rechaza (45°)", !rotPayload(45).success);
+check("  y 360° también (se guarda como 0)", !rotPayload(360).success);
+check("asLayoutRotation lee un valor raro como 0", asLayoutRotation(45) === 0 && asLayoutRotation(270) === 270);
+
+{
+  const parsed = rotPayload(270);
+  if (parsed.success) await applyLayoutStructure(parsed.data);
+  const copied = await copyLayoutToRestaurant({ sourceRestaurantId: ROT_REST, targetRestaurantId: ROT_DEST, replace: false });
+  const destLayout = await db.query.tableLayouts.findFirst({ where: (l, { eq }) => eq(l.restaurantId, ROT_DEST) });
+  check("copiar el plano a otro restaurante copia el giro", copied.ok && destLayout?.rotation === 270, String(destLayout?.rotation));
+}
 
 // ---------------------------------------------------------------------------
 
