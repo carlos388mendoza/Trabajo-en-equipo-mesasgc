@@ -31,6 +31,8 @@ Qué significa cada marca:
 | `/restaurante/[id]/rapido` (modo sencillo) | Sí | Suyos | — |
 | `/restaurante/[id]/editor` (plano, modo completo) | Sí | Suyos | — |
 | `/analiticas` (vista global y por restaurante) | Sí | — | Sí |
+| `/mapa` (mapa general, todas las marcas) | Sí | — | Sí (solo lectura) |
+| `/restaurante/[id]/mapa` (plano en vivo, solo lectura) | Sí | Suyos | Sí, sin nombres |
 
 ## Acciones
 
@@ -44,6 +46,9 @@ Qué significa cada marca:
 | `mesas:asignar` | Socket.IO `table:assign` y `table:release` | Sí | Suyos | — |
 | `analiticas:ver` | `GET /api/analiticas` | Sí | — | Sí |
 | `asistente:usar` | `POST /api/assistant` (10 preguntas por minuto y por usuario) | Sí | — | Sí |
+| `mapa:ver` | `/mapa`, la action `loadOverviewCounters` y la sala `overview` de Socket.IO | Sí | — | Sí |
+| `plano:ver` | `/restaurante/[id]/mapa` y la action `loadLivePlan` (estados y ocupación) | Sí | Suyos | Sí |
+| `plano:clientes` | Nombre del cliente de cada mesa en el plano en vivo | Sí | Suyos | — |
 
 Dos casos que vale la pena tener presentes:
 
@@ -51,7 +56,26 @@ Dos casos que vale la pena tener presentes:
   **dos** restaurantes, y copiar una zona también en el de la zona de destino.
 - **Entrar en la room de Socket.IO de un restaurante** exige `editor:ver` o
   `rapido:ver` en él. Por eso analitica no entra en ninguna: no edita nada en
-  vivo.
+  vivo, y en esas rooms viajan los ids de los clientes.
+
+## Mapa general y plano en vivo
+
+- **Analitica no ve nombres de clientes.** En el plano en vivo ve el estado de
+  cada mesa (libre, ocupada, reservada) y la ocupación, nada más. Los nombres
+  los ven el admin y el propio restaurante (`plano:clientes`).
+- **Se quitan en el servidor.** Sin `plano:clientes`, `getLivePlan`
+  (`lib/map/queries.ts`) cambia el id del cliente por `"oculto"` y borra el
+  nombre y la hora antes de responder. Ocultarlos en el navegador no
+  protegería nada: se verían en la respuesta.
+- **La sala `overview`** (mapa general) exige `mapa:ver`. Solo lleva
+  contadores por restaurante: mesas totales, ocupadas y reservadas, clientes
+  en espera y la hora media de llegada. Nunca nombres ni ids de clientes.
+- **Se vuelve a comprobar al avisar.** Antes de cada envío, `emitOverview`
+  comprueba `mapa:ver` de cada usuario de la sala. Si un admin le quitó el
+  rol con el mapa abierto, su socket sale de la sala en ese momento.
+- **Los permisos se suman también aquí.** «restaurante + analitica» (el
+  gerente) ve el mapa general y el plano de todos los restaurantes, pero solo
+  ve nombres en los suyos.
 
 ## Sin sesión
 
@@ -74,10 +98,15 @@ Dos casos que vale la pena tener presentes:
 
 | Usuario | Va a |
 |---|---|
-| Solo admin | `/admin` |
+| Solo admin | `/mapa` (a `/admin` llega por el encabezado) |
 | Solo restaurante, con 1 restaurante | `/restaurante/[id]/rapido` |
-| Solo analitica | `/analiticas` |
-| Varios roles o varios restaurantes | Pantalla para elegir |
+| Solo analitica | `/analiticas` (al mapa llega por el encabezado) |
+| Varios roles o varios restaurantes | Pantalla para elegir (el gerente ve también el mapa general) |
+
+La regla está en `landingFor` (`lib/auth/rbac.ts`).
+
+El enlace «Mapa» del encabezado lleva a `/mapa` a quien tiene `mapa:ver`, y a
+`/restaurante/[id]/mapa` al host que tiene un solo restaurante.
 
 ## Reglas propias de `/admin`
 

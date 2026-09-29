@@ -15,6 +15,13 @@
       "when": 1790629218039,
       "tag": "0001_auth_rbac",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790696270231,
+      "tag": "0002_brands_world_map",
+      "breakpoints": true
     }
   ]
 }

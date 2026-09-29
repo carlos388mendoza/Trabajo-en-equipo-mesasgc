@@ -31,7 +31,13 @@ export type Action =
   /** Estadísticas, vista global y por restaurante. */
   | "analiticas:ver"
   /** Asistente IA sobre las estadísticas. */
-  | "asistente:usar";
+  | "asistente:usar"
+  /** Mapa general (/mapa) y la sala `overview` de Socket.IO. */
+  | "mapa:ver"
+  /** Plano en vivo de un restaurante, en solo lectura: estados y ocupación. */
+  | "plano:ver"
+  /** Nombre del cliente sentado en cada mesa, dentro del plano en vivo. */
+  | "plano:clientes";
 
 export const ALL_ACTIONS: readonly Action[] = [
   "usuarios:gestionar",
@@ -42,6 +48,9 @@ export const ALL_ACTIONS: readonly Action[] = [
   "mesas:asignar",
   "analiticas:ver",
   "asistente:usar",
+  "mapa:ver",
+  "plano:ver",
+  "plano:clientes",
 ];
 
 /**
@@ -54,6 +63,8 @@ const RESTAURANT_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   "rapido:ver",
   "rapido:modificar",
   "mesas:asignar",
+  "plano:ver",
+  "plano:clientes",
 ]);
 
 export function isRestaurantAction(action: Action): boolean {
@@ -71,9 +82,24 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Action[]> = {
     "rapido:ver",
     "rapido:modificar",
     "mesas:asignar",
+    "plano:ver",
+    "plano:clientes",
   ],
-  // Solo lectura: estadísticas de todos y el asistente. No edita nada.
-  [ROLES.ANALITICA]: ["analiticas:ver", "asistente:usar"],
+  // Solo lectura: estadísticas de todos, el asistente y el mapa general. En
+  // el plano en vivo ve estados y ocupación, pero NO los nombres de los
+  // clientes (`plano:clientes`): son datos personales que no necesita.
+  [ROLES.ANALITICA]: ["analiticas:ver", "asistente:usar", "mapa:ver", "plano:ver"],
+};
+
+/**
+ * En qué restaurantes vale cada rol para las acciones de restaurante: en
+ * todos o solo en los suyos (`user_restaurants`). Analitica es "todos"
+ * porque su única acción de restaurante es mirar el plano (`plano:ver`).
+ */
+const ROLE_SCOPE: Record<Role, "todos" | "suyos"> = {
+  [ROLES.ADMIN]: "todos",
+  [ROLES.RESTAURANTE]: "suyos",
+  [ROLES.ANALITICA]: "todos",
 };
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -100,7 +126,9 @@ export function can(
     if (!ROLE_PERMISSIONS[role]?.includes(action)) return false;
     if (!isRestaurantAction(action)) return true;
     if (role === ROLES.ADMIN) return true;
-    return Boolean(restaurantId) && subject.restaurantIds.includes(restaurantId as string);
+    if (!restaurantId) return false;
+    if (ROLE_SCOPE[role] === "todos") return true;
+    return subject.restaurantIds.includes(restaurantId);
   });
 }
 
@@ -117,12 +145,12 @@ export type Destination = {
   href: string;
   label: string;
   description: string;
-  kind: "admin" | "restaurante" | "analiticas";
+  kind: "admin" | "restaurante" | "analiticas" | "mapa";
 };
 
 /**
- * A dónde puede entrar después del login. Con un solo destino se le lleva
- * directo; con varios, se le deja elegir.
+ * A dónde puede entrar después del login: las tarjetas de /inicio. Si se le
+ * lleva directo o elige lo decide `landingFor`.
  */
 export function destinationsFor(
   subject: (Subject & { roles: Role[] }) | null | undefined,
@@ -152,6 +180,15 @@ export function destinationsFor(
       }
     }
   }
+  // Mapa general: admin y analitica.
+  if (can(subject, "mapa:ver")) {
+    out.push({
+      href: "/mapa",
+      label: "Mapa general",
+      description: "Todos los restaurantes en vivo: ocupación y espera por marca y ciudad.",
+      kind: "mapa",
+    });
+  }
   // Por ROL, no por permiso: el admin también puede ver estadísticas, pero su
   // destino es /admin. Solo quien tiene el rol analitica entra aquí directo
   // (o lo elige, si además tiene otros roles).
@@ -164,4 +201,29 @@ export function destinationsFor(
     });
   }
   return out;
+}
+
+/**
+ * A dónde se le lleva directo desde /inicio, o null para dejarle elegir.
+ *
+ * Con un solo rol, cada uno entra a su pantalla principal aunque tenga más
+ * destinos: el admin al mapa general (llega a /admin por el encabezado) y
+ * analitica a las estadísticas (y al mapa, por el encabezado). Un host entra
+ * directo solo si tiene un único restaurante. Con varios roles distintos
+ * (el gerente), elige.
+ */
+export function landingFor(
+  subject: (Subject & { roles: Role[] }) | null | undefined,
+  destinations: Destination[],
+): string | null {
+  if (!subject || !subject.active) return null;
+  const roles = [...new Set(subject.roles)];
+  if (roles.length === 1) {
+    const [only] = roles;
+    const preferred: Destination["kind"] | null =
+      only === ROLES.ADMIN ? "mapa" : only === ROLES.ANALITICA ? "analiticas" : null;
+    const match = preferred ? destinations.find((d) => d.kind === preferred) : undefined;
+    if (match) return match.href;
+  }
+  return destinations.length === 1 ? destinations[0].href : null;
 }

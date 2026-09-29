@@ -12,6 +12,12 @@
 // 2. Dos restaurantes de ejemplo con sus zonas y mesas. Sirven para probar el
 //    editor (paso 2), el copiado entre restaurantes (paso 3) y la galería de
 //    zonas (paso 4) sin tener que crear nada a mano.
+// 2b. El mapa general: 4 marcas y 8 restaurantes (2 por marca) repartidos en
+//    Tegucigalpa y San Pedro Sula. `rest_centro` y `rest_norte` son dos de
+//    ellos, con los mismos ids, para no romper los usuarios de prueba. Los
+//    otros 6 copian su plano con `copyLayoutToRestaurant` (la misma función
+//    que el diálogo del editor), y todos reciben clientes en espera y algunas
+//    mesas ocupadas, sentadas con `assignTable`: el camino normal.
 // 3. Usuarios de prueba (ver README, "Usuarios de prueba"), SOLO si NODE_ENV
 //    no es production. En producción el primer admin se crea con
 //    `npm run create-admin`, sin contraseñas escritas en el código.
@@ -21,9 +27,12 @@
 
 import { config } from "dotenv";
 
-import { ELEMENT_TYPE_KEYS, type ElementTypeKey, type Role } from "../lib/db/enums";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+
+import { ELEMENT_TYPE_KEYS, SEATABLE_ELEMENT_KEYS, type ElementTypeKey, type Role } from "../lib/db/enums";
 import { db } from "../lib/db";
 import {
+  brands,
   elementTypes,
   restaurants,
   tableLayouts,
@@ -33,6 +42,8 @@ import {
   waitlistEntries,
 } from "../lib/db/schema";
 import { createUserWithPassword, findUserIdByEmail } from "../lib/auth/users";
+import { copyLayoutToRestaurant, getStructureCounts } from "../lib/layout/copy";
+import { assignTable } from "../lib/tables/assign";
 
 // dotenv no lee solo `.env`, y Next usa `.env.local`: se le pasan los dos.
 config({ path: [".env.local", ".env"] });
@@ -129,9 +140,31 @@ async function seedElementTypes() {
 // Datos de ejemplo
 // ---------------------------------------------------------------------------
 
+/** Colores de acento: se evitan el amarillo y el rojo puros de la alerta del mapa. */
+const DEMO_BRANDS = [
+  { id: "brand_china_wok", name: "China Wok", accentColor: "#f97316" },
+  { id: "brand_pizza_hut", name: "Pizza Hut", accentColor: "#ef4444" },
+  { id: "brand_kfc", name: "KFC", accentColor: "#ec4899" },
+  { id: "brand_dennys", name: "Denny's", accentColor: "#a3e635" },
+] as const;
+
+const TGU = "Tegucigalpa";
+const SPS = "San Pedro Sula";
+
+/**
+ * `mapX`/`mapY` van de 0 a 1000 y caen dentro de los distritos que dibuja
+ * `lib/map/world.ts`: San Pedro Sula arriba a la izquierda y Tegucigalpa
+ * abajo a la derecha, más o menos como están en el país.
+ */
 const DEMO_RESTAURANTS = [
-  { id: "rest_centro", name: "Restaurante Demo Centro", slug: "demo-centro" },
-  { id: "rest_norte", name: "Restaurante Demo Norte", slug: "demo-norte" },
+  { id: "rest_centro", name: "China Wok Centro", slug: "demo-centro", brandId: "brand_china_wok", city: TGU, mapX: 660, mapY: 610 },
+  { id: "rest_norte", name: "Pizza Hut Norte", slug: "demo-norte", brandId: "brand_pizza_hut", city: SPS, mapX: 250, mapY: 190 },
+  { id: "rest_tgu_pizza", name: "Pizza Hut Los Próceres", slug: "pizza-hut-los-proceres", brandId: "brand_pizza_hut", city: TGU, mapX: 830, mapY: 590 },
+  { id: "rest_tgu_kfc", name: "KFC Boulevard Morazán", slug: "kfc-boulevard-morazan", brandId: "brand_kfc", city: TGU, mapX: 780, mapY: 740 },
+  { id: "rest_tgu_dennys", name: "Denny's Las Lomas", slug: "dennys-las-lomas", brandId: "brand_dennys", city: TGU, mapX: 620, mapY: 830 },
+  { id: "rest_sps_chinawok", name: "China Wok Circunvalación", slug: "china-wok-circunvalacion", brandId: "brand_china_wok", city: SPS, mapX: 380, mapY: 300 },
+  { id: "rest_sps_kfc", name: "KFC Río Piedras", slug: "kfc-rio-piedras", brandId: "brand_kfc", city: SPS, mapX: 170, mapY: 360 },
+  { id: "rest_sps_dennys", name: "Denny's Los Andes", slug: "dennys-los-andes", brandId: "brand_dennys", city: SPS, mapX: 330, mapY: 460 },
 ] as const;
 
 const DEMO_LAYOUTS = [
@@ -171,11 +204,21 @@ const DEMO_WAITLIST = [
 ] as const;
 
 async function seedDemoData() {
+  for (const b of DEMO_BRANDS) {
+    await db
+      .insert(brands)
+      .values(b)
+      .onConflictDoUpdate({ target: brands.id, set: { name: b.name, accentColor: b.accentColor } });
+  }
   for (const r of DEMO_RESTAURANTS) {
+    // Si ya existía (una base de antes del mapa), se le ponen nombre, marca,
+    // ciudad y posición; el slug no se toca porque puede estar en URLs
+    // guardadas.
+    const { id, slug, ...mapFields } = r;
     await db
       .insert(restaurants)
-      .values(r)
-      .onConflictDoNothing({ target: restaurants.id });
+      .values({ id, slug, ...mapFields })
+      .onConflictDoUpdate({ target: restaurants.id, set: { ...mapFields, updatedAt: new Date() } });
   }
 
   for (const l of DEMO_LAYOUTS) {
@@ -211,10 +254,138 @@ async function seedDemoData() {
       .onConflictDoNothing({ target: waitlistEntries.id });
   }
 
+  console.log(`  brands: ${DEMO_BRANDS.length}`);
   console.log(`  restaurants: ${DEMO_RESTAURANTS.length}`);
   console.log(`  table_layouts: ${DEMO_LAYOUTS.length}`);
   console.log(`  tables: ${DEMO_TABLES.length}`);
   console.log(`  waitlist_entries: ${DEMO_WAITLIST.length}`);
+}
+
+// ---------------------------------------------------------------------------
+// Mapa general: planos copiados, clientes en espera y mesas ocupadas
+// ---------------------------------------------------------------------------
+
+/** De qué restaurante copia su plano cada uno de los nuevos. */
+const COPY_FROM: Record<string, "rest_centro" | "rest_norte"> = {
+  rest_tgu_pizza: "rest_centro",
+  rest_tgu_kfc: "rest_centro",
+  rest_tgu_dennys: "rest_norte",
+  rest_sps_chinawok: "rest_centro",
+  rest_sps_kfc: "rest_norte",
+  rest_sps_dennys: "rest_centro",
+};
+
+/**
+ * Cuántos esperan (y hace cuántos minutos llegó cada uno), cuántas mesas se
+ * ocupan y cuántas se reservan. Pensado para que el mapa enseñe los tres
+ * niveles: KFC Boulevard Morazán y Denny's Los Andes pasan de 40 min (rojo),
+ * China Wok Circunvalación y Pizza Hut Norte de 20 (amarillo), el resto no.
+ */
+const LIVE_PLAN: Record<string, { waitingMinutes: number[]; seated: number; reserved: number }> = {
+  rest_centro: { waitingMinutes: [12, 8], seated: 3, reserved: 1 },
+  rest_norte: { waitingMinutes: [34, 30, 27, 24], seated: 2, reserved: 0 },
+  rest_tgu_pizza: { waitingMinutes: [11, 7, 3], seated: 4, reserved: 1 },
+  rest_tgu_kfc: { waitingMinutes: [62, 58, 55, 50, 47, 44, 41, 38, 35], seated: 7, reserved: 0 },
+  rest_tgu_dennys: { waitingMinutes: [4], seated: 1, reserved: 1 },
+  rest_sps_chinawok: { waitingMinutes: [32, 29, 27, 25, 23, 22], seated: 6, reserved: 1 },
+  rest_sps_kfc: { waitingMinutes: [], seated: 1, reserved: 0 },
+  rest_sps_dennys: { waitingMinutes: [55, 49, 44, 40], seated: 5, reserved: 2 },
+};
+
+/**
+ * Mesas que el seed deja siempre libres: son las de la demo a mano del README
+ * (`npm run demo:host -- sentar tbl_c_1 wl_1`, `carrera tbl_c_2 ...`).
+ */
+const KEEP_FREE = new Set(["tbl_c_1", "tbl_c_2"]);
+
+const DEMO_NAMES = [
+  "María López", "José Martínez", "Carmen Flores", "Juan Hernández", "Rosa Mejía",
+  "Carlos Reyes", "Lucía Castillo", "Pedro Zelaya", "Sofía Aguilar", "Miguel Cruz",
+  "Elena Pineda", "Andrés Maradiaga", "Valeria Ramos", "Diego Bonilla", "Paola Sierra",
+];
+
+async function seedWorldMap() {
+  // 1. Planos: solo a quien no tiene ninguna zona, para que repetir el seed
+  //    no pise lo que alguien editó a mano.
+  let copied = 0;
+  for (const [targetRestaurantId, sourceRestaurantId] of Object.entries(COPY_FROM)) {
+    if ((await getStructureCounts(targetRestaurantId)).zones > 0) continue;
+    const result = await copyLayoutToRestaurant({ sourceRestaurantId, targetRestaurantId, replace: false });
+    if (!result.ok) throw new Error(`No se pudo copiar el plano a ${targetRestaurantId}: ${result.error}`);
+    copied += 1;
+  }
+
+  // 2. Clientes, ocupación y reservas.
+  const seatableTypes = await db
+    .select({ id: elementTypes.id })
+    .from(elementTypes)
+    .where(inArray(elementTypes.key, [...SEATABLE_ELEMENT_KEYS]));
+  const seatableIds = seatableTypes.map((t) => t.id);
+  const now = Date.now();
+  let nameIndex = 0;
+  const nextName = () => DEMO_NAMES[nameIndex++ % DEMO_NAMES.length];
+  let seatedCount = 0;
+
+  for (const [restaurantId, plan] of Object.entries(LIVE_PLAN)) {
+    const waiting = plan.waitingMinutes.map((minutes, i) => ({
+      id: `wl_${restaurantId}_e${i + 1}`,
+      restaurantId,
+      customerName: nextName(),
+      partySize: 2 + (i % 4),
+      status: "esperando",
+      arrivedAt: new Date(now - minutes * 60_000),
+    }));
+    // Los que se sientan también pasan por la lista: llegaron antes.
+    const toSeat = Array.from({ length: plan.seated }, (_, i) => ({
+      id: `wl_${restaurantId}_s${i + 1}`,
+      restaurantId,
+      customerName: nextName(),
+      partySize: 2 + (i % 3),
+      status: "esperando",
+      arrivedAt: new Date(now - (70 + i * 5) * 60_000),
+    }));
+    if (waiting.length + toSeat.length > 0) {
+      await db
+        .insert(waitlistEntries)
+        .values([...waiting, ...toSeat])
+        .onConflictDoNothing({ target: waitlistEntries.id });
+    }
+
+    const restaurantTables = await db
+      .select({ id: tables.id, currentEntryId: tables.currentEntryId, status: tables.status })
+      .from(tables)
+      .innerJoin(tableLayouts, eq(tableLayouts.id, tables.layoutId))
+      .where(and(eq(tables.restaurantId, restaurantId), inArray(tables.elementTypeId, seatableIds)))
+      .orderBy(asc(tableLayouts.sortOrder), asc(tables.y), asc(tables.x), asc(tables.id));
+    const free = restaurantTables.filter(
+      (t) => t.currentEntryId === null && t.status !== "reservada" && !KEEP_FREE.has(t.id),
+    );
+
+    for (const entry of toSeat) {
+      const table = free[0];
+      if (!table) break;
+      // Si el cliente ya se sentó en un seed anterior, `assignTable` lo
+      // rechaza y la mesa queda libre para el siguiente.
+      const result = await assignTable({ restaurantId, tableId: table.id, entryId: entry.id, userId: null });
+      if (result.ok) {
+        free.shift();
+        seatedCount += 1;
+      }
+    }
+
+    // Reservadas, de las últimas mesas libres. El estado lo escribe el seed,
+    // nunca el editor.
+    const reservedNow = restaurantTables.filter((t) => t.status === "reservada").length;
+    const toReserve = Math.max(0, plan.reserved - reservedNow);
+    for (const table of toReserve > 0 ? free.slice(-toReserve) : []) {
+      await db
+        .update(tables)
+        .set({ status: "reservada", version: sql`${tables.version} + 1`, updatedAt: new Date() })
+        .where(and(eq(tables.id, table.id), isNull(tables.currentEntryId)));
+    }
+  }
+
+  console.log(`  mapa general: ${copied} planos copiados, ${seatedCount} mesas ocupadas`);
 }
 
 /**
@@ -230,7 +401,8 @@ async function resetLayoutData() {
   await db.delete(tables);
   await db.delete(tableLayouts);
   await db.delete(restaurants);
-  console.log("  datos de layout y lista de espera borrados");
+  await db.delete(brands);
+  console.log("  datos de layout, marcas y lista de espera borrados");
 }
 
 // ---------------------------------------------------------------------------
@@ -290,6 +462,7 @@ async function main() {
 
   await seedElementTypes();
   await seedDemoData();
+  await seedWorldMap();
   await seedTestUsers();
 
   // Comprobación de que el catálogo quedó bien: si falta algún tipo, el editor

@@ -12,6 +12,8 @@
 //  - Un servidor Socket.IO de verdad en un puerto libre, con clientes de
 //    verdad: rooms por restaurante, que el perdedor reciba el error solo él, y
 //    que el restaurante salga de la room y no del payload.
+//  - La sala `overview` del mapa general: solo entra quien tiene `mapa:ver`,
+//    recibe contadores al sentar y liberar, y nunca datos de clientes.
 //
 // Usa una base SQLite temporal (`.verify-realtime.db`) con la migración real
 // del repo. NO ejecuta `drizzle-kit push`, por lo mismo que `verify-editor`:
@@ -43,6 +45,9 @@ const { elementTypes, restaurants, tableLayouts, tables, waitlistEntries } = awa
 const { assignTable, releaseTable } = await import("@/lib/tables/assign");
 const { attachRealtime } = await import("@/lib/realtime/server");
 const { emitToRestaurant } = await import("@/lib/realtime/registry");
+const { emitOverview } = await import("@/lib/realtime/overview");
+const { getCounters, getRestaurantCounters, averageWaitMinutes, waitLevel } = await import("@/lib/map/counters");
+type RestaurantCountersT = import("@/lib/realtime/events").RestaurantCounters;
 
 let passed = 0;
 const failures: string[] = [];
@@ -552,6 +557,157 @@ check(
   emitToRestaurant(REST, "layout:updated", { layoutId: "layout-1", version: 8 });
   await settle();
   check("cambiar de restaurante sale de la room anterior", layoutA.length === 0);
+}
+
+// ---------------------------------------------------------------------------
+// Sala overview (mapa general)
+// ---------------------------------------------------------------------------
+
+section("Sala overview: contadores del mapa general");
+
+{
+  // Contadores calculados directamente, sin socket.
+  const now = Date.now();
+  await db.insert(tables).values([mesa("m-overview"), { ...mesa("m-reservada"), status: "reservada" }]);
+  await db.insert(waitlistEntries).values([
+    { ...cliente("ov-1"), arrivedAt: new Date(now - 30 * 60_000) },
+    { ...cliente("ov-2", REST_2), arrivedAt: new Date(now - 50 * 60_000) },
+  ]);
+  const all = await getCounters();
+  const rest = all.find((c) => c.restaurantId === REST);
+  const seatable = (await db.query.tables.findMany({ where: eq(tables.restaurantId, REST) })).filter(
+    (t) => t.elementTypeId === "type-mesa",
+  );
+  check("getCounters devuelve una fila por restaurante", all.length === 2, `${all.length}`);
+  check("  cuenta solo las mesas, no los baños", rest?.tablesTotal === seatable.length, `${rest?.tablesTotal} vs ${seatable.length}`);
+  check("  una mesa reservada y libre cuenta como reservada", rest?.tablesReserved === 1, `${rest?.tablesReserved}`);
+  // En REST_2 esperan "de-fuera" (llegó al crear los datos) y "ov-2" (hace
+  // 50 min): la espera media es la media de las dos.
+  const other = all.find((c) => c.restaurantId === REST_2);
+  const waitingRows = (await db.query.waitlistEntries.findMany({ where: eq(waitlistEntries.restaurantId, REST_2) })).filter(
+    (w) => w.status === "esperando",
+  );
+  const expected = Math.floor(
+    waitingRows.reduce((sum, w) => sum + (now - w.arrivedAt.getTime()), 0) / waitingRows.length / 60_000,
+  );
+  check(
+    `  la espera media sale de la llegada media (${expected} min en REST_2)`,
+    other !== undefined && other.waiting === 2 && averageWaitMinutes(other, now) === expected,
+    JSON.stringify(other),
+  );
+  check("  más de 40 min es crítica, más de 20 alerta", waitLevel(41) === "critica" && waitLevel(21) === "alerta" && waitLevel(20) === "normal");
+  const none = await getRestaurantCounters("no-existe");
+  check("  un restaurante sin nada da ceros", none.tablesTotal === 0 && none.waiting === 0 && none.averageArrivedAt === null);
+}
+
+// `analitica` es el socket de analitica que se conectó arriba.
+{
+  const r = (await ask(hostB, "overview:join", {})) as AnyAck;
+  check("el rol restaurante NO entra en la sala overview", !r.ok && /mapa general/.test(r.error ?? ""), r.error);
+  const bad = (await ask(analitica, "restaurant:join", { restaurantId: REST })) as AnyAck;
+  check("analitica NO entra en la room de un restaurante (vería nombres)", !bad.ok);
+}
+
+const COUNTER_KEYS = ["averageArrivedAt", "restaurantId", "tablesOccupied", "tablesReserved", "tablesTotal", "waiting"];
+
+{
+  const joinAnalitica = (await ask(analitica, "overview:join", {})) as AnyAck & { counters?: unknown[] };
+  const joinAdmin = (await ask(hostA, "overview:join", {})) as AnyAck & { counters?: unknown[] };
+  check("analitica y admin entran en la sala overview", joinAnalitica.ok && joinAdmin.ok);
+  check("  el ack trae los contadores de todos", joinAnalitica.counters?.length === 2);
+  check(
+    "  solo contadores: ni nombres ni ids de clientes",
+    (joinAnalitica.counters ?? []).every((c) => JSON.stringify(Object.keys(c as object).sort()) === JSON.stringify(COUNTER_KEYS)),
+    JSON.stringify(joinAnalitica.counters?.[0]),
+  );
+}
+
+{
+  const before = await getRestaurantCounters(REST);
+  const gotAnalitica = counter(analitica, "overview:counters");
+  const gotAdmin = counter(hostA, "overview:counters");
+  const gotHostB = counter(hostB, "overview:counters");
+  const gotOtro = counter(otro, "overview:counters");
+
+  const r = await ask(hostB, "table:assign", { tableId: "m-overview", entryId: "ov-1" });
+  await settle();
+  const aviso = gotAnalitica[0] as Record<string, unknown> | undefined;
+  check("asignar una mesa manda contadores a la sala overview", r.ok && gotAnalitica.length === 1 && gotAdmin.length === 1, `${gotAnalitica.length}/${gotAdmin.length}`);
+  check("  del restaurante correcto", aviso?.restaurantId === REST);
+  check(
+    "  con una mesa ocupada más y un cliente menos en espera",
+    aviso?.tablesOccupied === before.tablesOccupied + 1 && aviso?.waiting === before.waiting - 1,
+    JSON.stringify(aviso),
+  );
+  check("  sin datos del cliente", !JSON.stringify(aviso).includes("ov-1") && JSON.stringify(Object.keys(aviso ?? {}).sort()) === JSON.stringify(COUNTER_KEYS));
+  check("  quien no está en la sala no recibe nada", gotHostB.length === 0 && gotOtro.length === 0);
+
+  const rel = await ask(hostB, "table:release", { tableId: "m-overview", entryId: "ov-1" });
+  await settle();
+  const libre = gotAnalitica[1] as Record<string, unknown> | undefined;
+  check("liberar la mesa manda contadores otra vez", rel.ok && gotAnalitica.length === 2);
+  check("  y la mesa ya no cuenta como ocupada", libre?.tablesOccupied === before.tablesOccupied, JSON.stringify(libre));
+}
+
+{
+  // Lo que llamarán el editor y el modo rápido: emitOverview a secas.
+  const got = counter(analitica, "overview:counters");
+  await emitOverview(REST_2);
+  await settle();
+  check("emitOverview llega a la sala por globalThis", got.length === 1 && (got[0] as { restaurantId?: string }).restaurantId === REST_2);
+}
+
+{
+  // El modo rápido también avisa al mapa general: agregar, resolver y
+  // deshacer cambian los clientes en espera. Solo viajan contadores.
+  const got = counter(analitica, "overview:counters");
+  const before = await getRestaurantCounters(REST);
+  const noData = (c: unknown, ...secrets: string[]) =>
+    JSON.stringify(Object.keys(c as object).sort()) === JSON.stringify(COUNTER_KEYS) &&
+    secrets.every((x) => !JSON.stringify(c).includes(x));
+
+  const added = (await ask(hostB, "waitlist:add", { customerName: "Grupo del mapa", partySize: 3 })) as AnyAck & {
+    entry?: { id: string };
+    actionId?: string;
+  };
+  await settle();
+  const afterAdd = got[0] as RestaurantCountersT | undefined;
+  check("waitlist:add manda contadores a la sala overview", added.ok && got.length === 1 && afterAdd?.restaurantId === REST, `${got.length}`);
+  check("  con un cliente más en espera", afterAdd?.waiting === before.waiting + 1, JSON.stringify(afterAdd));
+  check("  sin datos del cliente", noData(afterAdd, "Grupo del mapa", added.entry?.id ?? "-"));
+
+  const resolved = (await ask(hostB, "waitlist:resolve", { entryId: added.entry?.id ?? "", status: "ausente" })) as AnyAck & {
+    actionId?: string;
+  };
+  await settle();
+  const afterResolve = got[1] as RestaurantCountersT | undefined;
+  check("waitlist:resolve manda contadores a la sala overview", resolved.ok && got.length === 2, `${got.length}`);
+  check("  y el ausente ya no cuenta en espera", afterResolve?.waiting === before.waiting, JSON.stringify(afterResolve));
+  check("  sin datos del cliente", noData(afterResolve, "Grupo del mapa", added.entry?.id ?? "-"));
+
+  const undone = (await ask(hostB, "waitlist:undo", { actionId: resolved.actionId ?? "" })) as AnyAck;
+  await settle();
+  const afterUndo = got[2] as RestaurantCountersT | undefined;
+  check("waitlist:undo manda contadores a la sala overview", undone.ok && got.length === 3, `${got.length}`);
+  check("  y el cliente vuelve a contar en espera", afterUndo?.waiting === before.waiting + 1, JSON.stringify(afterUndo));
+  check("  sin datos del cliente", noData(afterUndo, "Grupo del mapa", added.entry?.id ?? "-"));
+
+  const failed = await ask(hostB, "waitlist:undo", { actionId: resolved.actionId ?? "" });
+  await settle();
+  check("una acción que falla no manda contadores", !failed.ok && got.length === 3, `${got.length}`);
+}
+
+{
+  // Si le quitan el rol con el mapa abierto, deja de recibir y sale de la sala.
+  const session = await getAuth().api.getSession({ headers: new Headers({ cookie: cookieAnalitica }) });
+  await setUserAccess(session!.user.id, ["restaurante"], [REST_2]);
+  const got = counter(analitica, "overview:counters");
+  const gotAdmin = counter(hostA, "overview:counters");
+  await emitOverview(REST);
+  await emitOverview(REST);
+  await settle();
+  check("sin mapa:ver ya no recibe contadores", got.length === 0 && gotAdmin.length === 2, `${got.length}/${gotAdmin.length}`);
+  check("  y sale de la sala overview", !(await io.in("overview").fetchSockets()).some((s) => s.data.userId === session!.user.id));
 }
 
 {

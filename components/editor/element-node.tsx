@@ -50,6 +50,8 @@ type Props = {
    */
   pulse: number;
   onSelect: (id: string) => void;
+  /** Falso en el plano en vivo (solo lectura): la mesa no se mueve. */
+  draggable?: boolean;
   /** Avisa al canvas de que un arrastre empezó, para que suelte el Stage. */
   onDragStart: (id: string) => void;
   /** Se llama en cada `dragMove` con la esquina superior izquierda. */
@@ -122,6 +124,7 @@ function ElementNodeBase({
   minutes,
   pulse,
   onSelect,
+  draggable = true,
   onDragStart,
   onDragMove,
   onDragEnd,
@@ -332,7 +335,7 @@ function ElementNodeBase({
       width={width}
       height={height}
       rotation={element.rotation}
-      draggable
+      draggable={draggable}
       onMouseDown={(e) => {
         // `cancelBubble` para que la pulsación no llegue al Stage, que la usa
         // para deseleccionar.

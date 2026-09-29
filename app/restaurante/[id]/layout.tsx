@@ -15,6 +15,7 @@ export default async function RestauranteLayout({
   const links = [
     { href: `/restaurante/${id}/editor`, label: "Editor de mesas", show: can(user, "editor:ver", id) },
     { href: `/restaurante/${id}/rapido`, label: "Modo sencillo", show: can(user, "rapido:ver", id) },
+    { href: `/restaurante/${id}/mapa`, label: "Plano en vivo", show: can(user, "plano:ver", id) },
     { href: "/analiticas", label: "Estadísticas e IA", show: can(user, "analiticas:ver") },
   ].filter((link) => link.show);
 
