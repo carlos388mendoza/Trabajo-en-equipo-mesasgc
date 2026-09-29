@@ -1,12 +1,14 @@
 "use client";
 
-import { use, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Check, CircleCheck, Plus, Undo2, UserRoundPlus } from "lucide-react";
+import { use, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { Check, CircleCheck, Plus, Undo2, UserRoundPlus, UsersRound, X } from "lucide-react";
 
 import { createRealtimeClient, type RealtimeClient } from "@/lib/realtime/client";
 import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
 import type { WaitlistUndoState } from "@/lib/realtime/events";
-import { HONDURAS_TIME_ZONE, hondurasDateKey, hondurasToday } from "@/lib/time/honduras";
+import { hondurasDateKey, hondurasToday } from "@/lib/time/honduras";
+import { SwipeCard, type SwipeCardHandle, type SwipeDecision } from "@/components/quick-mode/swipe-card";
 
 type Guest = {
   id: string;
@@ -41,11 +43,23 @@ export default function ModoRapidoPage({
   const [saving, setSaving] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [undoing, setUndoing] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const [undoPrompt, setUndoPrompt] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [exitDirections, setExitDirections] = useState<Record<string, number>>({});
+  const [enterDirections, setEnterDirections] = useState<Record<string, number>>({});
   const [connected, setConnected] = useState(false);
   const [undoState, setUndoState] = useState<WaitlistUndoState>(null);
   const [error, setError] = useState("");
-  const touchStart = useRef<number | null>(null);
   const socketRef = useRef<RealtimeClient | null>(null);
+  const cardRef = useRef<SwipeCardHandle>(null);
+  const localResolving = useRef(new Set<string>());
+  const resolvedElsewhere = useRef(new Set<string>());
+  const travelDirection = useRef(new Map<string, number>());
+  const undoStateRef = useRef<WaitlistUndoState>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const undoActionRef = useRef<() => Promise<void>>(async () => {});
   const loadVersion = useRef(0);
   const waiting = useMemo(
     () => guests.filter((guest) => guest.status === "waiting"),
@@ -78,6 +92,51 @@ export default function ModoRapidoPage({
     setGuests((items) => [...items.filter((item) => item.id !== guest.id), guest]
       .sort((a, b) => a.arrived - b.arrived));
   }
+
+  const showNotice = useCallback((text: string, duration = 3000) => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNotice(text);
+    noticeTimer.current = setTimeout(() => setNotice(""), duration);
+  }, []);
+
+  useEffect(() => {
+    undoStateRef.current = undoState;
+  }, [undoState]);
+
+  function offerUndoForFiveSeconds() {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setUndoPrompt(true);
+    undoTimer.current = setTimeout(() => setUndoPrompt(false), 5000);
+  }
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => () => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+  }, []);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName))) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        void undoActionRef.current();
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        void cardRef.current?.swipe("listo");
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        void cardRef.current?.swipe("ausente");
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   async function loadGuests() {
     const requestVersion = ++loadVersion.current;
@@ -141,6 +200,21 @@ export default function ModoRapidoPage({
       loadVersion.current += 1;
       if (action === "removed") {
         setGuests((items) => items.filter((guest) => guest.id !== entry.id));
+      } else if (action === "resolved") {
+        const direction = entry.status === "listo" ? 1 : -1;
+        travelDirection.current.set(entry.id, direction);
+        setExitDirections((items) => ({ ...items, [entry.id]: direction }));
+        if (!localResolving.current.has(entry.id)) {
+          resolvedElsewhere.current.add(entry.id);
+          showNotice(`${entry.customerName} ya fue atendido en otro dispositivo.`);
+        }
+        if (!localResolving.current.has(entry.id)) mergeEntry(entry);
+      } else if (action === "restored") {
+        resolvedElsewhere.current.delete(entry.id);
+        const direction = travelDirection.current.get(entry.id)
+          ?? (undoStateRef.current?.label.includes("Marcar ausente") ? -1 : 1);
+        setEnterDirections((items) => ({ ...items, [entry.id]: direction }));
+        mergeEntry(entry);
       } else {
         mergeEntry(entry);
       }
@@ -153,7 +227,7 @@ export default function ModoRapidoPage({
       socketRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restaurantId]);
+  }, [restaurantId, showNotice]);
 
   async function addGuest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -174,6 +248,7 @@ export default function ModoRapidoPage({
       setParty("2");
       setNote("");
       setMessage("Cliente agregado a la fila");
+      offerUndoForFiveSeconds();
       window.setTimeout(() => setMessage(""), 2500);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Error al guardar en Turso.");
@@ -182,28 +257,38 @@ export default function ModoRapidoPage({
     }
   }
 
-  async function mark(status: "listo" | "ausente") {
-    if (!current || resolving) return;
+  async function markGuest(entryId: string, status: SwipeDecision, direction: number): Promise<boolean> {
+    if (resolving || localResolving.current.has(entryId) || resolvedElsewhere.current.has(entryId)) return false;
     const socket = socketRef.current;
     if (!socket?.connected) {
       setError("Esperando la conexión en tiempo real.");
-      return;
+      return false;
     }
+    localResolving.current.add(entryId);
     setResolving(true);
     setError("");
     try {
       const result = await socket.timeout(5000).emitWithAck("waitlist:resolve", {
-        entryId: current.id,
+        entryId,
         status,
       });
       if (!result.ok) {
         await loadGuests();
-        throw new Error(result.error);
+        setError(result.error);
+        return false;
       }
+      travelDirection.current.set(entryId, direction);
+      setExitDirections((items) => ({ ...items, [entryId]: direction }));
       mergeEntry(result.entry);
+      offerUndoForFiveSeconds();
+      showNotice(`${result.entry.customerName}: ${status === "listo" ? "listo" : "ausente"}`, 2200);
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(35);
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Error al actualizar Turso.");
+      return false;
     } finally {
+      localResolving.current.delete(entryId);
       setResolving(false);
     }
   }
@@ -222,6 +307,8 @@ export default function ModoRapidoPage({
         actionId: undoState.actionId,
       });
       if (!result.ok) throw new Error(result.error);
+      setUndoPrompt(false);
+      if (undoTimer.current) clearTimeout(undoTimer.current);
       if (result.action === "removed") {
         setGuests((items) => items.filter((guest) => guest.id !== result.entry.id));
       } else {
@@ -233,6 +320,10 @@ export default function ModoRapidoPage({
       setUndoing(false);
     }
   }
+
+  useEffect(() => {
+    undoActionRef.current = undoLastAction;
+  });
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
@@ -259,79 +350,109 @@ export default function ModoRapidoPage({
       )}
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1.15fr_.85fr]">
-        <section className="rounded-3xl border border-app-border bg-panel p-6 text-panel-text shadow-xl sm:p-8">
-          <div className="flex items-center justify-between">
+        <section className="rounded-3xl border border-app-border bg-panel p-5 text-panel-text shadow-xl sm:p-7">
+          <div className="flex items-center justify-between gap-3">
             <span className="rounded-full bg-app-border/60 px-3 py-1.5 text-xs font-semibold tracking-wide text-panel-text">
               SIGUIENTE EN LA FILA
             </span>
-            <span className="text-sm text-panel-muted">
+            <span className="inline-flex items-center gap-2 text-sm text-panel-muted">
+              <span className={`h-2.5 w-2.5 rounded-full ${connected ? "bg-estado-libre" : "bg-estado-reservada"}`} />
               {connected ? "En vivo" : "Reconectando"}
-              <span className="mx-2">·</span>
-              {current ? `#${guests.filter((guest) => guest.status !== "waiting").length + 1}` : "—"}
+              <span aria-hidden>·</span>
+              {waiting.length} esperando
             </span>
           </div>
+
           {loading ? (
-            <div className="py-14 text-center text-panel-muted">Cargando lista…</div>
-          ) : current ? (
-            <article
-              onTouchStart={(event) => {
-                touchStart.current = event.touches[0]?.clientX ?? null;
-              }}
-              onTouchEnd={(event) => {
-                if (touchStart.current === null) return;
-                const delta = event.changedTouches[0].clientX - touchStart.current;
-                if (delta > 65) void mark("listo");
-                else if (delta < -65) void mark("ausente");
-                touchStart.current = null;
-              }}
-              className="mt-8 touch-pan-y"
-            >
-              <h2 className="text-3xl font-bold">{current.name}</h2>
-              <p className="mt-2 text-panel-muted">
-                {current.party} personas <span className="mx-2">·</span> Llegó a las{" "}
-                {new Date(current.arrived).toLocaleTimeString("es-HN", { hour: "2-digit", minute: "2-digit", timeZone: HONDURAS_TIME_ZONE })}
-              </p>
-              {current.note && (
-                <p className="mt-4 inline-flex rounded-xl bg-app-border/60 px-3 py-2 text-sm">
-                  {current.note}
-                </p>
-              )}
-              <div className="mt-10 grid grid-cols-2 gap-3">
+            <div className="grid h-[390px] place-items-center text-panel-muted" role="status">Cargando lista…</div>
+          ) : waiting.length ? (
+            <>
+              <div className="relative mx-auto mt-6 h-[390px] w-full max-w-[430px] touch-pan-y">
+                <AnimatePresence custom={exitDirections} initial={false}>
+                  {waiting.slice(0, 3).map((guest, depth) => (
+                    <SwipeCard
+                      key={guest.id}
+                      ref={depth === 0 ? cardRef : undefined}
+                      guest={guest}
+                      depth={depth}
+                      isTop={depth === 0}
+                      now={now}
+                      enterFrom={enterDirections[guest.id]}
+                      onResolve={markGuest}
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
+              <div className="mx-auto mt-5 grid max-w-[430px] grid-cols-[1fr_auto_1fr] items-center gap-3">
                 <button
-                  disabled={resolving || !connected}
-                  onClick={() => void mark("listo")}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-4 font-bold text-accent-text transition hover:bg-accent/85 disabled:opacity-60"
+                  type="button"
+                  disabled={!current || resolving || !connected}
+                  onClick={() => void cardRef.current?.swipe("ausente")}
+                  className="flex min-h-[68px] flex-col items-center justify-center gap-1 rounded-2xl border border-estado-ocupada/50 bg-panel px-3 py-2 font-semibold text-estado-ocupada transition hover:bg-estado-ocupada/10 disabled:opacity-45"
+                  aria-label="Marcar ausente"
                 >
-                  <Check aria-hidden size={18} />
-                  Marcar listo
+                  <X aria-hidden size={25} strokeWidth={2.5} />
+                  <span className="text-xs">Ausente</span>
                 </button>
                 <button
-                  disabled={resolving || !connected}
-                  onClick={() => void mark("ausente")}
-                  className="rounded-2xl border border-app-border px-4 py-4 font-semibold text-panel-text transition hover:bg-app-border/60 disabled:opacity-60"
+                  type="button"
+                  disabled={!undoState || undoing || !connected}
+                  onClick={() => void undoLastAction()}
+                  className="flex min-h-[60px] min-w-[74px] flex-col items-center justify-center gap-1 rounded-2xl border border-app-border bg-panel px-3 py-2 font-semibold text-panel-muted transition hover:bg-app-border/50 hover:text-panel-text disabled:opacity-40"
+                  aria-label="Deshacer última acción (Ctrl+Z)"
+                  title="Deshacer · Ctrl+Z"
                 >
-                  Marcar ausente
+                  <Undo2 aria-hidden size={22} />
+                  <span className="text-xs">Deshacer</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!current || resolving || !connected}
+                  onClick={() => void cardRef.current?.swipe("listo")}
+                  className="flex min-h-[68px] flex-col items-center justify-center gap-1 rounded-2xl border border-estado-libre/50 bg-panel px-3 py-2 font-semibold text-estado-libre transition hover:bg-estado-libre/10 disabled:opacity-45"
+                  aria-label="Marcar listo"
+                >
+                  <Check aria-hidden size={25} strokeWidth={2.5} />
+                  <span className="text-xs">Listo</span>
                 </button>
               </div>
-              <p className="mt-4 text-center text-xs text-panel-muted">
-                Desliza a la derecha para marcar listo · a la izquierda para marcar ausente.
-              </p>
-            </article>
+              <AnimatePresence>
+                {undoPrompt && undoState && (
+                  <motion.p
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 8 }}
+                    role="status"
+                    className="mt-3 text-center text-sm text-panel-muted"
+                  >
+                    Acción guardada. Puedes deshacerla durante 5 segundos.
+                  </motion.p>
+                )}
+              </AnimatePresence>
+              <p className="mt-3 text-center text-xs text-panel-muted">Desliza la tarjeta o usa las flechas izquierda y derecha.</p>
+            </>
           ) : (
-            <div className="py-14 text-center">
-              <p className="text-xl font-semibold">La fila está vacía</p>
-              <p className="mt-2 text-sm text-panel-muted">Agrega el siguiente grupo para comenzar.</p>
+            <div className="grid min-h-[390px] place-items-center text-center">
+              <div>
+                <UsersRound aria-hidden size={46} strokeWidth={1.5} className="mx-auto text-panel-muted" />
+                <h2 className="mt-4 text-xl font-semibold">No hay clientes en espera</h2>
+                <p className="mt-2 text-sm text-panel-muted">Cuando llegue alguien, su tarjeta aparecerá aquí.</p>
+              </div>
             </div>
           )}
-          <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
-            {waiting.slice(1).map((guest, index) => (
-              <div key={guest.id} className="min-w-44 rounded-xl bg-app-border/60 p-3">
-                <p className="text-xs text-panel-muted">Después · #{index + 2}</p>
-                <p className="mt-1 font-semibold">{guest.name}</p>
-                <p className="text-xs text-panel-muted">{guest.party} personas</p>
-              </div>
-            ))}
-          </div>
+          <AnimatePresence>
+            {notice && (
+              <motion.p
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                role="status"
+                className="mt-4 rounded-xl border border-app-border bg-app-bg px-4 py-3 text-center text-sm text-panel-text"
+              >
+                {notice}
+              </motion.p>
+            )}
+          </AnimatePresence>
         </section>
 
         <section className="rounded-3xl border border-app-border bg-panel p-6 text-panel-text shadow-sm sm:p-8">
@@ -398,17 +519,6 @@ export default function ModoRapidoPage({
                 Actualizar
               </button>
             </div>
-            {undoState && (
-              <button
-                type="button"
-                disabled={undoing || !connected}
-                onClick={() => void undoLastAction()}
-                className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl border border-app-border px-3 py-2 text-sm font-semibold text-panel-text transition hover:bg-app-border/60 disabled:opacity-50"
-              >
-                <Undo2 aria-hidden size={17} />
-                {undoing ? "Deshaciendo…" : `Deshacer · ${undoState.label}`}
-              </button>
-            )}
             <div className="mt-3 flex gap-3 text-sm text-panel-muted">
               <CircleCheck aria-hidden size={17} className="mt-0.5 shrink-0 text-accent" />
               <p>
