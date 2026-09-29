@@ -26,8 +26,8 @@ import { join, resolve } from "node:path";
 import { io as ioClient, type Socket } from "socket.io-client";
 
 const ROOT = process.cwd();
-const DB_FILE = resolve(ROOT, ".verify-auth.db");
-const DIST_DIR = ".next-verify";
+const DB_FILE = resolve(process.env.VERIFY_AUTH_DB_FILE ?? join(ROOT, ".verify-auth.db"));
+const DIST_DIR = process.env.VERIFY_AUTH_DIST_DIR ?? ".next-verify";
 const PASSWORD = "12345abc";
 
 for (const suffix of ["", "-wal", "-shm"]) rmSync(DB_FILE + suffix, { force: true });
@@ -354,6 +354,63 @@ const API: [Who, string, string, unknown, number][] = [
 for (const [who, method, path, body, expected] of API) {
   const got = await status(who, method, path, body);
   check(`${who}: ${method} ${path} -> ${expected}`, got === expected, `HTTP ${got}`);
+}
+
+section("Privacidad del asistente con OpenRouter");
+
+{
+  const [{ getAnalytics }, { buildOpenRouterMessages, getAssistantSensitiveValues, restoreCustomerAliases }, { db }, { waitlistEntries }] = await Promise.all([
+    import("@/lib/analytics/data"),
+    import("@/lib/analytics/assistant-privacy"),
+    import("@/lib/db"),
+    import("@/lib/db/schema"),
+  ]);
+  const statistics = await getAnalytics();
+  const sensitiveValues = await getAssistantSensitiveValues(statistics);
+  const seededRows = await db.select({
+    customerName: waitlistEntries.customerName,
+    phone: waitlistEntries.phone,
+    notes: waitlistEntries.notes,
+  }).from(waitlistEntries);
+  const seedNames = [...new Set(seededRows.map((row) => row.customerName))];
+  const seedPhonesAndNotes = [...new Set(seededRows.flatMap((row) => [row.phone, row.notes])
+    .filter((value): value is string => typeof value === "string" && Boolean(value)))];
+  const questionWithPrivateData = [
+    "Dame el top de clientes",
+    ...seedNames,
+    ...seedPhonesAndNotes,
+  ].join(" ");
+  const messages = buildOpenRouterMessages(questionWithPrivateData, statistics, sensitiveValues);
+  const serializedMessages = JSON.stringify(messages);
+  const userContext = JSON.parse(messages[1].content) as { topClientes: { alias: string; grupos: number }[] };
+
+  check("el cuerpo enviado a OpenRouter no contiene nombres de clientes del seed", seedNames.every((name) => !serializedMessages.includes(name)));
+  check("el cuerpo enviado a OpenRouter no contiene teléfonos ni notas del seed", seedPhonesAndNotes.every((value) => !serializedMessages.includes(value)));
+  check("el top enviado contiene alias y métricas, sin nombres", userContext.topClientes.every((customer) => /^Cliente \d+$/.test(customer.alias)));
+  check("la respuesta restaura los alias solo para mostrar los nombres del top", statistics.topCustomers.length > 0 && restoreCustomerAliases("Cliente 1", statistics) === statistics.topCustomers[0].name);
+}
+
+section("Marcas, ciudades y preguntas del asistente");
+
+{
+  const response = await http("GET", "/api/analiticas", { cookie: cookies.analitica });
+  const data = JSON.parse(response.text) as {
+    brandsAvailable: { id: string; name: string; accentColor: string }[];
+    citiesAvailable: string[];
+  };
+  check("analíticas ofrece las cuatro marcas con color", data.brandsAvailable.length === 4 && data.brandsAvailable.every((brand) => /^#[0-9a-f]{6}$/i.test(brand.accentColor)));
+  check("analíticas ofrece las dos ciudades del seed", data.citiesAvailable.includes("Tegucigalpa") && data.citiesAvailable.includes("San Pedro Sula"));
+
+  const filtered = await http("GET", "/api/analiticas?brandId=brand_kfc&city=Tegucigalpa", { cookie: cookies.analitica });
+  const filteredData = JSON.parse(filtered.text) as { restaurants: { brand: { id: string } | null; city: string | null }[] };
+  check("filtros combinan restaurants.brand_id y restaurants.city", filtered.status === 200 && filteredData.restaurants.length > 0 && filteredData.restaurants.every((restaurant) => restaurant.brand?.id === "brand_kfc" && restaurant.city === "Tegucigalpa"));
+
+  const brandAnswer = await http("POST", "/api/assistant", { cookie: cookies.gerente, body: { question: "¿Qué marca tiene más espera?" } });
+  const cityAnswer = await http("POST", "/api/assistant", { cookie: cookies.gerente, body: { question: "Compara Tegucigalpa con San Pedro Sula" } });
+  const restaurantAnswer = await http("POST", "/api/assistant", { cookie: cookies.gerente, body: { question: "Compara restaurantes" } });
+  check("asistente responde qué marca tiene más espera sin OpenRouter", brandAnswer.status === 200 && /mayor espera promedio|No hay grupos sentados/.test(JSON.parse(brandAnswer.text).answer));
+  check("asistente compara Tegucigalpa y San Pedro Sula sin OpenRouter", cityAnswer.status === 200 && JSON.parse(cityAnswer.text).answer.includes("Tegucigalpa") && JSON.parse(cityAnswer.text).answer.includes("San Pedro Sula"));
+  check("comparación del asistente muestra marca y ciudad por restaurante", restaurantAnswer.status === 200 && /China Wok|KFC|Pizza Hut/.test(JSON.parse(restaurantAnswer.text).answer) && /Tegucigalpa|San Pedro Sula/.test(JSON.parse(restaurantAnswer.text).answer));
 }
 
 {

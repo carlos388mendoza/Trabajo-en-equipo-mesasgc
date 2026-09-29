@@ -5,7 +5,6 @@ import {
   CalendarDays,
   ChartNoAxesCombined,
   Clock3,
-  Search,
   Sparkles,
   Turtle,
   UsersRound,
@@ -29,8 +28,10 @@ export function AnalyticsClient() {
   const [loading, setLoading] = useState(true);
   const [asking, setAsking] = useState(false);
   const [restaurantId, setRestaurantId] = useState("");
-  const [brandInput, setBrandInput] = useState("");
+  const [brandIdInput, setBrandIdInput] = useState("");
   const [brandFilter, setBrandFilter] = useState("");
+  const [cityInput, setCityInput] = useState("");
+  const [cityFilter, setCityFilter] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -39,7 +40,8 @@ export function AnalyticsClient() {
     }, 0);
     const query = new URLSearchParams();
     if (restaurantId) query.set("restaurantId", restaurantId);
-    if (brandFilter) query.set("brand", brandFilter);
+    if (brandFilter) query.set("brandId", brandFilter);
+    if (cityFilter) query.set("city", cityFilter);
     fetch(`/api/analiticas?${query.toString()}`, { cache: "no-store" })
       .then(async (response) => {
         const data = await response.json();
@@ -51,7 +53,7 @@ export function AnalyticsClient() {
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; window.clearTimeout(timer); };
-  }, [restaurantId, brandFilter]);
+  }, [restaurantId, brandFilter, cityFilter]);
 
   async function ask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -61,7 +63,8 @@ export function AnalyticsClient() {
     try {
       const query = new URLSearchParams();
       if (restaurantId) query.set("restaurantId", restaurantId);
-      if (brandFilter) query.set("brand", brandFilter);
+      if (brandFilter) query.set("brandId", brandFilter);
+      if (cityFilter) query.set("city", cityFilter);
       const response = await fetch(`/api/assistant?${query.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -77,9 +80,10 @@ export function AnalyticsClient() {
     }
   }
 
-  function applyBrand(event: FormEvent<HTMLFormElement>) {
+  function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBrandFilter(brandInput.trim());
+    setBrandFilter(brandIdInput);
+    setCityFilter(cityInput);
   }
 
   const totals = analytics?.totals;
@@ -113,7 +117,7 @@ export function AnalyticsClient() {
     {
       label: "Tiempo hasta avisar",
       value: `${analytics.totals.averageCallMinutes} min`,
-      detail: `${analytics.totals.calledGroups} clientes avisados · llegada hasta marcar listo`,
+      detail: `${analytics.totals.calledGroups} ${analytics.totals.calledGroups === 1 ? "cliente avisado" : "clientes avisados"} · llegada hasta marcar listo`,
       Icon: CalendarDays,
     },
   ] : [];
@@ -127,11 +131,11 @@ export function AnalyticsClient() {
           <p className="mt-1 text-app-muted">Últimos 14 días · hora de Honduras</p>
         </div>
         <div className="rounded-xl border border-app-border bg-panel px-4 py-2.5 text-sm font-medium text-panel-text">
-          Actividad de hoy: {totals?.todayGroups ?? 0} grupos sentados
+          Actividad de hoy: {totals?.todayGroups ?? 0} {(totals?.todayGroups ?? 0) === 1 ? "grupo" : "grupos"} sentados
         </div>
       </header>
 
-      <form onSubmit={applyBrand} className="mt-6 grid gap-3 rounded-2xl border border-app-border bg-panel p-4 text-panel-text sm:grid-cols-[1fr_1fr_auto]">
+      <form onSubmit={applyFilters} className="mt-6 grid gap-3 rounded-2xl border border-app-border bg-panel p-4 text-panel-text sm:grid-cols-2 lg:grid-cols-[1.15fr_1fr_1fr_auto]">
         <label className="flex flex-col gap-1.5 text-sm font-medium">
           Restaurante
           <select
@@ -146,16 +150,36 @@ export function AnalyticsClient() {
           </select>
         </label>
         <label className="flex flex-col gap-1.5 text-sm font-medium">
-          Marca o nombre comercial
-          <span className="flex h-11 items-center gap-2 rounded-xl border border-app-border px-3 focus-within:border-accent">
-            <Search aria-hidden size={17} className="shrink-0 text-panel-muted" />
-            <input
-              value={brandInput}
-              onChange={(event) => setBrandInput(event.target.value)}
-              placeholder="Buscar por marca"
-              className="min-w-0 flex-1 bg-transparent text-panel-text outline-none placeholder:text-panel-muted"
-            />
+          Marca
+          <select
+            value={brandIdInput}
+            onChange={(event) => setBrandIdInput(event.target.value)}
+            className="h-11 rounded-xl border border-app-border bg-panel px-3 text-panel-text outline-none focus:border-accent"
+          >
+            <option value="">Todas las marcas</option>
+            {analytics?.brandsAvailable.map((brand) => (
+              <option key={brand.id} value={brand.id}>{brand.name}</option>
+            ))}
+          </select>
+          <span aria-label="Colores de marca" className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-panel-muted">
+            {analytics?.brandsAvailable.map((brand) => (
+              <span key={brand.id} className="inline-flex items-center gap-1">
+                <i aria-hidden className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: brand.accentColor }} />
+                {brand.name}
+              </span>
+            ))}
           </span>
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm font-medium">
+          Ciudad
+          <select
+            value={cityInput}
+            onChange={(event) => setCityInput(event.target.value)}
+            className="h-11 rounded-xl border border-app-border bg-panel px-3 text-panel-text outline-none focus:border-accent"
+          >
+            <option value="">Todas las ciudades</option>
+            {analytics?.citiesAvailable.map((city) => <option key={city} value={city}>{city}</option>)}
+          </select>
         </label>
         <button className="min-h-11 self-end rounded-xl bg-accent px-4 font-semibold text-accent-text transition hover:bg-accent/85">
           Filtrar
@@ -214,8 +238,12 @@ export function AnalyticsClient() {
                     <li key={restaurant.id}>
                       <div className="flex justify-between gap-3 text-sm">
                         <span className="font-semibold">{restaurant.name}</span>
-                        <span className="text-panel-muted">{restaurant.groups} grupos · {restaurant.minutes} min</span>
+                        <span className="text-panel-muted">{restaurant.groups} {restaurant.groups === 1 ? "grupo" : "grupos"} · {restaurant.minutes} min</span>
                       </div>
+                      <p className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-panel-muted">
+                        {restaurant.brand && <span className="inline-flex items-center gap-1"><i aria-hidden className="h-2 w-2 rounded-full" style={{ backgroundColor: restaurant.brand.accentColor }} />{restaurant.brand.name}</span>}
+                        {restaurant.city && <span>{restaurant.city}</span>}
+                      </p>
                       <div className="mt-2 h-2 rounded-full bg-app-border">
                         <div
                           className="h-2 rounded-full bg-accent"
@@ -240,7 +268,7 @@ export function AnalyticsClient() {
                 {analytics.topCustomers.map((customer, index) => (
                   <li key={customer.name} className="flex items-center justify-between gap-3 rounded-xl border border-app-border px-3 py-2.5 text-sm">
                     <span className="min-w-0 truncate"><span className="mr-2 text-panel-muted">{index + 1}.</span>{customer.name}</span>
-                    <span className="shrink-0 font-semibold">{customer.groups} grupos</span>
+                    <span className="shrink-0 font-semibold">{customer.groups} {customer.groups === 1 ? "grupo" : "grupos"}</span>
                   </li>
                 ))}
               </ol>
@@ -310,7 +338,7 @@ function DailyChart({ daily }: { daily: DailyStat[] }) {
         {daily.map((day) => (
           <div key={day.date} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
             <div className="flex h-[85%] items-end gap-1">
-              <div title={`${day.groups} grupos`} className="w-4 rounded-t-md bg-accent sm:w-6" style={{ height: `${Math.max(day.groups ? 5 : 0, day.groups / maxGroups * 100)}%` }} />
+              <div title={`${day.groups} ${day.groups === 1 ? "grupo" : "grupos"}`} className="w-4 rounded-t-md bg-accent sm:w-6" style={{ height: `${Math.max(day.groups ? 5 : 0, day.groups / maxGroups * 100)}%` }} />
               <div title={`${day.minutes} minutos`} className="w-4 rounded-t-md bg-estado-ocupada sm:w-6" style={{ height: `${Math.max(day.minutes ? 5 : 0, day.minutes / maxMinutes * 100)}%` }} />
             </div>
             <span className="-mb-6 text-xs text-app-muted">{day.day}</span>

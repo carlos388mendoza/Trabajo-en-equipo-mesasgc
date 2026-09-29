@@ -16,6 +16,7 @@ const config = [
       ".next/**",
       // Salida de la app que levanta `npm run verify:auth`.
       ".next-verify/**",
+      ".next-verify-*/**",
       "out/**",
       "build/**",
       "node_modules/**",
