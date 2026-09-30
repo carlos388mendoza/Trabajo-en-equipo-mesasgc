@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - testing
+      - main
+  push:
+    branches:
+      - testing
+      - main
+
+# El CI solo lee el código: el GITHUB_TOKEN no necesita más.
+permissions:
+  contents: read
+
+# Un push nuevo al mismo PR (o a la misma rama) cancela la ejecución anterior,
+# que ya no sirve.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Typecheck, lint, build y verificaciones
+    runs-on: ubuntu-latest
+    # verify:auth levanta la app real; si algo se colgara, el job no se queda
+    # esperando las 6 horas por defecto de GitHub.
+    timeout-minutes: 20
+    env:
+      TURSO_DATABASE_URL: file:./ci.db
+      TURSO_AUTH_TOKEN: ""
+      BETTER_AUTH_SECRET: ci-falso-no-usar-fuera-de-actions-0123456789abcdef0123456789abcdef
+      BETTER_AUTH_URL: http://localhost:3000
+      OPENROUTER_API_KEY: ""
+
+    steps:
+      - name: Obtener el código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      # Cada verify crea su propia SQLite temporal y aplica las migraciones
+      # del repo antes de conectarse; nunca usa una base remota de Turso.
+      - name: Verificar editor
+        run: npm run verify:editor
+
+      - name: Verificar tiempo real
+        run: npm run verify:realtime
+
+      - name: Verificar autenticación y permisos
+        run: npm run verify:auth

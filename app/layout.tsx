@@ -1,5 +1,10 @@
 import "./globals.css";
 
+import { AppHeader } from "@/components/layout/app-header";
+import { InlineScript } from "@/components/theme/inline-script";
+import { ThemeSync } from "@/components/theme/theme-sync";
+import { themeBootScript, themeFallbackCss } from "@/lib/theme/theme";
+
 export const metadata = {
   title: "Table Waitlist",
   description: "Sistema de manejo de listas de espera en restaurantes",
@@ -11,13 +16,28 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es">
-      <body>
-        <header className="flex items-center justify-between p-4 border-b">
-          <span className="font-bold text-lg">Table Waitlist</span>
-          {/* TODO (Ambos): nombre del usuario logueado + botón de logout, viene de Better Auth */}
-        </header>
-        <main className="p-4">{children}</main>
+    // `suppressHydrationWarning` en <html>: el script de abajo le pone las
+    // variables del tema y `data-theme` antes de que React hidrate, así que el
+    // HTML del servidor y el del navegador no coinciden a propósito.
+    <html lang="es" suppressHydrationWarning>
+      <head>
+        {/* Colores de Claro por si el script no llegara a ejecutarse. */}
+        <style dangerouslySetInnerHTML={{ __html: themeFallbackCss() }} />
+        {/* Aplica el tema guardado ANTES del primer pintado: sin esto, al
+            recargar con el tema oscuro se vería un destello claro. Es la
+            técnica de la guía de Next "Preventing flash before hydration". */}
+        <InlineScript html={themeBootScript()} />
+      </head>
+      {/* Extensiones como Grammarly añaden atributos al <body> antes de que
+          React hidrate, y eso daba un error de hydration que no es nuestro.
+          Solo afecta a los atributos de este elemento, no a sus hijos. */}
+      <body suppressHydrationWarning className="min-h-screen bg-app-bg text-app-text">
+        <ThemeSync />
+        {/* Logo, menú según los permisos, usuario, Ajustes y Cerrar sesión. */}
+        <AppHeader />
+        {/* El padding se queda aquí: sin él el editor queda pegado a los
+            bordes. El fondo lo pone el <body> con el color del tema. */}
+        <main className="min-h-[calc(100vh-65px)] p-4">{children}</main>
       </body>
     </html>
   );

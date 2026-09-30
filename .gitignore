@@ -3,6 +3,9 @@
 
 # next.js
 /.next/
+# salida de la app que levanta `npm run verify:auth`
+/.next-verify/
+/.next-verify-*/
 /out/
 
 # production
@@ -21,3 +24,19 @@ npm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# base de datos local de desarrollo (TURSO_DATABASE_URL=file:./local.db)
+local.db
+local.db-wal
+local.db-shm
+
+# bases de datos temporales de `npm run verify:editor` y `verify:realtime`
+.verify-editor.db*
+.verify-realtime.db*
+.verify-auth.db*
+
+# logs de `next dev` en segundo plano
+.dev-*.log
+
+# configuración local de Claude Code (levantar la app desde el panel)
+.claude/launch.json

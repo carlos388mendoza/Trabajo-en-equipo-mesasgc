@@ -1,3 +1,36 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Los colores NO se definen aquí: las variables `--c-*` las genera
+   `lib/theme/theme.ts` (ver `app/layout.tsx`). */
+
+/* Mapa general (components/map/world-map.tsx): el halo que pulsa cuando la
+   espera pasa de 20 min, más rápido pasados los 40, y el barrido del radar.
+   `transform-box: fill-box` hace que un <circle> de SVG escale sobre su
+   propio centro y no sobre el origen del lienzo. */
+@keyframes map-pulse {
+  0% { transform: scale(0.85); opacity: 0.95; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+@keyframes map-sweep {
+  to { transform: rotate(360deg); }
+}
+.map-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: map-pulse 1.8s ease-out infinite;
+}
+.map-pulse-fast {
+  animation-duration: 1.1s;
+}
+.map-sweep {
+  transform-origin: 500px 500px;
+  animation: map-sweep 12s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-pulse,
+  .map-sweep {
+    animation: none;
+  }
+}

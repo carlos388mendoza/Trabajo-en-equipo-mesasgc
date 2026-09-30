@@ -1,18 +1,12 @@
-export default function ModoRapidoPage({
+import { QuickModeClient } from "@/components/quick-mode/quick-mode-client";
+import { requirePage } from "@/lib/auth/session";
+
+export default async function ModoRapidoPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return (
-    <div>
-      <h1 className="text-lg font-semibold">
-        Modo rápido — Restaurante {params.id}
-      </h1>
-      <p className="text-sm text-gray-500">
-        [MIEMBRO B] Aquí van las tarjetas deslizables de clientes en espera,
-        el botón de deshacer y el acceso a estadísticas/IA.
-      </p>
-      {/* TODO: swipe cards, historial para Ctrl+Z, estadísticas, IA */}
-    </div>
-  );
+  const { id } = await params;
+  await requirePage(`/restaurante/${id}/rapido`, "rapido:ver", id);
+  return <QuickModeClient restaurantId={id} />;
 }
