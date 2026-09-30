@@ -874,6 +874,54 @@ section("RBAC del enunciado");
 }
 
 // ---------------------------------------------------------------------------
+// /admin: restablecer la contraseña y desactivar
+// ---------------------------------------------------------------------------
+
+section("Contraseña y desactivar desde /admin");
+
+{
+  // La interfaz pide la contraseña dos veces y una confirmación, pero lo que
+  // vale es lo que hace el servidor: se llama a las actions directamente.
+  const resetId = findActionId("resetPasswordAction", "admin");
+  const activeId = findActionId("setActiveAction", "admin");
+  check("se localizan resetPasswordAction y setActiveAction", resetId !== null && activeId !== null);
+  const callAdmin = async (actionId: string | null, who: Who, payload: Record<string, unknown>) =>
+    (await http("POST", "/admin", {
+      cookie: cookies[who],
+      body: JSON.stringify([payload]),
+      headers: { "Next-Action": actionId ?? "", "Content-Type": "text/plain;charset=UTF-8", Accept: "text/x-component" },
+    })).text;
+  const email = "multi@grupocomidas.test";
+  const { user: userTable } = await import("@/lib/db/schema");
+  const [target] = await db.select({ id: userTable.id }).from(userTable).where(eq(userTable.email, email));
+  check("  el usuario de prueba existe (lo creó «RBAC del enunciado»)", Boolean(target));
+  if (resetId && activeId && target) {
+    const oldPassword = "clave-de-prueba-123";
+    const newPassword = "clave-nueva-456789";
+    const oldSession = (await login(email, oldPassword)).cookie;
+
+    const mismatch = await callAdmin(resetId, "admin", { userId: target.id, password: newPassword, confirmPassword: "otra-cosa-123" });
+    check("si las dos contraseñas no coinciden, el servidor no la cambia", mismatch.includes("no coinciden") && (await login(email, oldPassword)).status === 200);
+    const missing = await callAdmin(resetId, "admin", { userId: target.id, password: newPassword });
+    check("  ni si falta la repetición", !/"ok":true/.test(missing) && (await login(email, oldPassword)).status === 200);
+    const denied = await callAdmin(resetId, "centro", { userId: target.id, password: newPassword, confirmPassword: newPassword });
+    check("  ni si la pide alguien que no es admin", denied.includes("No tienes permiso") && (await login(email, oldPassword)).status === 200);
+
+    const done = await callAdmin(resetId, "admin", { userId: target.id, password: newPassword, confirmPassword: newPassword });
+    check("con las dos iguales, responde «Contraseña cambiada para <correo>»", done.includes(`Contraseña cambiada para ${email}`));
+    check("  la vieja ya no entra y la nueva sí", (await login(email, oldPassword)).status === 401 && (await login(email, newPassword)).status === 200);
+    check("  y la sesión que tenía abierta se cerró", landing(await http("GET", "/analiticas", { cookie: oldSession })) === "/login");
+
+    const off = await callAdmin(activeId, "admin", { userId: target.id, active: false });
+    check("desactivar responde bien y ya no puede entrar", /"ok":true/.test(off) && (await login(email, newPassword)).status !== 200);
+    const offDenied = await callAdmin(activeId, "gerente", { userId: target.id, active: true });
+    check("  un no-admin no puede reactivarlo", offDenied.includes("No tienes permiso") && (await login(email, newPassword)).status !== 200);
+    const on = await callAdmin(activeId, "admin", { userId: target.id, active: true });
+    check("  el admin lo reactiva y vuelve a entrar", /"ok":true/.test(on) && (await login(email, newPassword)).status === 200);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Usuario desactivado
 // ---------------------------------------------------------------------------
 

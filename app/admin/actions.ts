@@ -23,6 +23,7 @@ import { guardAction } from "@/lib/auth/session";
 import {
   UserInputError,
   createUserWithPassword,
+  loadAuthUser,
   setUserAccess,
   setUserActive,
   setUserPassword,
@@ -74,11 +75,13 @@ export async function resetPasswordAction(raw: unknown): Promise<AdminResult> {
   if (!guard.ok) return guard;
   const parsed = resetPasswordSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: firstError(parsed.error) };
+  const target = await loadAuthUser(parsed.data.userId);
+  if (!target) return { ok: false, error: "Ese usuario no existe." };
   return run(async () => {
-    await setUserPassword(parsed.data.userId, parsed.data.password);
-    return parsed.data.userId === guard.user.id
-      ? "Contraseña cambiada. Vuelve a entrar con la nueva."
-      : "Contraseña restablecida. Sus sesiones abiertas se cerraron.";
+    await setUserPassword(target.id, parsed.data.password);
+    return target.id === guard.user.id
+      ? `Contraseña cambiada para ${target.email}. Vuelve a entrar con la nueva.`
+      : `Contraseña cambiada para ${target.email}. Sus sesiones abiertas se cerraron.`;
   });
 }
 
