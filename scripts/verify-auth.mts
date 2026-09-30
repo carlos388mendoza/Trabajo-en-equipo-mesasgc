@@ -1000,6 +1000,44 @@ section("Marcas y restaurantes desde /admin");
 }
 
 // ---------------------------------------------------------------------------
+// Un usuario para varios restaurantes (el piloto: Denny's y Pizza Hut)
+// ---------------------------------------------------------------------------
+
+section("Un usuario de restaurante con los 4 locales de Denny's y Pizza Hut");
+
+{
+  // Lo crea el seed (usuario de prueba del piloto), con la contraseña de desarrollo.
+  const four = ["rest_tgu_dennys", "rest_sps_dennys", "rest_norte", "rest_tgu_pizza"];
+  const piloto = await login("dennys-pizzahut@grupocomidas.test");
+  check("el seed crea el usuario del piloto y entra", piloto.status === 200 && piloto.cookie.includes("session_token"), `HTTP ${piloto.status}`);
+  const cookie = piloto.cookie;
+  const get = (path: string) => http("GET", path, { cookie });
+
+  const inicio = await get("/inicio");
+  check("/inicio no lo manda directo a un restaurante: elige", inicio.status === 200);
+  // Se cuenta el texto entre etiquetas (`>…<`): el payload de React, en los
+  // <script>, repite los mismos textos, pero entre comillas.
+  const cards = (inicio.text.match(/>grupos? esperando</g) ?? []).length;
+  check("  y ve las 4 tarjetas, con cuántos esperan en cada una", />Tus 4 restaurantes</.test(inicio.text) && cards === 4, `${cards} tarjetas`);
+  check("  de sus restaurantes y de ninguno más", inicio.text.includes("Pizza Hut Los Próceres") && inicio.text.includes("Pizza Hut Norte") && !inicio.text.includes("China Wok Centro") && !inicio.text.includes("KFC Boulevard"));
+
+  for (const id of four) {
+    const rapido = landing(await get(`/restaurante/${id}/rapido`));
+    const editor = landing(await get(`/restaurante/${id}/editor`));
+    check(`  ${id}: modo sencillo y completo`, rapido === "200" && editor === "200", `${rapido} / ${editor}`);
+  }
+  for (const id of ["rest_centro", "rest_sps_kfc"]) {
+    check(`  ${id} (otra marca) -> /sin-acceso`, landing(await get(`/restaurante/${id}/rapido`)) === "/sin-acceso");
+  }
+  const page = (await get("/restaurante/rest_norte/rapido")).text;
+  check("en la cabecera tiene el selector de restaurante", page.includes("Cambiar de restaurante"));
+  check("  que solo lista sus restaurantes", page.includes("Pizza Hut Los Próceres") && !page.includes("China Wok Centro") && !page.includes("KFC Río Piedras"));
+  check("un host con un solo restaurante no tiene selector", !(await http("GET", "/restaurante/rest_centro/rapido", { cookie: cookies.centro })).text.includes("Cambiar de restaurante"));
+  check("  ni el admin", !(await http("GET", "/restaurante/rest_centro/rapido", { cookie: cookies.admin })).text.includes("Cambiar de restaurante"));
+  check("  y no ve /admin ni /mapa", landing(await get("/admin")) === "/sin-acceso" && landing(await get("/mapa")) === "/sin-acceso");
+}
+
+// ---------------------------------------------------------------------------
 // Usuario desactivado
 // ---------------------------------------------------------------------------
 
