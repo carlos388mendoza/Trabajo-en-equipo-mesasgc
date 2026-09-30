@@ -23,6 +23,17 @@ async function main() {
 
   const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 
+  // Cuando una server action redirige (el login, cerrar sesión), Next pide la
+  // página de destino a su propio servidor para mandarla en la misma
+  // respuesta. Sin esta variable arma esa URL con el protocolo que manda el
+  // proxy de Railway (`x-forwarded-proto: https`) y el puerto interno, que
+  // habla http: el TLS falla («SSL wrong version number», «failed to get
+  // redirect response») y cae a una redirección normal, con un viaje más.
+  // `next start` la fija igual (`next/dist/server/lib/start-server.js`); un
+  // servidor propio como este tiene que hacerlo a mano. Es por loopback: no
+  // sale del contenedor.
+  process.env.__NEXT_PRIVATE_ORIGIN ??= `http://localhost:${port}`;
+
   const { default: next } = await import("next");
   const { attachRealtime } = await import("@/lib/realtime/server");
 

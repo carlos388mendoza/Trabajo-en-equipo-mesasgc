@@ -626,6 +626,30 @@ if (saveId) {
   check("sin sesión, guardar redirige a /login", (await callSave(null, "rest_centro", "lay_centro_terraza")) === "redirige a /login");
 }
 
+{
+  // Detrás del proxy de Railway llega `x-forwarded-proto: https`. Cuando una
+  // server action redirige, Next pide la página de destino a su propio
+  // servidor; sin __NEXT_PRIVATE_ORIGIN la pedía por https al puerto interno,
+  // que habla http («SSL wrong version number»), y caía a una redirección
+  // normal con un error en el log. Se usa una sesión aparte de norte: cerrarla
+  // no afecta a las de arriba.
+  const signOutId = findActionId("signOutAction", "login");
+  check("se localiza la server action signOutAction", signOutId !== null);
+  if (signOutId) {
+    const extra = (await login(USERS.norte)).cookie;
+    const before = serverLog.length;
+    const res = await http("POST", "/inicio", {
+      cookie: extra,
+      body: "[]",
+      headers: { "Next-Action": signOutId, "Content-Type": "text/plain;charset=UTF-8", Accept: "text/x-component", "X-Forwarded-Proto": "https" },
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    const log = serverLog.slice(before);
+    check("una server action que redirige, detrás de https, responde bien", res.status === 200 || res.status === 303, `HTTP ${res.status}`);
+    check("  y Next sigue la redirección por dentro, sin «failed to get redirect response»", !log.includes("failed to get redirect response"), log.slice(0, 300));
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Mapa: quién ve nombres de clientes
 // ---------------------------------------------------------------------------
