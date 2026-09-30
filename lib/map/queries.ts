@@ -37,7 +37,11 @@ export async function listBrands(): Promise<BrandInfo[]> {
     .orderBy(asc(brands.name));
 }
 
-/** Todos los restaurantes con su marca. El filtro por permiso lo hace quien llama. */
+/**
+ * Los restaurantes ACTIVOS con su marca. Uno desactivado no sale en el mapa
+ * (no se opera), aunque su historial siga en las estadísticas. El filtro por
+ * permiso lo hace quien llama.
+ */
 export async function getMapRestaurants(): Promise<MapRestaurant[]> {
   const rows = await db
     .select({
@@ -54,6 +58,7 @@ export async function getMapRestaurants(): Promise<MapRestaurant[]> {
     })
     .from(restaurants)
     .leftJoin(brands, eq(brands.id, restaurants.brandId))
+    .where(eq(restaurants.active, true))
     .orderBy(asc(restaurants.name));
 
   return rows.map((r) => {

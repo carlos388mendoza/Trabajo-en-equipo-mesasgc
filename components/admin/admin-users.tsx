@@ -11,8 +11,7 @@
 // clic: los dos pasan por una ventana de confirmación con Aceptar y Cancelar.
 // Cambiar la propia contraseña pide confirmarlo dos veces.
 
-import { useEffect, useRef, useState, useTransition } from "react";
-import type { LucideIcon } from "lucide-react";
+import { useState, useTransition } from "react";
 import {
   CircleAlert,
   CircleCheck,
@@ -24,7 +23,6 @@ import {
   UserCheck,
   UserPlus,
   UserX,
-  X,
 } from "lucide-react";
 
 import {
@@ -34,6 +32,7 @@ import {
   setActiveAction,
   updateAccessAction,
 } from "@/app/admin/actions";
+import { Button, ConfirmDialog, FormButtons, IconButton } from "@/components/admin/ui";
 import { ICON_STROKE } from "@/components/editor/icons";
 import { ROLE_LABELS } from "@/lib/auth/rbac";
 import type { AuthUser } from "@/lib/auth/users";
@@ -401,72 +400,6 @@ function PasswordForm({
   );
 }
 
-/** Ventana de confirmación: Esc, Cancelar o tocar fuera la cierran sin hacer nada. */
-function ConfirmDialog({
-  title,
-  children,
-  danger,
-  pending,
-  onConfirm,
-  onCancel,
-}: {
-  title: string;
-  children: React.ReactNode;
-  danger?: boolean;
-  pending: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const cancelRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    // El foco empieza en Cancelar: un Enter distraído no cambia nada.
-    cancelRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel, title]);
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onCancel}>
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="admin-confirm-title"
-        aria-describedby="admin-confirm-body"
-        className="w-full max-w-md rounded-2xl bg-panel p-5 text-panel-text shadow-xl ring-1 ring-app-border"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 id="admin-confirm-title" className="text-base font-semibold">
-          {title}
-        </h3>
-        <div id="admin-confirm-body" className="mt-3 space-y-2 text-sm">
-          {children}
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            ref={cancelRef}
-            type="button"
-            onClick={onCancel}
-            className="h-11 rounded-xl px-4 text-sm font-medium text-panel-text hover:bg-app-border/60"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={pending}
-            className={`h-11 rounded-xl px-4 text-sm font-semibold disabled:opacity-60 ${
-              danger ? "bg-estado-ocupada text-white hover:bg-estado-ocupada/85" : "bg-accent text-accent-text hover:bg-accent/85"
-            }`}
-          >
-            Aceptar
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 
@@ -597,79 +530,3 @@ function RoleTag({ role }: { role: Role }) {
   );
 }
 
-function FormButtons({
-  pending,
-  onCancel,
-  submitLabel,
-  disabled,
-}: {
-  pending: boolean;
-  onCancel: () => void;
-  submitLabel: string;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="flex flex-wrap justify-end gap-2">
-      <Button icon={X} onClick={onCancel} disabled={pending}>
-        Cancelar
-      </Button>
-      <button
-        type="submit"
-        disabled={pending || disabled}
-        className="h-11 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-text hover:bg-accent/85 disabled:opacity-60"
-      >
-        {pending ? "Guardando…" : submitLabel}
-      </button>
-    </div>
-  );
-}
-
-function Button({
-  icon: Icon,
-  children,
-  onClick,
-  disabled,
-  title,
-  primary,
-  danger,
-}: {
-  icon: LucideIcon;
-  children: React.ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-  title?: string;
-  primary?: boolean;
-  danger?: boolean;
-}) {
-  const tone = primary
-    ? "bg-accent text-accent-text hover:bg-accent/85"
-    : danger
-      ? "text-estado-ocupada hover:bg-estado-ocupada/10"
-      : "text-panel-text hover:bg-app-border/60";
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      className={`flex h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${tone}`}
-    >
-      <Icon aria-hidden size={18} strokeWidth={ICON_STROKE} />
-      {children}
-    </button>
-  );
-}
-
-function IconButton({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-app-border hover:bg-app-border/60"
-    >
-      <Icon aria-hidden size={18} strokeWidth={ICON_STROKE} />
-    </button>
-  );
-}

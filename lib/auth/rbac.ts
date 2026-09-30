@@ -18,6 +18,8 @@ import type { AuthUser } from "./users";
 export type Action =
   /** Crear, editar y desactivar usuarios (/admin). */
   | "usuarios:gestionar"
+  /** Crear, editar y desactivar marcas y restaurantes (/admin). */
+  | "catalogo:gestionar"
   /** Ver el editor de mesas (modo completo). */
   | "editor:ver"
   /** Guardar o copiar la estructura del local. */
@@ -41,6 +43,7 @@ export type Action =
 
 export const ALL_ACTIONS: readonly Action[] = [
   "usuarios:gestionar",
+  "catalogo:gestionar",
   "editor:ver",
   "editor:guardar",
   "rapido:ver",
