@@ -365,6 +365,9 @@ export function WorldMap({ restaurants, brands, initialCounters }: Props) {
     if (!pointers.current.delete(e.pointerId)) return;
     // Al soltar un dedo del pellizco, el otro sigue arrastrando desde donde está.
     startGesture();
+    // El clic de este mismo gesto llega antes que cualquier temporizador: así
+    // se descarta ese clic, pero el Enter de después sobre un marcador vale.
+    if (pointers.current.size === 0) window.setTimeout(() => (moved.current = false), 0);
   };
 
   /** Los clics de marcadores y grupos pasan por aquí: tras un arrastre no cuentan. */
