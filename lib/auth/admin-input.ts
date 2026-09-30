@@ -60,7 +60,16 @@ export const updateAccessSchema = z
     return { userId: v.userId, ...access.data };
   });
 
-export const resetPasswordSchema = z.object({ userId: idSchema, password: passwordSchema });
+/**
+ * La contraseña nueva se escribe dos veces en /admin. Se vuelve a comparar
+ * aquí: lo que comprueba el formulario es solo una ayuda.
+ */
+export const resetPasswordSchema = z
+  .object({ userId: idSchema, password: passwordSchema, confirmPassword: z.string() })
+  .refine((v) => v.password === v.confirmPassword, {
+    message: "Las dos contraseñas no coinciden.",
+    path: ["confirmPassword"],
+  });
 
 export const setActiveSchema = z.object({ userId: idSchema, active: z.boolean() });
 
