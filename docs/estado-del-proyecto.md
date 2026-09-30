@@ -9,13 +9,35 @@ Grupo Comidas.
 - Equipo: Miembro A (editor, tiempo real, conflictos y auth) y Miembro B (modo
   rápido, estadísticas e IA).
 
+## En producción
+
+Desde el 30 de septiembre de 2026, `main` (`811e754`, PR #23) está publicado
+en Railway:
+
+- **Dominio:** https://trabajo-en-equipo-mesasgc-production.up.railway.app
+- **Railway:** proyecto `noble-energy`, servicio `Trabajo-en-equipo-mesasgc`,
+  región US East, rama `main` con **Wait for CI**.
+- **Base:** Turso `mesasgc-prod`, nueva, en la cuenta del Miembro A
+  (`aws-us-east-1`). Tiene las 4 migraciones, las 12 tablas y el catálogo de
+  8 tipos. **Sin datos de ejemplo:** el seed no se corre en producción.
+- **Variables:** `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`,
+  `BETTER_AUTH_SECRET` (nuevo, de 48 bytes), `BETTER_AUTH_URL`,
+  `OPENROUTER_API_KEY` (con límite de gasto) y `OPENROUTER_MODEL`. Ningún
+  valor está en el repositorio.
+- **Comandos:** se escriben a mano en Railway, porque los servicios nuevos
+  ya no leen `railway.json` (ver `docs/despliegue.md`, sección 1).
+- **Comprobado:** en el log salen «migrations applied successfully!»,
+  «catálogo de elementos: 8 tipos listos» y «Healthcheck succeeded!».
+  `/api/health` responde `{"ok":true}` y `/login` carga.
+
 ## Lo que ya está hecho
 
-Todo esto está en `testing`.
+Todo esto está en `testing` y en `main`.
 
 | Área | Qué hay | Dónde está | PR |
 |---|---|---|---|
-| Esquema y seed | Restaurantes, marcas, zonas, elementos, lista de espera y catálogo de 8 tipos. Seed idempotente con 8 restaurantes y 5 usuarios de prueba (solo en desarrollo). | `lib/db/`, `scripts/seed.ts` | varios |
+| Esquema y seed | Restaurantes, marcas, zonas, elementos, lista de espera y catálogo de 8 tipos. Seed idempotente (solo desarrollo; con `NODE_ENV=production` se niega a correr): 8 restaurantes, 11 usuarios de prueba (un host por restaurante) y 8 semanas de historial (~12 000 grupos) para las estadísticas. | `lib/db/`, `scripts/seed.ts`, README §15 | varios, #20 |
+| Catálogo en producción | `npm run db:catalog` carga los 8 tipos de elemento sin tocar nada más. Va en el Pre-deploy. | `lib/layout/catalog.ts`, `scripts/db-catalog.mts` | #21 |
 | Editor de mesas | Plano con Konva para tablet: arrastrar, redimensionar, girar elementos, deshacer y copiar a otro restaurante. | `components/editor/`, README §8–9, §12 | #3, #7 |
 | Giro guardado y estructura | El giro del plano completo se guarda (`table_layouts.rotation`), se avisa en vivo, se copia y lo respetan el plano en vivo y el minimapa. Tipos barra, puerta y pared. | `components/editor/`, `lib/layout/`, README §12 | #14 |
 | Tiempo real | Next y Socket.IO en un solo servidor (`server.ts`), con una room por restaurante y la sala `overview` del mapa. | `lib/realtime/`, README §10, §16 | #5, #11 |
@@ -23,22 +45,22 @@ Todo esto está en `testing`.
 | Autenticación y roles | Better Auth con correo y contraseña. Roles admin, restaurante y analitica. `/login`, `/inicio`, `/admin`, `/sin-acceso`, y encabezado con sesión y favicon. | `lib/auth/`, `proxy.ts`, README §14–15, `docs/rbac.md` | #8 |
 | Modo rápido (Miembro B) | En vivo por Socket.IO (`waitlist:add`, `waitlist:resolve` y `waitlist:undo`, con `canModifyWaitlist`), tarjetas tipo Tinder con `motion` y Deshacer (botón y Ctrl+Z). | `components/quick-mode/`, `lib/waitlist/`, README §11 | #9 |
 | Estadísticas e IA (Miembro B) | Últimos 14 días en hora de Honduras, «tiempo hasta avisar» con `called_at`, top 10 de clientes y asistente. | `components/analytics/`, `lib/analytics/`, `app/api/` | #9 |
-| Marcas en estadísticas y privacidad del asistente (Miembro B) | Filtros por marca real (`restaurants.brand_id`) y por ciudad. El top de clientes viaja a OpenRouter con alias («Cliente 1»…) y sin teléfonos ni notas; los nombres se restauran solo en pantalla. Queda un fallo de la anonimización (ver «Lo que falta»). | `lib/analytics/`, README | #17 |
+| Marcas en estadísticas y privacidad del asistente (Miembro B) | Filtros por marca real (`restaurants.brand_id`) y por ciudad. El top de clientes viaja a OpenRouter con alias («Cliente 1»…) y sin teléfonos ni notas; los nombres se restauran solo en pantalla. La anonimización busca los datos sensibles sobre el texto original y solo como palabra entera: conserva fechas, días, cantidades, restaurantes y marcas. | `lib/analytics/`, README | #17, #19 |
 | Mapa general y marcas | Tabla `brands` (4 marcas). `/mapa` estilo radar con los 8 restaurantes en vivo (solo contadores), filtros, lista por espera y zoom al plano en vivo. `/restaurante/[id]/mapa` para el host. Analitica no ve nombres. `emitOverview` avisa también desde el modo rápido. | `lib/map/`, `components/map/`, README §16, `docs/rbac.md` | #11 |
 | Aspecto | Estilo de mapa «radar», minimapa, íconos de lucide y temas Claro, Oscuro, Sistema y Personalizado, sin parpadeo. | `lib/theme/`, `/ajustes`, README §13 | #7 |
 | CI | GitHub Actions en cada PR y cada push a `testing` y `main`: typecheck, lint, build y los tres `verify`, con Node 22 y `npm ci`. | `.github/workflows/ci.yml` | #10 |
-| Despliegue | `railway.json` (build, `db:migrate` antes de desplegar, start y healthcheck), `/api/health` público y guía paso a paso. | `railway.json`, `docs/despliegue.md` | #13 |
+| Despliegue | Comandos de Railway (build, Pre-deploy `db:migrate && db:catalog`, start y healthcheck), `/api/health` público y guía paso a paso. `railway.json` queda como referencia. | `docs/despliegue.md`, `railway.json` | #13, #21 |
 | Documentos | Guion de la demo y plan de salida a producción para la dirección. | `docs/demo.md`, `docs/salida-a-produccion.md` | #14 |
 
 Las verificaciones automáticas no usan ningún *runner* de tests: son scripts
-contra una base temporal. Estado en `testing` (`b69910b`) el 30 de
-septiembre:
+contra una base temporal. Estado en `testing` y `main` (`e1471ed`/`811e754`,
+mismo árbol) el 30 de septiembre:
 
 | Comando | Resultado |
 |---|---|
-| `npm run verify:editor` | 102/102 |
+| `npm run verify:editor` | 107/107 (incluye el catálogo de `db:catalog`) |
 | `npm run verify:realtime` | 113/113 |
-| `npm run verify:auth` | 139/139 (levanta la app real; incluye el healthcheck y la privacidad del asistente) |
+| `npm run verify:auth` | 148/148 (levanta la app real; incluye el healthcheck, la privacidad del asistente y el bloqueo del seed en producción). Falló una vez con un 404 intermitente en las rutas `/api` justo después de `build`, y pasó al repetirlo. |
 | `npm run typecheck`, `npm run lint`, `npm run build` | pasan (solo la advertencia antigua de `postcss.config.mjs`) |
 
 ## Ramas y PR
@@ -61,7 +83,13 @@ septiembre:
 | #14 | `feat/layout-rotation` (giro guardado; barra, puerta y pared) | Fusionado. Aprobado por el Miembro B. |
 | #15 | `chore/pre-release` (healthcheck en `verify:auth`, mejoras del CI, guía de despliegue y este documento) | Fusionado. Aprobado por el Miembro B. |
 | #16 | `feat/analytics-brands` → `main` (Miembro B) | **Cerrado sin fusionar.** Iba a `main` por error; el mismo trabajo entró en `testing` por el #17. La rama no se borró. |
-| #17 | `feat/analytics-brands` → `testing` (marcas y privacidad del asistente, Miembro B) | Fusionado **sin aprobación**: la única revisión, del Miembro A, pedía cambios. El arreglo va en un PR nuevo (ver «Lo que falta»). |
+| #17 | `feat/analytics-brands` → `testing` (marcas y privacidad del asistente, Miembro B) | Fusionado **sin aprobación**: la única revisión, del Miembro A, pedía cambios. Se corrigió en el #19. |
+| #18 | `docs/estado-final` (este documento) | Fusionado. Aprobado por el Miembro B. |
+| #19 | `fix/assistant-privacy` (anonimización por palabra entera y singulares, Miembro B; corregido por el Miembro A) | Fusionado. Aprobado por el Miembro A. |
+| #20 | `feat/seed-historial` (8 semanas de historial y un host por restaurante) | Fusionado. Aprobado por el Miembro B. |
+| #21 | `fix/catalogo-produccion` (`db:catalog` en el Pre-deploy) | Fusionado. Aprobado por el Miembro B. |
+| #22 | `fix/merge-main-env` (trae `main` a `testing` y resuelve `.env.example` sin valores) | Fusionado. Aprobado por el Miembro B. |
+| #23 | `testing` → `main` (salida a producción) | Fusionado. Aprobado por el Miembro B. |
 
 ### Protección de `main` y `testing`
 
@@ -167,41 +195,38 @@ claves.
 
 ## Lo que falta
 
-### Antes del PR final `testing` → `main`
+### Producción (ver `docs/despliegue.md`)
 
-El PR a `main` es el que dispara el despliegue. Lo abre el equipo cuando todo
-lo de abajo esté listo.
+Hecho el 30 de septiembre:
 
-**PR pendientes**
+- [x] Base nueva y vacía `mesasgc-prod` en Turso, con su token.
+- [x] Variables en Railway, con un `BETTER_AUTH_SECRET` nuevo, y límite de
+      gasto en OpenRouter.
+- [x] Comandos escritos a mano en Railway. En el log salen «migrations
+      applied successfully!» y «catálogo de elementos: 8 tipos listos».
+      `drizzle-kit` se instala bien desde `devDependencies`.
 
-- [ ] **PR de privacidad del asistente** (`fix/assistant-privacy`, Miembro
-      B, hacia `testing`). Todavía no está abierto. Tiene que:
-  - reemplazar los nombres de clientes solo como palabra entera: hoy, con
-    una clienta «Ana», «semana» llega a OpenRouter como «semCliente 1»;
-  - dejar intactas las fechas: hoy `2026-09-20` llega como «[dato privado]»;
-  - seguir sin enviar nombres, teléfonos ni notas, y añadir a la prueba de
-    privacidad de `verify:auth` el caso «Ana» dentro de «semana» y una fecha;
-  - corregir el último singular: el selector de personas del modo rápido
-    dice «1 personas».
-- [ ] **Este PR** (`docs/estado-final`).
-- [ ] **PR final `testing` → `main`**, cuando esté todo lo de esta lista. Lo
-      aprueba el otro miembro y necesita el CI en verde (ver «Protección de
-      `main` y `testing`»). Es el que publica la app en Railway.
+Pendiente:
 
-**Producción** (ver `docs/despliegue.md`)
-
-- [ ] Crear en Turso una base **nueva y vacía** para producción (por ejemplo
-      `mesasgc-prod`) y su token.
-- [ ] Cargar las variables en Railway: un `BETTER_AUTH_SECRET` nuevo,
-      `BETTER_AUTH_URL` con https, Turso y OpenRouter.
-- [ ] En el primer despliegue, comprobar que el Pre-deploy dice «migrations
-      applied». `drizzle-kit` está en `devDependencies`: si faltara en el
-      contenedor, moverlo a `dependencies`.
-- [ ] Crear el **primer admin real** con `npm run create-admin` (con una
-      contraseña nueva, nunca `12345abc`) y no correr nunca el seed contra
-      producción.
-- [ ] Poner un límite de gasto en OpenRouter y probar a restaurar un
-      respaldo de Turso.
+- [ ] Crear el **primer admin real** con `railway run npm run create-admin`
+      (ver `docs/despliegue.md`, sección 3), con una contraseña nueva, nunca
+      `12345abc`. No correr nunca el seed contra producción.
+- [ ] **Cargar los restaurantes y las marcas reales.** La app no tiene
+      pantalla para crear restaurantes, marcas ni zonas: hoy solo los crea
+      el seed, que no corre en producción. Sin eso, el admin no puede
+      asignar hosts ni se puede dibujar un plano. Propuesta: un script
+      `npm run db:restaurantes`, seguro para producción e idempotente, que
+      cree las 4 marcas, los 8 restaurantes y una zona vacía por
+      restaurante, sin mesas ni clientes (Miembro A).
+- [ ] Probar a restaurar un respaldo de Turso en una base aparte.
+- [ ] **Migrar la configuración de Railway a Infrastructure as Code**
+      (`.railway/railway.ts`). Hoy los comandos están escritos a mano en
+      Railway, y `railway.json` solo sirve de referencia.
+- [ ] Revocar las claves que se publicaron en `main` el 28 de septiembre
+      (`bf19e8c`, el Turso y el OpenRouter del Miembro B). Siguen en el
+      historial de un repositorio público. Producción no las usa.
+- [ ] Investigar el 404 intermitente de las rutas `/api` justo después de
+      compilar (en `npm run dev` y en `verify:auth`).
 
 **Decisiones de la dirección** (ver `docs/salida-a-produccion.md`)
 
@@ -214,10 +239,21 @@ lo de abajo esté listo.
 - [ ] **¿Cuánto tiempo se guarda el historial de clientes** antes de
       borrarlo?
 
+**Piloto en China Wok Centro** (ver `docs/salida-a-produccion.md`, sección 3)
+
+- [ ] Con los restaurantes cargados, el admin crea desde `/admin` un
+      usuario **restaurante** por cada host de China Wok Centro.
+- [ ] El host dibuja el plano real del local en el editor, en tablet.
+- [ ] Una semana completa, de lunes a domingo, con el encargado dando
+      comentarios. Se miden la espera promedio y el uso frente al papel.
+
 **Antes de presentar**
 
 - [ ] Hacer la demo de `docs/demo.md` de principio a fin sobre `testing`, con
       dos pestañas para el tiempo real.
+- [ ] El asistente sin `OPENROUTER_API_KEY` no entiende «¿qué semana fue más
+      lenta?» (responde el mensaje genérico); con la clave sí la contesta.
+      Si se quiere sin clave, hay que añadirla a `localAnswer` (Miembro B).
 
 ### Más adelante
 
