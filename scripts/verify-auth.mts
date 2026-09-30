@@ -752,6 +752,100 @@ check("sin sesión, el socket no conecta", (await connect()) === null);
 }
 
 // ---------------------------------------------------------------------------
+// RBAC del enunciado: lo que no cubren las tablas de arriba
+// ---------------------------------------------------------------------------
+
+section("RBAC del enunciado");
+
+{
+  // 1. Solo el admin crea usuarios, y con uno o varios roles y restaurantes.
+  //    Se llama a la server action directamente: esconder el botón no basta.
+  const createId = findActionId("createUserAction", "admin");
+  check("se localiza la server action createUserAction", createId !== null);
+  const callCreate = async (who: Who, input: Record<string, unknown>) =>
+    (await http("POST", "/admin", {
+      cookie: cookies[who],
+      body: JSON.stringify([input]),
+      headers: { "Next-Action": createId ?? "", "Content-Type": "text/plain;charset=UTF-8", Accept: "text/x-component" },
+    })).text;
+  const multi = {
+    name: "Gerente de dos locales",
+    email: "multi@grupocomidas.test",
+    password: "clave-de-prueba-123",
+    roles: ["restaurante", "analitica"],
+    restaurantIds: ["rest_centro", "rest_norte"],
+  };
+  if (createId) {
+    for (const who of ["centro", "analitica", "gerente"] as const) {
+      const denied = await callCreate(who, { ...multi, email: `intruso-${who}@grupocomidas.test` });
+      check(`${who} no puede crear usuarios (server action)`, denied.includes("No tienes permiso"));
+    }
+    check("admin crea un usuario con dos roles y dos restaurantes", /"ok":true/.test(await callCreate("admin", multi)));
+    const { user: userTable, userRoles, userRestaurants } = await import("@/lib/db/schema");
+    const [created] = await db.select({ id: userTable.id }).from(userTable).where(eq(userTable.email, multi.email));
+    const roles = created ? (await db.select().from(userRoles).where(eq(userRoles.userId, created.id))).map((r) => r.role).sort() : [];
+    const places = created ? (await db.select().from(userRestaurants).where(eq(userRestaurants.userId, created.id))).map((r) => r.restaurantId).sort() : [];
+    check("  quedan sus dos roles y sus dos restaurantes", roles.join(",") === "analitica,restaurante" && places.join(",") === "rest_centro,rest_norte", `${roles} / ${places}`);
+    const intruders = await db.select({ id: userTable.id }).from(userTable).where(inArray(userTable.email, ["intruso-centro@grupocomidas.test", "intruso-analitica@grupocomidas.test", "intruso-gerente@grupocomidas.test"]));
+    check("  y ningún intento sin permiso creó un usuario", intruders.length === 0);
+
+    const multiCookie = (await login(multi.email, multi.password)).cookie;
+    const pages: [string, string][] = [
+      ["/restaurante/rest_centro/rapido", "200"],
+      ["/restaurante/rest_norte/editor", "200"],
+      ["/analiticas", "200"],
+      ["/restaurante/rest_tgu_kfc/rapido", "/sin-acceso"],
+      ["/admin", "/sin-acceso"],
+    ];
+    for (const [page, expected] of pages) {
+      const got = landing(await http("GET", page, { cookie: multiCookie }));
+      check(`  el usuario nuevo: ${page} -> ${expected}`, got === expected, got);
+    }
+  }
+
+  // 2. El admin entra a cualquier restaurante, no solo a los del seed de las
+  //    tablas de arriba, y ve las analíticas de todos.
+  for (const page of ["/restaurante/rest_tgu_kfc/rapido", "/restaurante/rest_sps_dennys/editor"]) {
+    const got = landing(await http("GET", page, { cookie: cookies.admin }));
+    check(`admin: ${page} -> 200`, got === "200", got);
+  }
+  const all = async (who: Who, query = "") =>
+    JSON.parse((await http("GET", `/api/analiticas${query}`, { cookie: cookies[who] })).text) as { restaurants: { id: string }[] };
+  check("admin ve las analíticas de los 8 restaurantes", (await all("admin")).restaurants.length === 8);
+  check("analitica ve las analíticas de los 8 restaurantes", (await all("analitica")).restaurants.length === 8);
+  const onlyNorte = await all("analitica", "?restaurantId=rest_norte");
+  check("analitica filtra por restaurante", onlyNorte.restaurants.length === 1 && onlyNorte.restaurants[0].id === "rest_norte");
+  const onlyKfc = await all("analitica", "?brandId=brand_kfc");
+  check("analitica filtra por marca", onlyKfc.restaurants.length === 2 && onlyKfc.restaurants.every((r) => r.id.includes("kfc")));
+  check("gerente: POST a la lista de rest_norte -> 403", (await status("gerente", "POST", "/api/restaurante/rest_norte/clientes", newGuest)) === 403);
+
+  // 3. Socket.IO: el restaurante sale de la room, no del payload.
+  const centro = await connect(cookies.centro);
+  const analitica = await connect(cookies.analitica);
+  const gerente = await connect(cookies.gerente);
+  if (centro && analitica && gerente) {
+    await emit(centro, "restaurant:join", { restaurantId: "rest_centro" });
+    const [norteTable] = await db
+      .select({ id: tablesTable.id })
+      .from(tablesTable)
+      .innerJoin(elementTypes, eq(elementTypes.id, tablesTable.elementTypeId))
+      .where(and(eq(tablesTable.restaurantId, "rest_norte"), isNull(tablesTable.currentEntryId), inArray(elementTypes.key, ["mesa-sillas", "mesa-butacas"])))
+      .limit(1);
+    check("centro no puede sentar en una mesa de rest_norte (socket)", !(await emit(centro, "table:assign", { tableId: norteTable?.id ?? "", entryId: "wl_4" })).ok);
+    check("centro no puede resolver un cliente de rest_norte (socket)", !(await emit(centro, "waitlist:resolve", { entryId: "wl_4", status: "listo" })).ok);
+    const [wl4] = await db.select({ status: waitlistEntries.status }).from(waitlistEntries).where(eq(waitlistEntries.id, "wl_4"));
+    check("  y el cliente de rest_norte sigue igual", wl4?.status === "esperando", wl4?.status);
+    check("analitica no puede añadir a la lista de espera (socket)", !(await emit(analitica, "waitlist:add", { customerName: "Prueba", partySize: 2 })).ok);
+    check("gerente entra en la room de rest_centro", (await emit(gerente, "restaurant:join", { restaurantId: "rest_centro" })).ok);
+    check("gerente NO entra en la room de rest_norte", !(await emit(gerente, "restaurant:join", { restaurantId: "rest_norte" })).ok);
+    check("gerente entra en la sala overview (su rol analitica)", (await emit(gerente, "overview:join", {})).ok);
+  } else {
+    check("los sockets de centro, analitica y gerente conectan", false);
+  }
+  for (const s of [centro, analitica, gerente]) s?.close();
+}
+
+// ---------------------------------------------------------------------------
 // Usuario desactivado
 // ---------------------------------------------------------------------------
 
