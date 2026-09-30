@@ -1066,6 +1066,71 @@ console.log("\nProyección del mapa de Honduras");
   check("  y las 11 ciudades principales", CITIES.length === 11 && CITIES.every((c) => c.x > 0 && c.x < MAP_WIDTH && c.y > 0 && c.y < MAP_HEIGHT));
 }
 
+console.log("\nMarcas y restaurantes desde /admin (lib/layout/catalog-admin)");
+
+{
+  const catalog = await import("@/lib/layout/catalog-admin");
+  const { restaurantInputSchema } = await import("@/lib/layout/catalog-input");
+  const { listRestaurants } = await import("@/lib/auth/users");
+  const { getMapRestaurants } = await import("@/lib/map/queries");
+  const { project } = await import("@/lib/map/projection");
+  const { brands, waitlistEntries } = await import("@/lib/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const fails = async (work: () => Promise<unknown>) => {
+    try {
+      await work();
+      return false;
+    } catch (error) {
+      return error instanceof catalog.CatalogInputError;
+    }
+  };
+
+  const brandId = await catalog.createBrand({ name: "Marca de Prueba Ñandú", accentColor: "#123abc" });
+  check("createBrand crea la marca con un id legible", brandId === "brand_marca_de_prueba_nandu");
+  check("  no deja repetir el nombre", await fails(() => catalog.createBrand({ name: "Marca de Prueba Ñandú", accentColor: "#000000" })));
+  await catalog.updateBrand(brandId, { name: "Marca Prueba", accentColor: "#654321" });
+  const [edited] = await db.select().from(brands).where(eq(brands.id, brandId));
+  check("updateBrand cambia nombre y color", edited?.name === "Marca Prueba" && edited.accentColor === "#654321");
+
+  const input = { name: "Local de Prueba", brandId, city: "Tegucigalpa", latitude: 14.1, longitude: -87.2 };
+  const restId = await catalog.createRestaurant(input);
+  const [created] = await db.select().from(restaurants).where(eq(restaurants.id, restId));
+  const zones = await db.select().from(tableLayouts).where(eq(tableLayouts.restaurantId, restId));
+  const at = project({ lat: 14.1, lng: -87.2 });
+  check("createRestaurant crea el restaurante activo, con su slug", created?.active === true && created.slug === "local-de-prueba");
+  check("  con su posición del mapa calculada de la latitud y la longitud", created?.mapX === Math.round(at.x) && created?.mapY === Math.round(at.y));
+  check("  y una zona vacía y predeterminada para el editor", zones.length === 1 && zones[0].isDefault && (await db.select().from(tables).where(eq(tables.restaurantId, restId))).length === 0);
+  const twinId = await catalog.createRestaurant(input);
+  const [twin] = await db.select().from(restaurants).where(eq(restaurants.id, twinId));
+  check("  otro con el mismo nombre recibe otro id y otro slug", twinId !== restId && twin?.slug === "local-de-prueba-2");
+
+  await catalog.updateRestaurant(restId, { ...input, name: "Local Renombrado", city: "San Pedro Sula", latitude: 15.5, longitude: -88.02 });
+  const [renamed] = await db.select().from(restaurants).where(eq(restaurants.id, restId));
+  check("updateRestaurant cambia nombre, ciudad y posición, pero no el id ni el slug",
+    renamed?.name === "Local Renombrado" && renamed.slug === "local-de-prueba" && renamed.mapX === Math.round(project({ lat: 15.5, lng: -88.02 }).x));
+
+  check("la ubicación tiene que caer dentro de Honduras", !restaurantInputSchema.safeParse({ ...input, latitude: 40, longitude: -3.7 }).success);
+
+  await catalog.setBrandActive(brandId, false);
+  check("con la marca desactivada no se crean restaurantes nuevos", await fails(() => catalog.createRestaurant(input)));
+  check("  pero el que ya la tenía se puede seguir editando", !(await fails(() => catalog.updateRestaurant(restId, { ...input, name: "Local Renombrado" }))));
+  await catalog.setBrandActive(brandId, true);
+
+  await db.insert(waitlistEntries).values({ id: "wl-catalogo", restaurantId: restId, customerName: "Cliente de prueba", status: "sentado" });
+  await catalog.setRestaurantActive(restId, false);
+  check("un restaurante desactivado no se ofrece en los accesos", !(await listRestaurants()).some((r) => r.id === restId) && (await listRestaurants({ includeInactive: true })).some((r) => r.id === restId && !r.active));
+  check("  ni sale en el mapa general", !(await getMapRestaurants()).some((r) => r.id === restId));
+  check("  pero no se borra nada: ni él, ni su zona, ni su historial",
+    (await db.select().from(restaurants).where(eq(restaurants.id, restId))).length === 1 &&
+    (await db.select().from(tableLayouts).where(eq(tableLayouts.restaurantId, restId))).length === 1 &&
+    (await db.select().from(waitlistEntries).where(eq(waitlistEntries.id, "wl-catalogo"))).length === 1);
+  await catalog.setRestaurantActive(restId, true);
+  check("  y al reactivarlo vuelve al mapa", (await getMapRestaurants()).some((r) => r.id === restId));
+  check("listAdminRestaurants cuenta sus zonas", (await catalog.listAdminRestaurants()).find((r) => r.id === restId)?.zones === 1);
+  check("listAdminBrands cuenta sus restaurantes", (await catalog.listAdminBrands()).find((b) => b.id === brandId)?.restaurants === 2);
+  check("no se puede editar un restaurante que no existe", await fails(() => catalog.updateRestaurant("no-existe", input)));
+}
+
 // ---------------------------------------------------------------------------
 
 // El cliente de libSQL sigue con la conexión abierta (el proxy de `lib/db` es

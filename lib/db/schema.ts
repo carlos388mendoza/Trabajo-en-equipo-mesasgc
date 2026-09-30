@@ -42,6 +42,12 @@ export const brands = sqliteTable("brands", {
   name: text("name").notNull().unique(),
   /** Color de acento en "#rrggbb". Sin `check()`: se valida con Zod. */
   accentColor: text("accent_color").notNull(),
+  /**
+   * Desactivada (migración 0005, solo aditiva): no se ofrece al crear
+   * restaurantes nuevos, pero sus restaurantes y su histórico siguen igual.
+   * No se borra nunca: las estadísticas por marca dependen de ella.
+   */
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .notNull()
     .default(sql`(unixepoch() * 1000)`),
@@ -83,6 +89,14 @@ export const restaurants = sqliteTable(
     latitude: real("latitude"),
     /** Longitud en grados decimales (WGS 84), por ejemplo -87.2065. */
     longitude: real("longitude"),
+    /**
+     * Desactivado (migración 0005, solo aditiva). No se borra: su historial
+     * sigue en las estadísticas. Pero deja de existir para operar: los
+     * usuarios de restaurante pierden el acceso (`loadAuthUser` solo carga
+     * los activos), no sale en el mapa general ni en los contadores, y no se
+     * ofrece al asignar accesos.
+     */
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

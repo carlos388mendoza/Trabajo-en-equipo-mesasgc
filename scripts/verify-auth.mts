@@ -922,6 +922,84 @@ section("Contraseña y desactivar desde /admin");
 }
 
 // ---------------------------------------------------------------------------
+// /admin: marcas y restaurantes
+// ---------------------------------------------------------------------------
+
+section("Marcas y restaurantes desde /admin");
+
+{
+  const ids = {
+    brand: findActionId("createBrandAction", "catalog"),
+    restaurant: findActionId("createRestaurantAction", "catalog"),
+    active: findActionId("setRestaurantActiveAction", "catalog"),
+    access: findActionId("updateAccessAction", "admin"),
+  };
+  check("se localizan las actions de marcas, restaurantes y accesos", Object.values(ids).every(Boolean));
+  const call = async (actionId: string | null, who: Who, payload: Record<string, unknown>) =>
+    (await http("POST", "/admin", {
+      cookie: cookies[who],
+      body: JSON.stringify([payload]),
+      headers: { "Next-Action": actionId ?? "", "Content-Type": "text/plain;charset=UTF-8", Accept: "text/x-component" },
+    })).text;
+  const { brands: brandsTable, restaurants: restaurantsTable, tableLayouts, user: userTable, userRestaurants } = await import("@/lib/db/schema");
+
+  if (Object.values(ids).every(Boolean)) {
+    for (const who of ["centro", "analitica", "gerente"] as const) {
+      check(`${who} no puede crear marcas (server action)`, (await call(ids.brand, who, { name: `Intrusa ${who}`, accentColor: "#111111" })).includes("No tienes permiso"));
+    }
+    check("  y no se creó ninguna", (await db.select().from(brandsTable).where(inArray(brandsTable.name, ["Intrusa centro", "Intrusa analitica", "Intrusa gerente"]))).length === 0);
+
+    check("admin crea una marca", /"ok":true/.test(await call(ids.brand, "admin", { name: "Marca Verificada", accentColor: "#0EA5E9" })));
+    const [brand] = await db.select().from(brandsTable).where(eq(brandsTable.name, "Marca Verificada"));
+    check("  con el color en minúsculas", brand?.accentColor === "#0ea5e9");
+    const payload = { name: "Local Verificado", brandId: brand?.id, city: "La Ceiba", latitude: 15.7597, longitude: -86.7822 };
+    check("un host no puede crear restaurantes", (await call(ids.restaurant, "centro", payload)).includes("No tienes permiso"));
+    check("  ni con una ubicación fuera de Honduras el admin", (await call(ids.restaurant, "admin", { ...payload, latitude: 40.4, longitude: -3.7 })).includes("Honduras"));
+    check("admin crea un restaurante", /"ok":true/.test(await call(ids.restaurant, "admin", payload)));
+    const [rest] = await db.select().from(restaurantsTable).where(eq(restaurantsTable.name, "Local Verificado"));
+    check("  con su zona vacía", Boolean(rest) && (await db.select().from(tableLayouts).where(eq(tableLayouts.restaurantId, rest.id))).length === 1);
+
+    if (rest) {
+      const mapaHtml = (await http("GET", "/mapa", { cookie: cookies.admin })).text;
+      check("  sale de inmediato en el mapa general", mapaHtml.includes("Local Verificado"));
+      const stats = JSON.parse((await http("GET", "/api/analiticas", { cookie: cookies.analitica })).text) as { restaurantsAvailable: { id: string }[] };
+      check("  y en las estadísticas", stats.restaurantsAvailable.some((r) => r.id === rest.id));
+      check("  y en los accesos de /admin", (await http("GET", "/admin", { cookie: cookies.admin })).text.includes("Local Verificado"));
+
+      // Se lo asigna a norte (conserva rest_norte) y norte entra.
+      const [norte] = await db.select({ id: userTable.id }).from(userTable).where(eq(userTable.email, USERS.norte));
+      const assigned = await call(ids.access, "admin", { userId: norte.id, roles: ["restaurante"], restaurantIds: ["rest_norte", rest.id] });
+      check("admin se lo asigna a norte", /"ok":true/.test(assigned));
+      check("  y norte entra a su modo sencillo", landing(await http("GET", `/restaurante/${rest.id}/rapido`, { cookie: cookies.norte })) === "200");
+
+      check("un host no puede desactivar restaurantes", (await call(ids.active, "centro", { id: rest.id, active: false })).includes("No tienes permiso"));
+      check("admin lo desactiva", /"ok":true/.test(await call(ids.active, "admin", { id: rest.id, active: false })));
+      check("  norte deja de verlo (página)", landing(await http("GET", `/restaurante/${rest.id}/rapido`, { cookie: cookies.norte })) === "/sin-acceso");
+      check("  ni por la API", (await status("norte", "GET", `/api/restaurante/${rest.id}/clientes`)) === 403);
+      const sock = await connect(cookies.norte);
+      check("  ni por el socket", sock !== null && !(await emit(sock, "restaurant:join", { restaurantId: rest.id })).ok);
+      sock?.close();
+      check("  pero sigue en rest_norte", landing(await http("GET", "/restaurante/rest_norte/rapido", { cookie: cookies.norte })) === "200");
+      check("  sale del mapa general", !(await http("GET", "/mapa", { cookie: cookies.admin })).text.includes("Local Verificado"));
+      const statsAfter = JSON.parse((await http("GET", "/api/analiticas", { cookie: cookies.analitica })).text) as { restaurantsAvailable: { id: string }[] };
+      check("  y su historial sigue en las estadísticas", statsAfter.restaurantsAvailable.some((r) => r.id === rest.id));
+      check("  no se borra ni él ni la asignación de norte",
+        (await db.select().from(restaurantsTable).where(eq(restaurantsTable.id, rest.id))).length === 1 &&
+        (await db.select().from(userRestaurants).where(and(eq(userRestaurants.userId, norte.id), eq(userRestaurants.restaurantId, rest.id)))).length === 1);
+      // Editar los accesos de norte mientras está desactivado no le quita la asignación.
+      await call(ids.access, "admin", { userId: norte.id, roles: ["restaurante"], restaurantIds: ["rest_norte"] });
+      check("  y editar sus accesos mientras está desactivado tampoco la borra",
+        (await db.select().from(userRestaurants).where(and(eq(userRestaurants.userId, norte.id), eq(userRestaurants.restaurantId, rest.id)))).length === 1);
+      check("al reactivarlo, norte lo recupera", /"ok":true/.test(await call(ids.active, "admin", { id: rest.id, active: true })) &&
+        landing(await http("GET", `/restaurante/${rest.id}/rapido`, { cookie: cookies.norte })) === "200");
+      // Se deja todo como estaba para lo que sigue.
+      await call(ids.access, "admin", { userId: norte.id, roles: ["restaurante"], restaurantIds: ["rest_norte"] });
+      await db.delete(userRestaurants).where(and(eq(userRestaurants.userId, norte.id), eq(userRestaurants.restaurantId, rest.id)));
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Usuario desactivado
 // ---------------------------------------------------------------------------
 
