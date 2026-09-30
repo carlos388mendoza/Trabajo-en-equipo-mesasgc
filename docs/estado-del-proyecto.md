@@ -211,20 +211,17 @@ Pendiente:
 - [ ] Crear el **primer admin real** con `railway run npm run create-admin`
       (ver `docs/despliegue.md`, sección 3), con una contraseña nueva, nunca
       `12345abc`. No correr nunca el seed contra producción.
-- [ ] **Cargar los restaurantes y las marcas reales.** La app no tiene
-      pantalla para crear restaurantes, marcas ni zonas: hoy solo los crea
-      el seed, que no corre en producción. Sin eso, el admin no puede
-      asignar hosts ni se puede dibujar un plano. Propuesta: un script
-      `npm run db:restaurantes`, seguro para producción e idempotente, que
-      cree las 4 marcas, los 8 restaurantes y una zona vacía por
-      restaurante, sin mesas ni clientes (Miembro A).
+- [ ] **Cargar los restaurantes y las marcas reales** con
+      `railway run npm run db:restaurantes` (ver `docs/despliegue.md`,
+      sección 3b). La app no tiene pantalla para crear restaurantes, marcas
+      ni zonas, y el seed no corre en producción. El script crea las 4
+      marcas, los 8 restaurantes y una zona vacía por restaurante, sin
+      mesas, clientes ni usuarios. Es idempotente y no pisa nada que ya
+      exista.
 - [ ] Probar a restaurar un respaldo de Turso en una base aparte.
 - [ ] **Migrar la configuración de Railway a Infrastructure as Code**
       (`.railway/railway.ts`). Hoy los comandos están escritos a mano en
       Railway, y `railway.json` solo sirve de referencia.
-- [ ] Revocar las claves que se publicaron en `main` el 28 de septiembre
-      (`bf19e8c`, el Turso y el OpenRouter del Miembro B). Siguen en el
-      historial de un repositorio público. Producción no las usa.
 - [ ] Investigar el 404 intermitente de las rutas `/api` justo después de
       compilar (en `npm run dev` y en `verify:auth`).
 
@@ -264,8 +261,12 @@ Pendiente:
 - **Pasar al tema el modo rápido y las estadísticas** (Miembro B).
 - **Guardar el tema por usuario** en la base de datos: hoy vive en el
   navegador.
-- **Pantalla para gestionar marcas y la posición de cada restaurante** en el
-  mapa: hoy las pone el seed.
+- **Pantalla en `/admin` para crear restaurantes**, marcas y zonas, y para
+  mover cada restaurante en el mapa. Hoy los crean `npm run db:restaurantes`
+  (producción) y el seed (desarrollo), y no se pueden editar desde la app.
+- **Cambiar la contraseña desde la app.** Hoy cada usuario se queda con la
+  contraseña que le puso el admin al crearlo; solo el admin puede
+  desactivarlo.
 - **Que alguna pantalla ponga mesas en «reservada».**
 - **Más de un servidor.** El Deshacer del modo rápido y las salas de Socket.IO
   viven en la memoria del proceso: basta para 8 restaurantes en un solo
