@@ -11,24 +11,36 @@ Grupo Comidas.
 
 ## En producción
 
-Desde el 30 de septiembre de 2026, `main` (`811e754`, PR #23) está publicado
-en Railway:
+Desde el 30 de septiembre de 2026 hay una versión publicada en Railway. La
+última es `main` = `df550bd` (PR #33), desplegada el 30 de septiembre:
 
 - **Dominio:** https://trabajo-en-equipo-mesasgc-production.up.railway.app
 - **Railway:** proyecto `noble-energy`, servicio `Trabajo-en-equipo-mesasgc`,
   región US East, rama `main` con **Wait for CI**.
 - **Base:** Turso `mesasgc-prod`, nueva, en la cuenta del Miembro A
-  (`aws-us-east-1`). Tiene las 4 migraciones, las 12 tablas y el catálogo de
-  8 tipos. **Sin datos de ejemplo:** el seed no se corre en producción.
+  (`aws-us-east-1`). Tiene las 5 migraciones (hasta la `0004`, con latitud
+  y longitud), las 12 tablas y el catálogo de 8 tipos. **Sin datos de
+  ejemplo:** el seed no se corre en producción.
+- **Restaurantes:** cargados con `railway run npm run db:restaurantes`: las
+  4 marcas, los 8 restaurantes con su latitud y longitud, y una zona vacía
+  «Comedor principal» en cada uno (sin mesas ni clientes todavía).
+- **Usuarios:** el admin (`admin@grupocomidas.test`) y
+  `analitica@grupocomidas.test`. Si se pierde el acceso:
+  `railway run npm run reset-password` (ver `docs/despliegue.md`, sección 3).
 - **Variables:** `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`,
   `BETTER_AUTH_SECRET` (nuevo, de 48 bytes), `BETTER_AUTH_URL`,
   `OPENROUTER_API_KEY` (con límite de gasto) y `OPENROUTER_MODEL`. Ningún
   valor está en el repositorio.
 - **Comandos:** se escriben a mano en Railway, porque los servicios nuevos
   ya no leen `railway.json` (ver `docs/despliegue.md`, sección 1).
-- **Comprobado:** en el log salen «migrations applied successfully!»,
-  «catálogo de elementos: 8 tipos listos» y «Healthcheck succeeded!».
-  `/api/health` responde `{"ok":true}` y `/login` carga.
+- **Comprobado en el despliegue del #33:**
+  - en el log salen «migrations applied successfully!», «catálogo de
+    elementos: 8 tipos listos» y «Healthcheck succeeded!»;
+  - ya no aparece el error «failed to get redirect response … SSL wrong
+    version number» (#31);
+  - `/api/health` responde `{"ok":true}` y `/login` carga;
+  - sin sesión, las páginas protegidas redirigen a `/login?next=…` y las
+    API responden 401.
 
 ## Lo que ya está hecho
 
@@ -90,6 +102,16 @@ mismo árbol) el 30 de septiembre:
 | #21 | `fix/catalogo-produccion` (`db:catalog` en el Pre-deploy) | Fusionado. Aprobado por el Miembro B. |
 | #22 | `fix/merge-main-env` (trae `main` a `testing` y resuelve `.env.example` sin valores) | Fusionado. Aprobado por el Miembro B. |
 | #23 | `testing` → `main` (salida a producción) | Fusionado. Aprobado por el Miembro B. |
+| #24 | `docs/produccion-railway` (comandos de Railway a mano) | Fusionado. Aprobado por el Miembro B. |
+| #25 | `feat/db-restaurantes` (`npm run db:restaurantes`) | Fusionado. Aprobado por el Miembro B. |
+| #26 | `docs/revision-sin-aprobacion` (0 aprobaciones y revisión propia) | Fusionado con revisión propia. |
+| #27 | `test/rbac-enunciado` (RBAC contra el enunciado) | Fusionado con revisión propia. |
+| #28 | `feat/mapa-honduras` (Honduras entero y ubicación real, migración `0004`) | Fusionado con revisión propia. |
+| #29 | `fix/quick-mode-drag` (arrastre con ratón y lápiz, de Jose2508) | Fusionado con revisión propia. |
+| #30 | `fix/reset-password` (`npm run reset-password`) | Fusionado con revisión propia. |
+| #31 | `fix/redirect-interno` (error SSL de las redirecciones) | Fusionado con revisión propia. |
+| #32 | `fix/admin-confirmar` (confirmar contraseña y desactivar en `/admin`) | Fusionado con revisión propia. |
+| #33 | `testing` → `main` (segunda publicación) | Fusionado con revisión propia; desplegado. |
 
 ### Protección de `main` y `testing`
 
@@ -216,8 +238,9 @@ Pendiente:
 
 - [x] Crear el **primer admin real** con `railway run npm run create-admin`
       (ver `docs/despliegue.md`, sección 3). Lo creó Carlos y entró bien.
-- [ ] **Cargar los restaurantes y las marcas reales** con
-      `railway run npm run db:restaurantes` (ver `docs/despliegue.md`,
+- [x] **Cargar los restaurantes y las marcas reales** con
+      `railway run npm run db:restaurantes`. Hecho el 30 de septiembre: 4
+      marcas, 8 restaurantes y 8 zonas vacías. (ver `docs/despliegue.md`,
       sección 3b). La app no tiene pantalla para crear restaurantes, marcas
       ni zonas, y el seed no corre en producción. El script crea las 4
       marcas, los 8 restaurantes y una zona vacía por restaurante, sin
@@ -256,10 +279,10 @@ Pendiente:
 - [ ] El asistente sin `OPENROUTER_API_KEY` no entiende «¿qué semana fue más
       lenta?» (responde el mensaje genérico); con la clave sí la contesta.
       Si se quiere sin clave, hay que añadirla a `localAnswer` (Miembro B).
-- [ ] **Arreglo del modo rápido que quedó fuera:** el commit `4701330` de la
+- [x] **Arreglo del modo rápido que quedó fuera** (#29): el commit `4701330` de la
       rama `feat/quick-mode-live` («permitir arrastre con mouse y lápiz») se
-      subió después de fusionar el #9 y nunca llegó a `testing`. La rama se
-      conserva hasta decidir si se incorpora.
+      subió después de fusionar el #9. Ya está en `testing` y `main`; falta
+      probarlo con la mano en la tablet (el navegador de las pruebas no pintaba).
 
 ### Más adelante
 
