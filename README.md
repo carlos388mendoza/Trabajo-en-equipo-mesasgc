@@ -779,6 +779,11 @@ Todos tienen la contraseña **`12345abc`**:
 | `dennys-andes@grupocomidas.test` | Host Denny's Los Andes | restaurante | rest_sps_dennys |
 | `dennys-pizzahut@grupocomidas.test` | Denny's y Pizza Hut (el del piloto) | restaurante | rest_tgu_dennys, rest_sps_dennys, rest_norte, rest_tgu_pizza |
 
+`dennys-pizzahut@` es el usuario del **piloto** (`docs/salida-a-produccion.md`,
+sección 3): un solo host para los 4 locales de Denny's y Pizza Hut. Entra a
+`/inicio`, con sus 4 tarjetas, y cambia de restaurante con el selector de la
+cabecera.
+
 `rest_centro` es **China Wok Centro** (Tegucigalpa) y `rest_norte` es **Pizza
 Hut Norte** (San Pedro Sula): conservan sus ids, así que estos usuarios siguen
 valiendo. Cada uno de los 8 restaurantes del mapa tiene su host de prueba.
@@ -913,3 +918,38 @@ solo ve el plano de los suyos.
   el nombre del restaurante como marca: falta leer `restaurants.brand_id`.
 - **Gestión de marcas y posiciones.** No hay pantalla para crear marcas ni
   para mover un restaurante en el mapa: hoy lo pone el seed.
+
+### Marcas y restaurantes desde /admin
+
+Desde `/admin` → **Marcas y restaurantes**, sin scripts (solo admin, permiso
+`catalogo:gestionar`). Los pasos para la dirección están en
+`docs/salida-a-produccion.md`, sección 3.2.
+
+- **Marca:** nombre y color. Desactivada, ya no se ofrece para restaurantes
+  nuevos; sus restaurantes no cambian.
+- **Restaurante:** nombre, marca, ciudad, latitud y longitud (dentro de
+  Honduras). La ubicación se escribe o se rellena eligiendo una de las
+  ciudades del mapa. Al crearlo nace con una zona vacía, «Comedor principal»,
+  y sale de inmediato en el mapa, las estadísticas, los accesos y `/inicio`.
+- **Desactivar no borra nada** (`restaurants.active`, migración `0005`, solo
+  aditiva):
+  - sale del mapa general y de los accesos que se ofrecen;
+  - su host pierde el acceso (páginas, API y socket), porque `loadAuthUser`
+    solo carga los restaurantes activos;
+  - su historial sigue en las estadísticas;
+  - la asignación en `user_restaurants` se conserva, así que al reactivarlo el
+    host lo recupera.
+- En **Acceso** y **Nuevo usuario**, los restaurantes se agrupan por marca,
+  con «Marcar todos» por marca y un buscador.
+- **Varios restaurantes, un usuario:** `/inicio` muestra una tarjeta por
+  restaurante con cuántos esperan, y la cabecera, un selector para cambiar
+  entre ellos, que lleva al mismo modo. El modo rápido y el plano en vivo se
+  montan de cero al cambiar (`key={id}`), y su socket entra en la room nueva.
+
+| Fichero | Para qué |
+| --- | --- |
+| `lib/layout/catalog-admin.ts` | Crear, editar y desactivar marcas y restaurantes (sin Next). |
+| `lib/layout/catalog-input.ts` | Validación Zod de lo que llega de `/admin`. |
+| `app/admin/catalog-actions.ts` | Server actions (`catalogo:gestionar`). |
+| `components/admin/admin-catalog.tsx` | La pantalla de marcas y restaurantes. |
+| `components/layout/restaurant-switcher.tsx` | El selector de restaurante de la cabecera. |
