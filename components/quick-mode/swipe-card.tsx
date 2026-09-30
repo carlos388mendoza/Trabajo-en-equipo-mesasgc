@@ -11,6 +11,7 @@ import {
   AnimatePresence,
   animate,
   motion,
+  useDragControls,
   useMotionValue,
   useTransform,
 } from "motion/react";
@@ -46,6 +47,7 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
   const x = useMotionValue(enterFrom * 280);
   const opacity = useMotionValue(enterFrom ? 0.35 : 1);
   const swipeBusy = useRef(false);
+  const dragControls = useDragControls();
   const rotate = useTransform(x, [-360, 360], [-15, 15]);
   const readyOpacity = useTransform(x, [0, 120], [0, 1]);
   const absentOpacity = useTransform(x, [-120, 0], [1, 0]);
@@ -92,12 +94,19 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
     <motion.article
       layout
       drag={isTop ? "x" : false}
+      dragControls={dragControls}
+      dragListener={false}
       dragConstraints={{ left: -520, right: 520 }}
       dragElastic={0.82}
       dragMomentum={false}
+      onPointerDown={(event) => {
+        if (isTop && event.isPrimary && event.button === 0) {
+          dragControls.start(event);
+        }
+      }}
       onDragEnd={(_, info) => {
-        if (Math.abs(info.offset.x) >= 120 || Math.abs(info.velocity.x) >= 700) {
-          void swipe(info.offset.x > 0 || info.velocity.x > 0 ? "listo" : "ausente");
+        if (Math.abs(info.offset.x) >= 120) {
+          void swipe(info.offset.x > 0 ? "listo" : "ausente");
         } else {
           void Promise.all([
             animate(x, 0, { type: "spring", stiffness: 420, damping: 23, bounce: 0.45 }),
@@ -120,7 +129,7 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
       exit="exit"
       transition={{ layout: { type: "spring", stiffness: 420, damping: 32 }, y: { type: "spring", stiffness: 420, damping: 32 }, scale: { type: "spring", stiffness: 420, damping: 32 } }}
       style={{ x, rotate, opacity, zIndex: 10 - depth, touchAction: isTop ? "pan-y" : "auto" }}
-      className={`absolute inset-x-0 top-0 mx-auto flex h-[330px] w-full max-w-[430px] flex-col overflow-hidden rounded-[2rem] border border-app-border bg-panel p-6 text-panel-text shadow-xl sm:h-[350px] sm:p-8 ${isTop ? "cursor-grab active:cursor-grabbing" : "pointer-events-none"}`}
+      className={`absolute inset-x-0 top-0 mx-auto flex h-[330px] w-full max-w-[430px] select-none flex-col overflow-hidden rounded-[2rem] border border-app-border bg-panel p-6 text-panel-text shadow-xl sm:h-[350px] sm:p-8 ${isTop ? "cursor-grab active:cursor-grabbing" : "pointer-events-none"}`}
       aria-label={`${guest.name}, ${waitingMinutes} ${waitingMinutes === 1 ? "minuto" : "minutos"} esperando`}
     >
       <AnimatePresence>
