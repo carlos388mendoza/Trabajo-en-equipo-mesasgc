@@ -46,7 +46,10 @@ export function buildOpenRouterMessages(
     name: customer.name,
     alias: `Cliente ${index + 1}`,
   }));
-  const sanitize = (value: string) => sanitizeText(value, sensitiveValues, aliases);
+  const allowedTerms = [
+    ...statistics.restaurantsAvailable.flatMap((restaurant) => [restaurant.name, restaurant.brand?.name ?? ""]),
+  ];
+  const sanitize = (value: string) => sanitizeText(value, sensitiveValues, aliases, allowedTerms);
 
   return [
     { role: "system" as const, content: SYSTEM_MESSAGE },
@@ -88,25 +91,57 @@ function sanitizeText(
   text: string,
   sensitiveValues: string[],
   aliases: { name: string; alias: string }[],
+  allowedTerms: string[],
 ): string {
-  let safe = text;
-  const values = [...new Set(sensitiveValues)]
+  // Los datos sensibles se buscan sobre el texto ORIGINAL. Si antes se
+  // apartaran los días, las marcas o las cantidades, un nombre como
+  // «Domingo Pérez» o una nota con «2 personas» dejaría de coincidir completo
+  // y saldría entero hacia OpenRouter. Un término permitido solo gana cuando
+  // el dato sensible queda estrictamente dentro de él (un cliente «China»
+  // dentro de «China Wok Centro»).
+  const allowedSpans = [...allowedTerms, ...WEEKDAYS]
+    .filter(Boolean)
+    .flatMap((term) => wholeValueSpans(text, term));
+  const aliasFor = new Map(aliases.map(({ name, alias }) => [name.toLocaleLowerCase("es-HN"), alias]));
+  const values = [...new Set([...sensitiveValues, ...aliases.map(({ name }) => name)])]
+    .filter(Boolean)
     .sort((a, b) => b.length - a.length);
 
+  const replacements: { start: number; end: number; replacement: string }[] = [];
   for (const value of values) {
-    const alias = aliases.find(({ name }) => name.toLocaleLowerCase("es-HN") === value.toLocaleLowerCase("es-HN"))?.alias;
-    safe = replaceLiteral(safe, value, alias ?? "[dato privado]");
+    const replacement = aliasFor.get(value.toLocaleLowerCase("es-HN")) ?? "[dato privado]";
+    for (const span of wholeValueSpans(text, value)) {
+      const insideAllowed = allowedSpans.some((allowed) =>
+        allowed.start <= span.start && span.end <= allowed.end && allowed.end - allowed.start > span.end - span.start);
+      // Los valores van de más largo a más corto: si ya hay uno que cubre este
+      // tramo, el más corto no se aplica encima.
+      const overlaps = replacements.some((taken) => span.start < taken.end && taken.start < span.end);
+      if (!insideAllowed && !overlaps) replacements.push({ ...span, replacement });
+    }
   }
-  for (const { name, alias } of aliases) {
-    safe = replaceLiteral(safe, name, alias);
+  let safe = "";
+  let cursor = 0;
+  for (const { start, end, replacement } of replacements.sort((a, b) => a.start - b.start)) {
+    safe += text.slice(cursor, start) + replacement;
+    cursor = end;
   }
+  safe += text.slice(cursor);
 
-  // Quita también teléfonos escritos en una pregunta aunque el formato difiera del guardado.
-  return safe.replace(/(?<!\w)\+?\d[\d\s().-]{6,}\d(?!\w)/g, "[dato privado]");
+  // Los teléfonos escritos en la pregunta también se quitan aunque el formato
+  // difiera del guardado. Las fechas AAAA-MM-DD se apartan solo de este patrón,
+  // que las confundiría con un teléfono.
+  const dates: string[] = [];
+  safe = safe.replace(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/g, (date) => `\u0000FECHA${dates.push(date) - 1}\u0000`);
+  safe = safe.replace(/(?<![\p{L}\p{N}])\+?\d[\d\s().-]{6,}\d(?![\p{L}\p{N}])/gu, "[dato privado]");
+  return safe.replace(/\u0000FECHA(\d+)\u0000/g, (_match, index: string) => dates[Number(index)]);
 }
 
-function replaceLiteral(text: string, value: string, replacement: string): string {
-  return value ? text.replace(new RegExp(escapeRegExp(value), "giu"), replacement) : text;
+const WEEKDAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
+
+/** Tramos donde `value` aparece como palabra completa, sin distinguir mayúsculas. */
+function wholeValueSpans(text: string, value: string): { start: number; end: number }[] {
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(value)}(?![\\p{L}\\p{N}])`, "giu");
+  return [...text.matchAll(pattern)].map((match) => ({ start: match.index, end: match.index + match[0].length }));
 }
 
 function escapeRegExp(value: string): string {

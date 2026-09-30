@@ -462,18 +462,41 @@ section("Privacidad del asistente con OpenRouter");
   const seedPhonesAndNotes = [...new Set(seededRows.flatMap((row) => [row.phone, row.notes])
     .filter((value): value is string => typeof value === "string" && Boolean(value)))];
   const questionWithPrivateData = [
-    "Dame el top de clientes",
+    "Dame el top de clientes. ¿Qué semana fue más lenta? El 2026-09-20 y el 2026-10-03. El martes fueron 25 minutos en China Wok.",
     ...seedNames,
     ...seedPhonesAndNotes,
   ].join(" ");
   const messages = buildOpenRouterMessages(questionWithPrivateData, statistics, sensitiveValues);
   const serializedMessages = JSON.stringify(messages);
-  const userContext = JSON.parse(messages[1].content) as { topClientes: { alias: string; grupos: number }[] };
+  const userContext = JSON.parse(messages[1].content) as {
+    pregunta: string;
+    topClientes: { alias: string; grupos: number }[];
+  };
 
   check("el cuerpo enviado a OpenRouter no contiene nombres de clientes del seed", seedNames.every((name) => !serializedMessages.includes(name)));
   check("el cuerpo enviado a OpenRouter no contiene teléfonos ni notas del seed", seedPhonesAndNotes.every((value) => !serializedMessages.includes(value)));
+  check("la anonimización conserva intacta la palabra semana", userContext.pregunta.includes("¿Qué semana fue más lenta?"));
+  check("la anonimización conserva intactas las fechas ISO", userContext.pregunta.includes("2026-09-20") && userContext.pregunta.includes("2026-10-03"));
+  check("se conservan días de semana, cantidades de espera y nombres de marcas", userContext.pregunta.includes("martes fueron 25 minutos en China Wok"));
+  check("Ana Torres no se filtra ni se reemplaza dentro de otra palabra", seedNames.includes("Ana Torres") && !serializedMessages.includes("Ana Torres") && userContext.pregunta.includes("semana"));
   check("el top enviado contiene alias y métricas, sin nombres", userContext.topClientes.every((customer) => /^Cliente \d+$/.test(customer.alias)));
   check("la respuesta restaura los alias solo para mostrar los nombres del top", statistics.topCustomers.length > 0 && restoreCustomerAliases("Cliente 1", statistics) === statistics.topCustomers[0].name);
+
+  // Nombres y notas que contienen un día, una marca o una cantidad: antes se
+  // apartaban esos términos primero y el dato completo salía sin anonimizar.
+  const trickyStatistics = {
+    ...statistics,
+    topCustomers: [{ ...statistics.topCustomers[0], name: "Domingo Pérez" }, ...statistics.topCustomers.slice(1)],
+  };
+  const trickyValues = ["Martes Aguilar", "viene los viernes con 2 personas", "Kfc Martínez", "China", "9876-5432"];
+  const trickyQuestion = "¿Cuántas veces vino Domingo Pérez? ¿Y Martes Aguilar? Nota: viene los viernes con 2 personas. Cliente Kfc Martínez, teléfono 9876 5432 grupos. ¿El domingo en China Wok Centro hubo 3 grupos?";
+  const trickyMessages = buildOpenRouterMessages(trickyQuestion, trickyStatistics, [...sensitiveValues, ...trickyValues]);
+  const trickySerialized = JSON.stringify(trickyMessages);
+  const trickyQuestionSent = (JSON.parse(trickyMessages[1].content) as { pregunta: string }).pregunta;
+  check("un cliente del top con nombre de día («Domingo Pérez») viaja como alias", !trickySerialized.includes("Domingo Pérez") && trickyQuestionSent.includes("vino Cliente 1?"));
+  check("nombres y notas con días, marcas o cantidades no se envían", ["Martes Aguilar", "viene los viernes con 2 personas", "Kfc Martínez"].every((value) => !trickySerialized.includes(value)));
+  check("un teléfono seguido de una cantidad tampoco se envía", !trickyQuestionSent.includes("9876"));
+  check("el día, el restaurante y la cantidad sueltos se conservan", trickyQuestionSent.includes("¿El domingo en China Wok Centro hubo 3 grupos?"));
 }
 
 section("Marcas, ciudades y preguntas del asistente");
