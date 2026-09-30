@@ -1,83 +1,97 @@
-// El dibujo del mapa general: ciudades, distritos y la carretera que las une.
+// El dibujo del mapa general: Honduras entero, sus ciudades principales y los
+// encuadres para acercarse.
 //
-// Es un dibujo propio en un lienzo de 1000 × 1000 (las mismas unidades que
-// `restaurants.map_x` / `map_y`), no un mapa real: no hay coordenadas GPS ni
-// imágenes de terceros. San Pedro Sula queda arriba a la izquierda y
-// Tegucigalpa abajo a la derecha, más o menos como en el país, y así un
-// restaurante nuevo solo necesita caer dentro de su distrito.
+// La silueta, los 18 departamentos y los vecinos vienen de Natural Earth
+// (dominio público) en `lib/map/honduras-geo.ts`, generado por
+// `scripts/map/generate-honduras.mts`. Todo va en las unidades de
+// `lib/map/projection.ts`, las mismas que `restaurants.map_x` / `map_y`.
 //
-// Solo datos, sin React: lo pinta `components/map/world-map.tsx`.
+// Solo datos y cuentas, sin React: lo pinta `components/map/world-map.tsx`.
 
-export const WORLD_SIZE = 1000;
+import { MAP_HEIGHT, MAP_WIDTH, kmToUnits, project } from "@/lib/map/projection";
 
-export type District = {
-  id: string;
-  name: string;
-  city: string;
-  /** Polígono en unidades del mapa. */
-  points: [number, number][];
-  /** Dónde va el nombre del distrito. */
-  label: [number, number];
-};
+export { DEPARTMENTS, HONDURAS_PATH, NEIGHBORS } from "@/lib/map/honduras-geo";
+export { MAP_HEIGHT, MAP_WIDTH };
+
+/** [x, y, ancho, alto] del `viewBox` del SVG. */
+export type ViewBox = [number, number, number, number];
 
 export type City = {
   name: string;
-  /** Nombre grande de la ciudad y su posición. */
-  label: [number, number];
+  x: number;
+  y: number;
+  /** 1 = capital, 2 = ciudad grande, 3 = el resto. Decide el tamaño del rótulo. */
+  rank: 1 | 2 | 3;
+  /** Hacia dónde va el nombre, para que no pise el punto ni a otra ciudad. */
+  labelSide: "right" | "left" | "above" | "below";
 };
 
+const city = (name: string, lat: number, lng: number, rank: City["rank"], labelSide: City["labelSide"] = "right"): City => {
+  const { x, y } = project({ lat, lng });
+  return { name, x, y, rank, labelSide };
+};
+
+/** Ciudades principales, tengan o no restaurantes (centro de cada ciudad). */
 export const CITIES: City[] = [
-  { name: "San Pedro Sula", label: [78, 56] },
-  { name: "Tegucigalpa", label: [586, 486] },
+  city("Tegucigalpa", 14.0723, -87.1921, 1, "below"),
+  city("San Pedro Sula", 15.5042, -88.025, 2, "left"),
+  city("La Ceiba", 15.7597, -86.7822, 2, "below"),
+  city("Choluteca", 13.3007, -87.1908, 2, "right"),
+  city("Comayagua", 14.4598, -87.6376, 3, "left"),
+  city("El Progreso", 15.4003, -87.8069, 3, "below"),
+  city("Puerto Cortés", 15.8256, -87.929, 3, "above"),
+  city("Danlí", 14.0333, -86.5833, 3, "right"),
+  city("Juticalpa", 14.6667, -86.2167, 3, "right"),
+  city("Santa Rosa de Copán", 14.7667, -88.7792, 3, "below"),
+  city("Roatán", 16.3167, -86.5333, 3, "above"),
 ];
 
-export const DISTRICTS: District[] = [
-  // San Pedro Sula
-  {
-    id: "sps-norte", name: "Norte", city: "San Pedro Sula",
-    points: [[78, 96], [210, 78], [340, 86], [436, 70], [452, 160], [446, 236], [300, 252], [180, 244], [92, 262], [84, 180]],
-    label: [98, 124],
-  },
-  {
-    id: "sps-circunvalacion", name: "Circunvalación", city: "San Pedro Sula",
-    points: [[92, 272], [180, 254], [300, 262], [450, 246], [468, 320], [474, 392], [330, 404], [200, 396], [104, 408], [96, 340]],
-    label: [110, 298],
-  },
-  {
-    id: "sps-sur", name: "Sur", city: "San Pedro Sula",
-    points: [[106, 418], [200, 406], [330, 414], [476, 402], [462, 470], [444, 540], [320, 556], [210, 546], [128, 556], [112, 490]],
-    label: [128, 536],
-  },
-  // Tegucigalpa
-  {
-    id: "tgu-centro", name: "Centro", city: "Tegucigalpa",
-    points: [[540, 532], [640, 520], [738, 514], [744, 600], [734, 684], [640, 694], [556, 694], [548, 610]],
-    label: [560, 556],
-  },
-  {
-    id: "tgu-proceres", name: "Los Próceres", city: "Tegucigalpa",
-    points: [[748, 510], [850, 498], [948, 496], [952, 590], [940, 676], [840, 686], [744, 684], [754, 600]],
-    label: [770, 532],
-  },
-  {
-    id: "tgu-morazan", name: "Morazán", city: "Tegucigalpa",
-    points: [[700, 694], [810, 690], [932, 686], [936, 750], [922, 814], [800, 816], [692, 808], [696, 750]],
-    label: [846, 716],
-  },
-  {
-    id: "tgu-lomas", name: "Las Lomas", city: "Tegucigalpa",
-    points: [[548, 704], [620, 698], [690, 700], [686, 800], [680, 910], [600, 918], [540, 916], [544, 810]],
-    label: [556, 730],
-  },
-];
+/** Todo Honduras, con un poco de mar alrededor. */
+export const FULL_VIEW: ViewBox = [-10, -10, MAP_WIDTH + 20, MAP_HEIGHT + 20];
 
-/** Carretera entre las dos ciudades: decorativa, da idea de distancia. */
-export const HIGHWAY = {
-  label: "CA-5",
-  path: "M 440 470 C 500 500, 470 560, 548 610",
-  labelAt: [494, 548] as [number, number],
-};
+/** Lo más cerca que deja llegar la rueda o el pellizco: unos 5 km de ancho. */
+export const MIN_VIEW_WIDTH = kmToUnits(5);
+/** Lo más lejos: un poco más que todo el país. */
+export const MAX_VIEW_WIDTH = FULL_VIEW[2] * 1.4;
 
-export function pointsAttr(points: [number, number][]): string {
-  return points.map(([x, y]) => `${x},${y}`).join(" ");
+/** Encuadre de `widthKm` de ancho centrado en (x, y), con la proporción del mapa. */
+export function viewAround(x: number, y: number, widthKm: number): ViewBox {
+  const width = kmToUnits(widthKm);
+  const height = (width * FULL_VIEW[3]) / FULL_VIEW[2];
+  return [x - width / 2, y - height / 2, width, height];
+}
+
+/** Ciudades con botón de «acercarse». */
+export const ZOOM_CITIES = ["Tegucigalpa", "San Pedro Sula"] as const;
+
+export function cityView(name: string): ViewBox {
+  const c = CITIES.find((item) => item.name === name);
+  return c ? viewAround(c.x, c.y, 16) : FULL_VIEW;
+}
+
+/** El menor encuadre que contiene todos los puntos, con margen y la proporción del mapa. */
+export function viewAroundPoints(points: { x: number; y: number }[], minWidthKm = 8): ViewBox {
+  if (points.length === 0) return FULL_VIEW;
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const aspect = FULL_VIEW[2] / FULL_VIEW[3];
+  const spanX = Math.max(Math.max(...xs) - Math.min(...xs), (Math.max(...ys) - Math.min(...ys)) * aspect);
+  const width = Math.max(spanX * 1.8, kmToUnits(minWidthKm));
+  const height = width / aspect;
+  return [cx - width / 2, cy - height / 2, width, height];
+}
+
+/**
+ * Deja el encuadre dentro de los límites: ni más cerca ni más lejos de lo
+ * permitido, y sin irse del todo fuera del mapa al arrastrar.
+ */
+export function clampView([x, y, width, height]: ViewBox): ViewBox {
+  const aspect = height / width;
+  const w = Math.min(MAX_VIEW_WIDTH, Math.max(MIN_VIEW_WIDTH, width));
+  const h = w * aspect;
+  const cx = Math.min(FULL_VIEW[0] + FULL_VIEW[2], Math.max(FULL_VIEW[0], x + width / 2));
+  const cy = Math.min(FULL_VIEW[1] + FULL_VIEW[3], Math.max(FULL_VIEW[1], y + height / 2));
+  return [cx - w / 2, cy - h / 2, w, h];
 }

@@ -6,8 +6,12 @@
 // vuelven a comprobar el permiso y validan con Zod. Lo que se desactiva aquí
 // (por ejemplo, desactivarse a uno mismo) es solo una ayuda: la regla de
 // verdad está en el servidor.
+//
+// Restablecer una contraseña y desactivar a alguien no se deshacen con un
+// clic: los dos pasan por una ventana de confirmación con Aceptar y Cancelar.
+// Cambiar la propia contraseña pide confirmarlo dos veces.
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   CircleAlert,
@@ -59,6 +63,7 @@ export function AdminUsers({ users, restaurants, currentUserId, minPasswordLengt
   const [pending, startTransition] = useTransition();
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<{ id: string; mode: "access" | "password" } | null>(null);
+  const [confirming, setConfirming] = useState<Confirmation | null>(null);
   const restaurantName = new Map(restaurants.map((r) => [r.id, r.name]));
 
   const submit = (work: () => Promise<AdminResult>, onOk?: () => void) => {
@@ -152,7 +157,11 @@ export function AdminUsers({ users, restaurants, currentUserId, minPasswordLengt
                     disabled={pending || (isMe && u.active)}
                     title={isMe && u.active ? "No puedes desactivarte a ti mismo" : undefined}
                     danger={u.active}
-                    onClick={() => submit(() => setActiveAction({ userId: u.id, active: !u.active }))}
+                    onClick={() =>
+                      u.active
+                        ? setConfirming({ kind: "desactivar", user: u })
+                        : submit(() => setActiveAction({ userId: u.id, active: true }))
+                    }
                   >
                     {u.active ? "Desactivar" : "Activar"}
                   </Button>
@@ -176,8 +185,8 @@ export function AdminUsers({ users, restaurants, currentUserId, minPasswordLengt
                   minPasswordLength={minPasswordLength}
                   pending={pending}
                   onCancel={() => setEditing(null)}
-                  onSubmit={(password) =>
-                    submit(() => resetPasswordAction({ userId: u.id, password }), () => setEditing(null))
+                  onSubmit={(password, confirmPassword) =>
+                    setConfirming({ kind: "contrasena", user: u, isMe, password, confirmPassword, step: 1 })
                   }
                 />
               ) : null}
@@ -185,9 +194,63 @@ export function AdminUsers({ users, restaurants, currentUserId, minPasswordLengt
           );
         })}
       </ul>
+
+      {confirming?.kind === "contrasena" ? (
+        <ConfirmDialog
+          title={
+            confirming.step === 1
+              ? `¿Cambiar la contraseña de ${confirming.user.name} (${confirming.user.email})?`
+              : "¿Seguro? Es TU propia contraseña"
+          }
+          danger={confirming.isMe}
+          pending={pending}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            if (confirming.isMe && confirming.step === 1) {
+              setConfirming({ ...confirming, step: 2 });
+              return;
+            }
+            const { user: target, password, confirmPassword } = confirming;
+            setConfirming(null);
+            submit(() => resetPasswordAction({ userId: target.id, password, confirmPassword }), () => setEditing(null));
+          }}
+        >
+          {confirming.isMe ? (
+            <p className="flex items-center gap-2 rounded-xl bg-estado-ocupada/10 px-3 py-2 font-semibold text-estado-ocupada">
+              <CircleAlert aria-hidden size={18} strokeWidth={ICON_STROKE} />
+              Vas a cambiar TU propia contraseña
+            </p>
+          ) : null}
+          <p>
+            {confirming.step === 1
+              ? "Se cerrarán sus sesiones abiertas."
+              : "Se cerrarán todas tus sesiones, también esta, y tendrás que volver a entrar con la contraseña nueva."}
+          </p>
+        </ConfirmDialog>
+      ) : null}
+
+      {confirming?.kind === "desactivar" ? (
+        <ConfirmDialog
+          title={`¿Desactivar a ${confirming.user.name} (${confirming.user.email})?`}
+          danger
+          pending={pending}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            const target = confirming.user;
+            setConfirming(null);
+            submit(() => setActiveAction({ userId: target.id, active: false }));
+          }}
+        >
+          <p>No podrá entrar y se cerrarán sus sesiones abiertas. Puedes volver a activarlo cuando quieras.</p>
+        </ConfirmDialog>
+      ) : null}
     </section>
   );
 }
+
+type Confirmation =
+  | { kind: "contrasena"; user: AuthUser; isMe: boolean; password: string; confirmPassword: string; step: 1 | 2 }
+  | { kind: "desactivar"; user: AuthUser };
 
 // ---------------------------------------------------------------------------
 
@@ -289,21 +352,119 @@ function PasswordForm({
   minPasswordLength: number;
   pending: boolean;
   onCancel: () => void;
-  onSubmit: (password: string) => void;
+  onSubmit: (password: string, confirmPassword: string) => void;
 }) {
-  const [password, setPassword] = useState(() => randomPassword());
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const mismatch = confirmPassword.length > 0 && password !== confirmPassword;
+  const ready = password.length >= minPasswordLength && password === confirmPassword;
   return (
     <form
       className="mt-3 space-y-4 rounded-xl border border-app-border p-4"
       onSubmit={(e) => {
         e.preventDefault();
-        onSubmit(password);
+        if (ready) onSubmit(password, confirmPassword);
       }}
     >
-      <PasswordField value={password} onChange={setPassword} minPasswordLength={minPasswordLength} label="Nueva contraseña temporal" />
-      <p className="text-xs text-panel-muted">Al guardarla se cierran las sesiones abiertas de este usuario.</p>
-      <FormButtons pending={pending} onCancel={onCancel} submitLabel="Restablecer contraseña" />
+      <PasswordField
+        value={password}
+        onChange={setPassword}
+        minPasswordLength={minPasswordLength}
+        label="Nueva contraseña"
+        onGenerate={() => {
+          // Rellena las dos: el admin la ve con el ojo y la comparte.
+          const generated = randomPassword();
+          setPassword(generated);
+          setConfirmPassword(generated);
+        }}
+      />
+      <PasswordField
+        value={confirmPassword}
+        onChange={setConfirmPassword}
+        minPasswordLength={minPasswordLength}
+        label="Repite la contraseña nueva"
+        onGenerate={null}
+        hint={null}
+        invalid={mismatch}
+      />
+      {mismatch ? (
+        <p role="alert" className="flex items-center gap-2 text-sm font-medium text-estado-ocupada">
+          <CircleAlert aria-hidden size={16} strokeWidth={ICON_STROKE} />
+          Las contraseñas no coinciden.
+        </p>
+      ) : null}
+      <p className="text-xs text-panel-muted">
+        Antes de guardar se pide confirmación. Al guardarla se cierran las sesiones abiertas de este usuario.
+      </p>
+      <FormButtons pending={pending} onCancel={onCancel} submitLabel="Restablecer contraseña" disabled={!ready} />
     </form>
+  );
+}
+
+/** Ventana de confirmación: Esc, Cancelar o tocar fuera la cierran sin hacer nada. */
+function ConfirmDialog({
+  title,
+  children,
+  danger,
+  pending,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  children: React.ReactNode;
+  danger?: boolean;
+  pending: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    // El foco empieza en Cancelar: un Enter distraído no cambia nada.
+    cancelRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel, title]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onCancel}>
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="admin-confirm-title"
+        aria-describedby="admin-confirm-body"
+        className="w-full max-w-md rounded-2xl bg-panel p-5 text-panel-text shadow-xl ring-1 ring-app-border"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 id="admin-confirm-title" className="text-base font-semibold">
+          {title}
+        </h3>
+        <div id="admin-confirm-body" className="mt-3 space-y-2 text-sm">
+          {children}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            ref={cancelRef}
+            type="button"
+            onClick={onCancel}
+            className="h-11 rounded-xl px-4 text-sm font-medium text-panel-text hover:bg-app-border/60"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={pending}
+            className={`h-11 rounded-xl px-4 text-sm font-semibold disabled:opacity-60 ${
+              danger ? "bg-estado-ocupada text-white hover:bg-estado-ocupada/85" : "bg-accent text-accent-text hover:bg-accent/85"
+            }`}
+          >
+            Aceptar
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -314,11 +475,19 @@ function PasswordField({
   onChange,
   minPasswordLength,
   label,
+  onGenerate,
+  hint,
+  invalid,
 }: {
   value: string;
   onChange: (v: string) => void;
   minPasswordLength: number;
   label: string;
+  /** Qué hace «Generar otra». Sin él, rellena solo este campo; null = sin el botón. */
+  onGenerate?: (() => void) | null;
+  /** null = sin la nota de debajo. */
+  hint?: string | null;
+  invalid?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
   return (
@@ -331,15 +500,20 @@ function PasswordField({
           type={visible ? "text" : "password"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={`${INPUT} mt-0 font-mono`}
+          className={`${INPUT} mt-0 font-mono ${invalid ? "border-estado-ocupada" : ""}`}
+          aria-invalid={invalid || undefined}
           autoComplete="new-password"
         />
         <IconButton icon={visible ? EyeOff : Eye} label={visible ? "Ocultar" : "Mostrar"} onClick={() => setVisible((v) => !v)} />
-        <IconButton icon={Shuffle} label="Generar otra" onClick={() => onChange(randomPassword())} />
+        {onGenerate === null ? null : (
+          <IconButton icon={Shuffle} label="Generar otra" onClick={onGenerate ?? (() => onChange(randomPassword()))} />
+        )}
       </span>
-      <span className="mt-1 block text-xs font-normal text-panel-muted">
-        Mínimo {minPasswordLength} caracteres. Compártela por un canal seguro.
-      </span>
+      {hint === null ? null : (
+        <span className="mt-1 block text-xs font-normal text-panel-muted">
+          {hint ?? `Mínimo ${minPasswordLength} caracteres. Compártela por un canal seguro.`}
+        </span>
+      )}
     </label>
   );
 }
@@ -423,7 +597,17 @@ function RoleTag({ role }: { role: Role }) {
   );
 }
 
-function FormButtons({ pending, onCancel, submitLabel }: { pending: boolean; onCancel: () => void; submitLabel: string }) {
+function FormButtons({
+  pending,
+  onCancel,
+  submitLabel,
+  disabled,
+}: {
+  pending: boolean;
+  onCancel: () => void;
+  submitLabel: string;
+  disabled?: boolean;
+}) {
   return (
     <div className="flex flex-wrap justify-end gap-2">
       <Button icon={X} onClick={onCancel} disabled={pending}>
@@ -431,7 +615,7 @@ function FormButtons({ pending, onCancel, submitLabel }: { pending: boolean; onC
       </Button>
       <button
         type="submit"
-        disabled={pending}
+        disabled={pending || disabled}
         className="h-11 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-text hover:bg-accent/85 disabled:opacity-60"
       >
         {pending ? "Guardando…" : submitLabel}

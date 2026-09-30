@@ -21,6 +21,7 @@ import {
   index,
   integer,
   primaryKey,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -69,12 +70,19 @@ export const restaurants = sqliteTable(
     /** Ciudad, texto libre ("Tegucigalpa"). Sirve para el filtro del mapa. */
     city: text("city"),
     /**
-     * Posición del marcador en el mapa general, de 0 a 1000 en cada eje. No
-     * son coordenadas reales: el mapa es un dibujo propio. Sin posición, el
-     * restaurante sale en la lista lateral pero no en el mapa.
+     * Posición del marcador en el mapa general, en unidades del mapa
+     * (`lib/map/projection.ts`). Desde la migración 0004 se calcula a partir
+     * de la latitud y la longitud, que son las que mandan; se conserva para
+     * las filas que no las tengan. Sin ninguna de las dos, el restaurante
+     * sale en la lista lateral pero no en el mapa.
      */
     mapX: integer("map_x"),
     mapY: integer("map_y"),
+    // --- Ubicación real (migración 0004, solo aditiva: opcional) ---
+    /** Latitud en grados decimales (WGS 84), por ejemplo 14.1058. */
+    latitude: real("latitude"),
+    /** Longitud en grados decimales (WGS 84), por ejemplo -87.2065. */
+    longitude: real("longitude"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

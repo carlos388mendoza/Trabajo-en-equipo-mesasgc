@@ -195,8 +195,10 @@ obligatorio para iniciar sesión (`openssl rand -base64 32`).
 se generan con `npm run db:generate` (quedan en `drizzle/`) y se aplican con
 `npm run db:migrate`. El catálogo de elementos del editor lo carga
 `npm run db:catalog` (solo toca `element_types`; Railway lo corre en el
-Pre-deploy). El primer admin de producción se crea con
-`npm run create-admin` (sección 15).
+Pre-deploy). Las 4 marcas, los 8 restaurantes y una zona vacía por
+restaurante los carga `npm run db:restaurantes`: solo añade lo que falta y
+nunca crea mesas, clientes ni usuarios. El primer admin de producción se crea
+con `npm run create-admin` (sección 15).
 
 Otros scripts: `db:generate` (genera SQL en `drizzle/`), `db:studio`,
 `seed:reset` (borra los datos de layout y vuelve a sembrar; **no** toca las
@@ -812,9 +814,23 @@ solo ve el plano de los suyos.
 
 ### Qué se ve
 
-- **Mapa propio.** Es un dibujo en SVG (`lib/map/world.ts`), sin mapas reales
-  ni imágenes de terceros: San Pedro Sula arriba a la izquierda y Tegucigalpa
-  abajo a la derecha, con sus distritos y la CA-5. Los colores salen del tema.
+- **Honduras entero.** Silueta real, los 18 departamentos con su nombre, las
+  fronteras con Guatemala, El Salvador y Nicaragua (y Belice), la costa del
+  Caribe con las Islas de la Bahía y las del Cisne, el Golfo de Fonseca y las
+  11 ciudades principales. Los datos son de Natural Earth (dominio público), ya
+  proyectados y dentro del repo: ver `docs/mapa-honduras.md`. Los colores
+  salen del tema, en estilo radar.
+- **Ubicación real.** Cada restaurante tiene latitud y longitud
+  (`restaurants.latitude`/`longitude`, migración `0004`) y
+  `lib/map/projection.ts` las pasa a unidades del mapa. `map_x`/`map_y`
+  quedan de respaldo para filas sin coordenadas.
+- **Cámara.** Rueda o pellizco para acercar (sobre el punto señalado),
+  arrastrar para moverse, botones «Ver todo Honduras», «Tegucigalpa», «San
+  Pedro Sula», + y −, y un minimapa al acercarse. Los rótulos y marcadores
+  se ven siempre del mismo tamaño en pantalla.
+- **Grupos.** Desde lejos, los restaurantes que se pisarían se juntan en un
+  marcador por ciudad (suma de clientes, peor alerta y un gajo por marca);
+  tocarlo acerca hasta separarlos.
 - **Un marcador por restaurante**, del color de su marca:
   - el número de clientes en espera;
   - un anillo con el % de mesas ocupadas;
@@ -825,8 +841,8 @@ solo ve el plano de los suyos.
   - más de 40 min: halo rojo más grueso y más rápido, y un octógono.
 
   Con «reducir movimiento» del sistema, el halo se queda quieto.
-- **Filtros y lista.** Se filtra por marca y por ciudad, y hay una leyenda. La
-  lista lateral ordena los restaurantes por espera.
+- **Filtros y lista.** Se filtra por marca y por ciudad, y hay una leyenda. El
+  mapa ocupa todo el ancho; debajo, la lista ordena los restaurantes por espera.
 - **Zoom al plano.** Al tocar un marcador, el `viewBox` se acerca a él y
   aparece el plano en vivo del restaurante: el mismo lienzo del editor, en
   solo lectura. «Volver al mapa general» (o Esc) hace el zoom inverso.
@@ -852,11 +868,14 @@ solo ve el plano de los suyos.
 | --- | --- |
 | `lib/map/counters.ts` | Contadores por restaurante, espera media y umbrales (20 y 40 min). |
 | `lib/map/queries.ts` | Restaurantes con su marca y `getLivePlan` (quita los nombres si no hay `plano:clientes`). |
-| `lib/map/world.ts` | El dibujo: ciudades, distritos y carretera. |
+| `lib/map/world.ts` | Ciudades principales, encuadres y límites de la cámara. |
+| `lib/map/projection.ts` | Latitud y longitud ↔ unidades del mapa. |
+| `lib/map/honduras-geo.ts` | Silueta, departamentos y vecinos (generado: no editar a mano). |
+| `scripts/map/generate-honduras.mts` | Genera `honduras-geo.ts` a partir de Natural Earth. |
 | `lib/realtime/overview.ts` | `emitOverview`. |
 | `app/mapa/page.tsx`, `app/mapa/actions.ts` | Página y actions (`loadOverviewCounters`, `loadLivePlan`). |
 | `app/restaurante/[id]/mapa/page.tsx` | Plano en vivo de un restaurante. |
-| `components/map/world-map.tsx` | Mapa, marcadores, filtros, lista y zoom. |
+| `components/map/world-map.tsx` | Mapa, cámara (rueda, pellizco, arrastre, botones y minimapa), marcadores y grupos, filtros, lista y zoom al plano. |
 | `components/map/live-plan.tsx` | Plano en vivo (Konva en solo lectura). |
 | `components/map/use-overview-socket.ts` | Socket de la sala `overview` y respaldo de 30 s. |
 

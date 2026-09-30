@@ -11,10 +11,9 @@
 // lo reactiva. Usa la base de TURSO_DATABASE_URL (.env.local), que tiene que
 // tener las migraciones aplicadas.
 
-import { createInterface } from "node:readline";
-import { Writable } from "node:stream";
-
 import { config } from "dotenv";
+
+import { ask } from "./lib/terminal.mts";
 
 config({ path: [".env.local", ".env"], quiet: true });
 
@@ -23,32 +22,12 @@ const { createUserWithPassword, findUserIdByEmail, setUserActive } = await impor
 const { db } = await import("@/lib/db");
 const { userRoles } = await import("@/lib/db/schema");
 
-/** Pregunta por la terminal. `hidden` no muestra lo que se escribe. */
-function ask(question: string, hidden = false): Promise<string> {
-  let muted = false;
-  const output = new Writable({
-    write(chunk, _encoding, callback) {
-      if (!muted) process.stdout.write(chunk);
-      callback();
-    },
-  });
-  const rl = createInterface({ input: process.stdin, output, terminal: true });
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      if (hidden) process.stdout.write("\n");
-      resolve(answer.trim());
-    });
-    muted = hidden;
-  });
-}
-
 async function value(env: string | undefined, question: string, hidden = false): Promise<string> {
   if (env && env.trim()) return env.trim();
   if (!process.stdin.isTTY) {
     throw new Error(`${question.replace(/:\s*$/, "")}: falta, y no hay terminal para preguntarlo.`);
   }
-  return ask(question, hidden);
+  return ask(question, { hidden });
 }
 
 try {
@@ -59,7 +38,7 @@ try {
   if (existing) {
     await db.insert(userRoles).values({ userId: existing, role: "admin" }).onConflictDoNothing();
     await setUserActive(existing, true);
-    console.log(`${email} ya existía: ahora tiene el rol admin y está activo. Su contraseña no cambió.`);
+    console.log(`${email} ya existía: ahora tiene el rol admin y está activo. Su contraseña NO cambió (para cambiarla: npm run reset-password).`);
   } else {
     const name = await value(process.env.ADMIN_NAME, "Nombre: ");
     const password = await value(process.env.ADMIN_PASSWORD, "Contraseña (no se muestra): ", true);

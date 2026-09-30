@@ -47,6 +47,7 @@ import {
   waitlistEntries,
 } from "../lib/db/schema";
 import { createUserWithPassword, findUserIdByEmail } from "../lib/auth/users";
+import { BASE_BRANDS, BASE_RESTAURANTS } from "../lib/layout/base-restaurants";
 import { upsertElementTypeCatalog } from "../lib/layout/catalog";
 import { copyLayoutToRestaurant, getStructureCounts } from "../lib/layout/copy";
 import { assignTable } from "../lib/tables/assign";
@@ -71,32 +72,11 @@ async function seedElementTypes() {
 // Datos de ejemplo
 // ---------------------------------------------------------------------------
 
-/** Colores de acento: se evitan el amarillo y el rojo puros de la alerta del mapa. */
-const DEMO_BRANDS = [
-  { id: "brand_china_wok", name: "China Wok", accentColor: "#f97316" },
-  { id: "brand_pizza_hut", name: "Pizza Hut", accentColor: "#ef4444" },
-  { id: "brand_kfc", name: "KFC", accentColor: "#ec4899" },
-  { id: "brand_dennys", name: "Denny's", accentColor: "#a3e635" },
-] as const;
-
-const TGU = "Tegucigalpa";
-const SPS = "San Pedro Sula";
-
-/**
- * `mapX`/`mapY` van de 0 a 1000 y caen dentro de los distritos que dibuja
- * `lib/map/world.ts`: San Pedro Sula arriba a la izquierda y Tegucigalpa
- * abajo a la derecha, más o menos como están en el país.
- */
-const DEMO_RESTAURANTS = [
-  { id: "rest_centro", name: "China Wok Centro", slug: "demo-centro", brandId: "brand_china_wok", city: TGU, mapX: 660, mapY: 610 },
-  { id: "rest_norte", name: "Pizza Hut Norte", slug: "demo-norte", brandId: "brand_pizza_hut", city: SPS, mapX: 250, mapY: 190 },
-  { id: "rest_tgu_pizza", name: "Pizza Hut Los Próceres", slug: "pizza-hut-los-proceres", brandId: "brand_pizza_hut", city: TGU, mapX: 830, mapY: 590 },
-  { id: "rest_tgu_kfc", name: "KFC Boulevard Morazán", slug: "kfc-boulevard-morazan", brandId: "brand_kfc", city: TGU, mapX: 780, mapY: 740 },
-  { id: "rest_tgu_dennys", name: "Denny's Las Lomas", slug: "dennys-las-lomas", brandId: "brand_dennys", city: TGU, mapX: 620, mapY: 830 },
-  { id: "rest_sps_chinawok", name: "China Wok Circunvalación", slug: "china-wok-circunvalacion", brandId: "brand_china_wok", city: SPS, mapX: 380, mapY: 300 },
-  { id: "rest_sps_kfc", name: "KFC Río Piedras", slug: "kfc-rio-piedras", brandId: "brand_kfc", city: SPS, mapX: 170, mapY: 360 },
-  { id: "rest_sps_dennys", name: "Denny's Los Andes", slug: "dennys-los-andes", brandId: "brand_dennys", city: SPS, mapX: 330, mapY: 460 },
-] as const;
+// Las marcas y los restaurantes son los reales, compartidos con
+// `npm run db:restaurantes` (ver `lib/layout/base-restaurants.ts`). El seed los
+// actualiza si ya existían; `db:restaurantes`, en cambio, nunca pisa nada.
+const DEMO_BRANDS = BASE_BRANDS;
+const DEMO_RESTAURANTS = BASE_RESTAURANTS;
 
 const DEMO_LAYOUTS = [
   { id: "lay_centro_principal", restaurantId: "rest_centro", name: "Comedor principal", description: "Sala principal, 8 mesas", sortOrder: 0, isDefault: true },
