@@ -8,13 +8,14 @@
 // iniciar sesión (`better-auth/crypto`), y se guardan en `account` con el
 // proveedor "credential", que es donde Better Auth las busca.
 
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, notInArray } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
 
 import { db } from "@/lib/db";
 import { type Role, ROLE_VALUES } from "@/lib/db/enums";
 import {
   account,
+  brands,
   restaurants,
   session,
   user,
@@ -29,7 +30,11 @@ export type AuthUser = {
   email: string;
   active: boolean;
   roles: Role[];
-  /** Restaurantes asignados (solo cuentan con el rol restaurante). */
+  /**
+   * Restaurantes asignados y ACTIVOS (solo cuentan con el rol restaurante).
+   * Un restaurante desactivado no sale aquí: así su host pierde el acceso en
+   * todas partes (páginas, API y socket), que pasan por `can()`.
+   */
   restaurantIds: string[];
 };
 
@@ -54,7 +59,8 @@ export async function loadAuthUser(userId: string): Promise<AuthUser | null> {
     db
       .select({ restaurantId: userRestaurants.restaurantId })
       .from(userRestaurants)
-      .where(eq(userRestaurants.userId, userId)),
+      .innerJoin(restaurants, eq(restaurants.id, userRestaurants.restaurantId))
+      .where(and(eq(userRestaurants.userId, userId), eq(restaurants.active, true))),
   ]);
 
   return {
@@ -105,9 +111,9 @@ async function assertRestaurantsExist(ids: string[]): Promise<void> {
   const found = await db
     .select({ id: restaurants.id })
     .from(restaurants)
-    .where(inArray(restaurants.id, ids));
+    .where(and(inArray(restaurants.id, ids), eq(restaurants.active, true)));
   if (found.length !== new Set(ids).size) {
-    throw new UserInputError("Alguno de los restaurantes elegidos no existe.");
+    throw new UserInputError("Alguno de los restaurantes elegidos no existe o está desactivado.");
   }
 }
 
@@ -160,14 +166,24 @@ export async function setUserAccess(
   restaurantIds: string[],
 ): Promise<void> {
   await assertRestaurantsExist(restaurantIds);
+  // Las asignaciones a restaurantes DESACTIVADOS no se tocan: /admin no los
+  // ofrece, así que no vienen en `restaurantIds`, y borrarlas haría que al
+  // reactivar el restaurante su host no recuperara el acceso.
+  const inactive = db
+    .select({ id: restaurants.id })
+    .from(restaurants)
+    .where(eq(restaurants.active, false));
   await db.transaction(async (tx) => {
     await tx.delete(userRoles).where(eq(userRoles.userId, userId));
-    await tx.delete(userRestaurants).where(eq(userRestaurants.userId, userId));
+    await tx
+      .delete(userRestaurants)
+      .where(and(eq(userRestaurants.userId, userId), notInArray(userRestaurants.restaurantId, inactive)));
     await tx.insert(userRoles).values([...new Set(roles)].map((role) => ({ userId, role })));
     if (restaurantIds.length > 0) {
       await tx
         .insert(userRestaurants)
-        .values([...new Set(restaurantIds)].map((restaurantId) => ({ userId, restaurantId })));
+        .values([...new Set(restaurantIds)].map((restaurantId) => ({ userId, restaurantId })))
+        .onConflictDoNothing();
     }
     await tx.update(user).set({ updatedAt: new Date() }).where(eq(user.id, userId));
   });
@@ -208,9 +224,38 @@ export async function setUserActive(userId: string, active: boolean): Promise<vo
   if (!active) await revokeSessions(userId);
 }
 
-export async function listRestaurants(): Promise<{ id: string; name: string }[]> {
-  return db
-    .select({ id: restaurants.id, name: restaurants.name })
+export type RestaurantOption = {
+  id: string;
+  name: string;
+  city: string | null;
+  active: boolean;
+  brand: { id: string; name: string; accentColor: string } | null;
+};
+
+/**
+ * Restaurantes con su marca, para elegir accesos, /inicio y el selector de
+ * restaurante. Por defecto solo los activos: uno desactivado no se ofrece.
+ */
+export async function listRestaurants({ includeInactive = false } = {}): Promise<RestaurantOption[]> {
+  const rows = await db
+    .select({
+      id: restaurants.id,
+      name: restaurants.name,
+      city: restaurants.city,
+      active: restaurants.active,
+      brandId: brands.id,
+      brandName: brands.name,
+      brandColor: brands.accentColor,
+    })
     .from(restaurants)
+    .leftJoin(brands, eq(brands.id, restaurants.brandId))
+    .where(includeInactive ? undefined : eq(restaurants.active, true))
     .orderBy(asc(restaurants.name));
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    city: r.city,
+    active: r.active,
+    brand: r.brandId && r.brandName && r.brandColor ? { id: r.brandId, name: r.brandName, accentColor: r.brandColor } : null,
+  }));
 }

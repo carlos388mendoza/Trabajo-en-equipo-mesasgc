@@ -39,6 +39,7 @@ Qué significa cada marca:
 | Acción (`can`) | Qué protege | admin | restaurante | analitica |
 |---|---|:---:|:---:|:---:|
 | `usuarios:gestionar` | Crear, editar, restablecer contraseña y desactivar usuarios (`app/admin/actions.ts`) | Sí | — | — |
+| `catalogo:gestionar` | Crear, editar y desactivar marcas y restaurantes (`app/admin/catalog-actions.ts`) | Sí | — | — |
 | `editor:ver` | Ver el plano; nombre del cliente en vivo | Sí | Suyos | — |
 | `editor:guardar` | Guardar y copiar la estructura (server actions del editor) | Sí | Suyos | — |
 | `rapido:ver` | `GET /api/restaurante/[id]/clientes` | Sí | Suyos | — |
@@ -50,7 +51,21 @@ Qué significa cada marca:
 | `plano:ver` | `/restaurante/[id]/mapa` y la action `loadLivePlan` (estados y ocupación) | Sí | Suyos | Sí |
 | `plano:clientes` | Nombre del cliente de cada mesa en el plano en vivo | Sí | Suyos | — |
 
-Dos casos que vale la pena tener presentes:
+Cuatro casos que vale la pena tener presentes:
+
+- **Varios restaurantes, un usuario** (el piloto: Denny's y Pizza Hut). Con
+  el rol restaurante y varios restaurantes asignados, tiene el modo sencillo
+  y el completo en **cada uno** y en ningún otro. En `/inicio` ve una
+  tarjeta por restaurante, y la cabecera le muestra un selector para cambiar
+  entre ellos. Es solo navegación: cada página, API y evento de socket vuelve
+  a comprobar `can()`, y el socket usa la room en la que entró, nunca el
+  `restaurantId` del payload.
+
+- **Un restaurante desactivado** (`restaurants.active = false`) deja de contar
+  en los `restaurantIds` del usuario (`loadAuthUser`), así que su host pierde
+  el acceso en páginas, API, actions y socket, sin tocar `can()`. El admin
+  sigue entrando. Su asignación en `user_restaurants` se conserva: al
+  reactivarlo, el host lo recupera.
 
 - **Copiar la estructura a otro restaurante** exige `editor:guardar` en los
   **dos** restaurantes, y copiar una zona también en el de la zona de destino.

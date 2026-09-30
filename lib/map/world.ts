@@ -18,6 +18,9 @@ export type ViewBox = [number, number, number, number];
 
 export type City = {
   name: string;
+  /** Centro de la ciudad (grados decimales). /admin lo usa para rellenar la ubicación. */
+  lat: number;
+  lng: number;
   x: number;
   y: number;
   /** 1 = capital, 2 = ciudad grande, 3 = el resto. Decide el tamaño del rótulo. */
@@ -28,7 +31,7 @@ export type City = {
 
 const city = (name: string, lat: number, lng: number, rank: City["rank"], labelSide: City["labelSide"] = "right"): City => {
   const { x, y } = project({ lat, lng });
-  return { name, x, y, rank, labelSide };
+  return { name, lat, lng, x, y, rank, labelSide };
 };
 
 /** Ciudades principales, tengan o no restaurantes (centro de cada ciudad). */

@@ -114,3 +114,12 @@ export async function getRestaurantCounters(restaurantId: string): Promise<Resta
   const [row] = await getCounters([restaurantId]);
   return row ?? empty(restaurantId);
 }
+
+/**
+ * Contadores con la espera media ya calculada «ahora», para páginas del
+ * servidor que no se actualizan en vivo (/inicio). El mapa, en cambio, la
+ * calcula en el navegador para que avance sola.
+ */
+export async function getCountersWithWait(ids: string[], now = Date.now()): Promise<(RestaurantCounters & { minutes: number })[]> {
+  return (await getCounters(ids)).map((c) => ({ ...c, minutes: averageWaitMinutes(c, now) }));
+}

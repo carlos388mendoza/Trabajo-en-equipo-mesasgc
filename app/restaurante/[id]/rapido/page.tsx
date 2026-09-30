@@ -8,5 +8,7 @@ export default async function ModoRapidoPage({
 }) {
   const { id } = await params;
   await requirePage(`/restaurante/${id}/rapido`, "rapido:ver", id);
-  return <QuickModeClient restaurantId={id} />;
+  // `key`: al cambiar de restaurante sin recargar (el selector de la cabecera),
+  // el modo rápido se monta de cero, con su socket en la room del nuevo.
+  return <QuickModeClient key={id} restaurantId={id} />;
 }

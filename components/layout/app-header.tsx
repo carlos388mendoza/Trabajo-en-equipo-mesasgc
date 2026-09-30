@@ -4,8 +4,10 @@ import type { LucideIcon } from "lucide-react";
 import { ChartColumn, LogOut, Map as MapIcon, Settings, ShieldCheck, Store } from "lucide-react";
 
 import { signOutAction } from "@/app/login/actions";
+import { RestaurantSwitcher, type SwitcherRestaurant } from "@/components/layout/restaurant-switcher";
 import { ROLE_LABELS, can } from "@/lib/auth/rbac";
 import { getCurrentUser } from "@/lib/auth/session";
+import { listRestaurants } from "@/lib/auth/users";
 import { ROLES } from "@/lib/db/enums";
 
 // Encabezado de toda la app.
@@ -20,6 +22,14 @@ export async function AppHeader() {
   const user = await getCurrentUser();
 
   const links: NavLink[] = [];
+  // Con varios restaurantes, un selector para cambiar entre ellos (solo los
+  // suyos y activos: `restaurantIds` ya viene filtrado).
+  let mine: SwitcherRestaurant[] = [];
+  if (user && user.roles.includes(ROLES.RESTAURANTE) && user.restaurantIds.length > 1) {
+    mine = (await listRestaurants())
+      .filter((r) => user.restaurantIds.includes(r.id))
+      .map(({ id, name, city, brand }) => ({ id, name, city, brand }));
+  }
   if (user) {
     if (can(user, "usuarios:gestionar")) {
       links.push({ href: "/admin", label: "Administración", icon: ShieldCheck });
@@ -60,6 +70,8 @@ export async function AppHeader() {
           Table<span className="text-accent">Waitlist</span>
         </span>
       </Link>
+
+      {mine.length > 1 ? <RestaurantSwitcher restaurants={mine} /> : null}
 
       {links.length > 0 ? (
         <nav aria-label="Principal" className="flex flex-wrap gap-1">
