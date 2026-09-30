@@ -79,12 +79,13 @@ section("Preparación");
 const { applyAllMigrations } = await import("./migrations.mts");
 await applyAllMigrations(`file:${DB_FILE}`);
 
-function run(command: string, args: string[]): Promise<number> {
+function run(command: string, args: string[], extraEnv: Record<string, string> = {}): Promise<number> {
   return new Promise((res) => {
-    const child = spawn(command, args, { env, cwd: ROOT, stdio: "ignore", shell: true });
+    const child = spawn(command, args, { env: { ...env, ...extraEnv }, cwd: ROOT, stdio: "ignore", shell: true });
     child.on("exit", (code) => res(code ?? 1));
   });
 }
+check("el seed se niega a correr con NODE_ENV=production", (await run("npx", ["tsx", "scripts/seed.ts"], { NODE_ENV: "production" })) !== 0);
 check("seed con usuarios de prueba", (await run("npx", ["tsx", "scripts/seed.ts"])) === 0);
 
 let server: ChildProcess | null = null;
@@ -458,7 +459,10 @@ section("Privacidad del asistente con OpenRouter");
     phone: waitlistEntries.phone,
     notes: waitlistEntries.notes,
   }).from(waitlistEntries);
-  const seedNames = [...new Set(seededRows.map((row) => row.customerName))];
+  // La anonimización conoce a los clientes del período de las estadísticas
+  // (los 14 días que ve el asistente), no a todo el historial del seed.
+  const seedNames = [...new Set(seededRows.map((row) => row.customerName))]
+    .filter((name) => sensitiveValues.includes(name));
   const seedPhonesAndNotes = [...new Set(seededRows.flatMap((row) => [row.phone, row.notes])
     .filter((value): value is string => typeof value === "string" && Boolean(value)))];
   const questionWithPrivateData = [
