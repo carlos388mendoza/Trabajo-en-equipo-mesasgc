@@ -34,7 +34,7 @@ import { config } from "dotenv";
 
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 
-import { ELEMENT_TYPE_KEYS, SEATABLE_ELEMENT_KEYS, type ElementTypeKey, type Role } from "../lib/db/enums";
+import { ELEMENT_TYPE_KEYS, SEATABLE_ELEMENT_KEYS, type Role } from "../lib/db/enums";
 import { db } from "../lib/db";
 import {
   brands,
@@ -47,6 +47,7 @@ import {
   waitlistEntries,
 } from "../lib/db/schema";
 import { createUserWithPassword, findUserIdByEmail } from "../lib/auth/users";
+import { upsertElementTypeCatalog } from "../lib/layout/catalog";
 import { copyLayoutToRestaurant, getStructureCounts } from "../lib/layout/copy";
 import { assignTable } from "../lib/tables/assign";
 import { addCalendarDays, hondurasMidnightUtc, hondurasToday } from "../lib/time/honduras";
@@ -56,120 +57,14 @@ config({ path: [".env.local", ".env"] });
 
 // ---------------------------------------------------------------------------
 // Catálogo de tipos de elemento
+//
+// Vive en `lib/layout/catalog.ts` porque producción también lo carga, con
+// `npm run db:catalog` en el Pre-deploy: el seed no se corre allí.
 // ---------------------------------------------------------------------------
 
-/**
- * Colores pensados para que los cinco se distinguan de un vistazo en el mapa
- * y, sobre todo, para que "ocupada" se distinga del color del tipo (el editor
- * pinta la mesa ocupada con un borde rojo, no cambiando el relleno).
- */
-const ELEMENT_TYPE_SEED: {
-  key: ElementTypeKey;
-  label: string;
-  color: string;
-  icon: string;
-  width: number;
-  height: number;
-  defaultCapacity: number | null;
-}[] = [
-  {
-    key: "mesa-sillas",
-    label: "Mesa con sillas",
-    color: "#3b82f6",
-    icon: "utensils",
-    width: 80,
-    height: 80,
-    defaultCapacity: 4,
-  },
-  {
-    key: "mesa-butacas",
-    label: "Mesa con butacas",
-    color: "#8b5cf6",
-    icon: "sofa",
-    width: 130,
-    height: 70,
-    defaultCapacity: 6,
-  },
-  {
-    key: "area-juegos",
-    label: "Área de juegos",
-    color: "#f59e0b",
-    icon: "puzzle",
-    width: 220,
-    height: 220,
-    defaultCapacity: null,
-  },
-  {
-    key: "bano",
-    label: "Baño",
-    color: "#6b7280",
-    icon: "toilet",
-    width: 60,
-    height: 60,
-    defaultCapacity: null,
-  },
-  {
-    key: "caja",
-    label: "Caja",
-    color: "#10b981",
-    icon: "banknote",
-    width: 70,
-    height: 70,
-    defaultCapacity: null,
-  },
-  // Estructura del local (paso 4 de los requisitos: "distintos tipos de
-  // elementos"). Ninguno admite clientes. La pared es fina y larga, y la
-  // puerta es cuadrada porque dibuja su arco de apertura dentro.
-  {
-    key: "barra",
-    label: "Barra",
-    color: "#d97706",
-    icon: "wine",
-    width: 220,
-    height: 56,
-    defaultCapacity: null,
-  },
-  {
-    key: "puerta",
-    label: "Puerta",
-    color: "#0d9488",
-    icon: "door-open",
-    width: 80,
-    height: 80,
-    defaultCapacity: null,
-  },
-  {
-    key: "pared",
-    label: "Pared",
-    color: "#64748b",
-    icon: "brick-wall",
-    width: 240,
-    height: 18,
-    defaultCapacity: null,
-  },
-];
-
 async function seedElementTypes() {
-  for (const [sortOrder, type] of ELEMENT_TYPE_SEED.entries()) {
-    await db
-      .insert(elementTypes)
-      .values({ id: `el_${type.key}`, sortOrder, ...type })
-      .onConflictDoUpdate({
-        // La clave es la identidad lógica del tipo: si alguien la cambió, se
-        // actualiza la fila en vez de crear un duplicado.
-        target: elementTypes.key,
-        set: {
-          label: type.label,
-          color: type.color,
-          icon: type.icon,
-          width: type.width,
-          height: type.height,
-          defaultCapacity: type.defaultCapacity,
-          sortOrder,
-        },
-      });
-  }
-  console.log(`  element_types: ${ELEMENT_TYPE_SEED.length} tipos`);
+  const count = await upsertElementTypeCatalog();
+  console.log(`  element_types: ${count} tipos`);
 }
 
 // ---------------------------------------------------------------------------

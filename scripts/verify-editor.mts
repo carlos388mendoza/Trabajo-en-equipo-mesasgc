@@ -969,6 +969,25 @@ const structure = [
   check("  con ids nuevos", destRows.every((r) => !r.id.startsWith("est-")));
 }
 
+console.log("\nCatálogo de elementos (db:catalog, también en producción)");
+
+{
+  // Aquí la base ya tiene los 8 tipos con ids propios del test y mesas que
+  // apuntan a ellos: el catálogo tiene que actualizarlos por clave, no
+  // duplicarlos ni cambiarles el id.
+  const { ELEMENT_TYPE_CATALOG, upsertElementTypeCatalog } = await import("@/lib/layout/catalog");
+  const tablesBefore = await db.select({ id: tables.id, elementTypeId: tables.elementTypeId }).from(tables);
+  await upsertElementTypeCatalog();
+  await upsertElementTypeCatalog();
+  const rows = await db.select().from(elementTypes);
+  const tablesAfter = await db.select({ id: tables.id, elementTypeId: tables.elementTypeId }).from(tables);
+  check("el catálogo trae todos los ELEMENT_TYPE_KEYS", ELEMENT_TYPE_KEYS.every((key) => ELEMENT_TYPE_CATALOG.some((type) => type.key === key)));
+  check("  repetirlo no duplica ningún tipo", rows.length === ELEMENT_TYPE_KEYS.length, `${rows.length}`);
+  check("  conserva el id de los tipos que ya existían", rows.find((row) => row.key === "mesa-sillas")?.id === TYPES.mesa);
+  check("  y actualiza sus datos por clave", rows.find((row) => row.key === "bano")?.label === "Baño");
+  check("  no toca ninguna mesa", JSON.stringify(tablesAfter) === JSON.stringify(tablesBefore));
+}
+
 // ---------------------------------------------------------------------------
 
 // El cliente de libSQL sigue con la conexión abierta (el proxy de `lib/db` es
