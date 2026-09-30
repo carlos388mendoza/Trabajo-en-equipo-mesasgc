@@ -19,6 +19,7 @@ import {
   EyeOff,
   KeyRound,
   Pencil,
+  Search,
   Shuffle,
   UserCheck,
   UserPlus,
@@ -35,10 +36,11 @@ import {
 import { Button, ConfirmDialog, FormButtons, IconButton } from "@/components/admin/ui";
 import { ICON_STROKE } from "@/components/editor/icons";
 import { ROLE_LABELS } from "@/lib/auth/rbac";
-import type { AuthUser } from "@/lib/auth/users";
+import type { AuthUser, RestaurantOption } from "@/lib/auth/users";
 import { ROLES, ROLE_VALUES, type Role } from "@/lib/db/enums";
 
-type Restaurant = { id: string; name: string };
+/** Los restaurantes ACTIVOS que se pueden asignar, con su marca y ciudad. */
+type Restaurant = Pick<RestaurantOption, "id" | "name" | "city" | "brand">;
 
 type Props = {
   users: AuthUser[];
@@ -320,7 +322,11 @@ function AccessForm({
   onSubmit: (roles: Role[], restaurantIds: string[]) => void;
 }) {
   const [roles, setRoles] = useState<Role[]>(user.roles);
-  const [restaurantIds, setRestaurantIds] = useState<string[]>(user.restaurantIds);
+  // Solo los que se ofrecen (activos). Las asignaciones a restaurantes
+  // desactivados no se envían: el servidor las conserva por su cuenta.
+  const [restaurantIds, setRestaurantIds] = useState<string[]>(() =>
+    user.restaurantIds.filter((id) => restaurants.some((r) => r.id === id)),
+  );
   return (
     <form
       className="mt-3 space-y-4 rounded-xl border border-app-border p-4"
@@ -469,7 +475,7 @@ function AccessPicker({
   const toggle = <T,>(list: T[], item: T) => (list.includes(item) ? list.filter((x) => x !== item) : [...list, item]);
   const needsRestaurants = roles.includes(ROLES.RESTAURANTE);
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid gap-4">
       <fieldset>
         <legend className="text-sm font-medium">Roles</legend>
         <div className="mt-1 flex flex-wrap gap-2">
@@ -495,32 +501,123 @@ function AccessPicker({
           })}
         </div>
       </fieldset>
-      <fieldset disabled={!needsRestaurants}>
-        <legend className="text-sm font-medium">Restaurantes</legend>
-        <div className="mt-1 flex flex-wrap gap-2">
-          {restaurants.map((r) => (
-            <label
-              key={r.id}
-              className={`flex h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 text-sm ${
-                needsRestaurants && restaurantIds.includes(r.id) ? "border-accent bg-accent/10" : "border-app-border"
-              } ${needsRestaurants ? "" : "opacity-50"}`}
-            >
-              <input
-                type="checkbox"
-                checked={needsRestaurants && restaurantIds.includes(r.id)}
-                onChange={() => onRestaurants(toggle(restaurantIds, r.id))}
-              />
-              {r.name}
-            </label>
-          ))}
-        </div>
-        <p className="mt-1 text-xs text-panel-muted">
-          {needsRestaurants
-            ? "Solo verá y editará estos restaurantes."
-            : "Solo se usan con el rol Restaurante. Admin y Analítica ven todos."}
-        </p>
-      </fieldset>
+      <RestaurantPicker
+        restaurants={restaurants}
+        selected={needsRestaurants ? restaurantIds : []}
+        disabled={!needsRestaurants}
+        onChange={onRestaurants}
+      />
     </div>
+  );
+}
+
+/** «Pizza Hut Los Próceres» → «pizza hut los proceres», para buscar sin acentos. */
+function plain(text: string): string {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+/**
+ * Restaurantes agrupados por marca, con «Marcar todos» por marca y un
+ * buscador cuando hay muchos. Marcar todos actúa sobre los que se ven: con
+ * una búsqueda escrita, solo sobre los que coinciden.
+ */
+function RestaurantPicker({
+  restaurants,
+  selected,
+  disabled,
+  onChange,
+}: {
+  restaurants: Restaurant[];
+  selected: string[];
+  disabled: boolean;
+  onChange: (ids: string[]) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const q = plain(query.trim());
+  const visible = q
+    ? restaurants.filter((r) => plain([r.name, r.city ?? "", r.brand?.name ?? ""].join(" ")).includes(q))
+    : restaurants;
+  const groups = new Map<string, { brand: Restaurant["brand"]; list: Restaurant[] }>();
+  for (const r of visible) {
+    const key = r.brand?.id ?? "";
+    const group = groups.get(key) ?? { brand: r.brand, list: [] };
+    group.list.push(r);
+    groups.set(key, group);
+  }
+  const sorted = [...groups.values()].sort((a, b) => (a.brand?.name ?? "~").localeCompare(b.brand?.name ?? "~", "es"));
+  const toggleOne = (id: string) => onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+
+  return (
+    <fieldset disabled={disabled} className={disabled ? "opacity-60" : ""}>
+      <legend className="text-sm font-medium">
+        Restaurantes{" "}
+        <span className="font-normal text-panel-muted">
+          ({selected.length} de {restaurants.length})
+        </span>
+      </legend>
+      {restaurants.length > 6 ? (
+        <label className="mt-1 flex items-center gap-2 rounded-xl border border-app-border bg-panel px-3">
+          <Search aria-hidden size={16} className="text-panel-muted" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar por restaurante, marca o ciudad"
+            aria-label="Buscar restaurante"
+            className="h-11 w-full bg-transparent text-sm outline-none"
+          />
+        </label>
+      ) : null}
+      <div className="mt-2 space-y-3">
+        {sorted.map(({ brand, list }) => {
+          const ids = list.map((r) => r.id);
+          const all = ids.every((id) => selected.includes(id));
+          return (
+            <div key={brand?.id ?? "sin-marca"} className="rounded-xl border border-app-border p-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="flex items-center gap-2 text-sm font-semibold">
+                  <span aria-hidden className="h-3 w-3 rounded-full" style={{ backgroundColor: brand?.accentColor ?? "#94a3b8" }} />
+                  {brand?.name ?? "Sin marca"}
+                  <span className="text-xs font-normal text-panel-muted">
+                    {ids.filter((id) => selected.includes(id)).length}/{ids.length}
+                  </span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onChange(all ? selected.filter((id) => !ids.includes(id)) : [...new Set([...selected, ...ids])])}
+                  className="h-9 rounded-lg px-2.5 text-xs font-semibold text-accent hover:bg-accent/10"
+                  aria-label={`${all ? "Quitar" : "Marcar"} todos los de ${brand?.name ?? "sin marca"}`}
+                >
+                  {all ? "Quitar todos" : "Marcar todos"}
+                </button>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {list.map((r) => (
+                  <label
+                    key={r.id}
+                    className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 py-1.5 text-sm ${
+                      selected.includes(r.id) ? "border-accent bg-accent/10" : "border-app-border"
+                    }`}
+                  >
+                    <input type="checkbox" checked={selected.includes(r.id)} onChange={() => toggleOne(r.id)} />
+                    <span>
+                      {r.name}
+                      {r.city ? <span className="block text-xs text-panel-muted">{r.city}</span> : null}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {visible.length === 0 ? <p className="text-sm text-panel-muted">Ningún restaurante coincide con «{query}».</p> : null}
+      </div>
+      <p className="mt-1 text-xs text-panel-muted">
+        {disabled
+          ? "Solo se usan con el rol Restaurante. Admin y Analítica ven todos."
+          : "Solo verá y editará estos restaurantes. Uno desactivado no se ofrece aquí."}
+      </p>
+    </fieldset>
   );
 }
 
