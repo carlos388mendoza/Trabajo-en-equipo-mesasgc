@@ -132,9 +132,19 @@ rompas.
   (o `fix/` / `docs/` según el tipo): `git switch testing && git pull`, y
   luego `git switch -c feat/<nombre>`.
 - **Los PR van siempre hacia `testing`**, nunca hacia `main`. Menciona el
-  Issue que resuelven (`Closes #N`). El otro miembro revisa antes del merge.
-  Solo el PR final `testing` → `main` dispara el deploy, y ese no lo abras
-  por tu cuenta.
+  Issue que resuelven (`Closes #N`). Solo el PR final `testing` → `main`
+  dispara el deploy, y ese no lo abras por tu cuenta.
+- **Cómo se revisa un PR (desde el 30 de septiembre de 2026).** El Miembro B
+  ya terminó, así que el ruleset `proteger-main-testing` pide **0
+  aprobaciones**. Sigue pidiendo PR, el check «Typecheck, lint, build y
+  verificaciones», y prohíbe borrar la rama y el force push. En cada PR:
+  1. **No** pongas a `vbgjptt89g-beep` como revisor.
+  2. Haz tú la revisión de código (bugs, seguridad, secretos y cumplimiento
+     del enunciado) y déjala como **comentario en el PR**.
+  3. Corre `typecheck`, `lint`, `build` y los tres `verify`.
+  4. Fusiona (merge normal) solo con el CI en verde y sin problemas abiertos
+     en tu revisión.
+  5. **PR hacia `main`:** avisa a Carlos y espera su «sí» antes de fusionar.
 - **Los commits llevan prefijo `feat:`, `fix:`, `docs:`, `chore:`, `test:` o
   `perf:`**, con un scope opcional (`feat(editor): ...`). Hazlos pequeños y
   descriptivos.
