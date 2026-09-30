@@ -16,11 +16,12 @@ config({ path: [".env.local", ".env"], quiet: true });
 const { ensureBaseRestaurants } = await import("@/lib/layout/base-restaurants");
 
 try {
-  const { brandsCreated, restaurantsCreated, zonesCreated } = await ensureBaseRestaurants();
+  const { brandsCreated, restaurantsCreated, locationsFilled, zonesCreated } = await ensureBaseRestaurants();
   console.log(`marcas creadas: ${brandsCreated}`);
   console.log(`restaurantes creados: ${restaurantsCreated}`);
+  console.log(`ubicaciones reales añadidas a restaurantes que no tenían: ${locationsFilled}`);
   console.log(`zonas vacías creadas: ${zonesCreated}`);
-  console.log("Lo que ya existía no se tocó.");
+  console.log("Nada más de lo que ya existía se tocó.");
   process.exit(0);
 } catch (error) {
   console.error("No se pudieron crear los restaurantes:", error);

@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { getElementTypes, getLayout, getLayoutsForRestaurant } from "@/lib/db/queries/layouts";
 import { brands, restaurants } from "@/lib/db/schema";
 import type { ElementTypeInfo, LayoutPayload } from "@/lib/layout/types";
+import { restaurantPosition } from "@/lib/map/projection";
 
 export type BrandInfo = { id: string; name: string; accentColor: string };
 
@@ -17,9 +18,15 @@ export type MapRestaurant = {
   id: string;
   name: string;
   city: string | null;
-  /** null = sin posición: sale en la lista, no en el mapa. */
+  /**
+   * Posición en unidades del mapa (`lib/map/projection.ts`), ya calculada:
+   * sale de la latitud y la longitud si las hay, y si no de `map_x`/`map_y`.
+   * null = sin posición: sale en la lista, no en el mapa.
+   */
   mapX: number | null;
   mapY: number | null;
+  latitude: number | null;
+  longitude: number | null;
   brand: BrandInfo | null;
 };
 
@@ -39,6 +46,8 @@ export async function getMapRestaurants(): Promise<MapRestaurant[]> {
       city: restaurants.city,
       mapX: restaurants.mapX,
       mapY: restaurants.mapY,
+      latitude: restaurants.latitude,
+      longitude: restaurants.longitude,
       brandId: brands.id,
       brandName: brands.name,
       brandColor: brands.accentColor,
@@ -47,17 +56,22 @@ export async function getMapRestaurants(): Promise<MapRestaurant[]> {
     .leftJoin(brands, eq(brands.id, restaurants.brandId))
     .orderBy(asc(restaurants.name));
 
-  return rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    city: r.city,
-    mapX: r.mapX,
-    mapY: r.mapY,
-    brand:
-      r.brandId && r.brandName && r.brandColor
-        ? { id: r.brandId, name: r.brandName, accentColor: r.brandColor }
-        : null,
-  }));
+  return rows.map((r) => {
+    const position = restaurantPosition(r);
+    return {
+      id: r.id,
+      name: r.name,
+      city: r.city,
+      mapX: position ? Math.round(position.x * 10) / 10 : null,
+      mapY: position ? Math.round(position.y * 10) / 10 : null,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      brand:
+        r.brandId && r.brandName && r.brandColor
+          ? { id: r.brandId, name: r.brandName, accentColor: r.brandColor }
+          : null,
+    };
+  });
 }
 
 export async function getMapRestaurant(restaurantId: string): Promise<MapRestaurant | null> {

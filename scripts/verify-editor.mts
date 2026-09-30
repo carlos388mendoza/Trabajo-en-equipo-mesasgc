@@ -992,14 +992,16 @@ console.log("\nRestaurantes base (db:restaurantes, también en producción)");
 
 {
   // Se simula una base que ya tiene datos reales: `rest_centro` existe con
-  // otro nombre y su propia zona, y otro restaurante ocupa el slug de KFC Río
-  // Piedras. Nada de eso se puede pisar.
+  // otro nombre, su propia zona y sin ubicación (anterior a la migración
+  // 0004); `rest_tgu_dennys` existe con otra ubicación; y otro restaurante
+  // ocupa el slug de KFC Río Piedras. Solo se puede rellenar lo que falta.
   const { BASE_BRANDS, BASE_RESTAURANTS, ensureBaseRestaurants } = await import("@/lib/layout/base-restaurants");
   const { brands, user, waitlistEntries } = await import("@/lib/db/schema");
   const { eq, inArray, sql } = await import("drizzle-orm");
   await db.insert(restaurants).values([
     { id: "rest_centro", name: "Nombre puesto a mano", slug: "slug-propio" },
     { id: "rest-ocupa-slug", name: "Otro local", slug: "kfc-rio-piedras" },
+    { id: "rest_tgu_dennys", name: "Denny's con su ubicación", slug: "dennys-propio", latitude: 14.5, longitude: -87.5 },
   ]);
   await db.insert(tableLayouts).values({ id: "zona-propia", restaurantId: "rest_centro", name: "Terraza dibujada", isDefault: true });
   const count = async (table: typeof tables | typeof waitlistEntries | typeof user) =>
@@ -1008,14 +1010,20 @@ console.log("\nRestaurantes base (db:restaurantes, también en producción)");
 
   const first = await ensureBaseRestaurants();
   const second = await ensureBaseRestaurants();
-  const created = BASE_RESTAURANTS.filter((r) => r.id !== "rest_centro" && r.id !== "rest_sps_kfc");
+  const created = BASE_RESTAURANTS.filter((r) => !["rest_centro", "rest_sps_kfc", "rest_tgu_dennys"].includes(r.id));
   const zonesOf = async (restaurantId: string) => db.select().from(tableLayouts).where(eq(tableLayouts.restaurantId, restaurantId));
   const centro = (await db.select().from(restaurants).where(eq(restaurants.id, "rest_centro")))[0];
 
-  check("crea las 4 marcas, los restaurantes que faltan y una zona por cada uno",
-    first.brandsCreated === BASE_BRANDS.length && first.restaurantsCreated === created.length && first.zonesCreated === created.length,
+  // Zonas: una por cada restaurante nuevo y otra para rest_tgu_dennys, que ya
+  // existía pero sin ninguna.
+  check("crea las 4 marcas, los restaurantes que faltan y una zona a quien no tiene",
+    first.brandsCreated === BASE_BRANDS.length && first.restaurantsCreated === created.length && first.zonesCreated === created.length + 1,
     JSON.stringify(first));
-  check("  repetirlo no crea nada", second.brandsCreated === 0 && second.restaurantsCreated === 0 && second.zonesCreated === 0, JSON.stringify(second));
+  check("  repetirlo no crea nada", second.brandsCreated === 0 && second.restaurantsCreated === 0 && second.zonesCreated === 0 && second.locationsFilled === 0, JSON.stringify(second));
+  const baseCentro = BASE_RESTAURANTS.find((r) => r.id === "rest_centro")!;
+  check("  a un restaurante sin ubicación le pone la real", first.locationsFilled === 1 && centro?.latitude === baseCentro.latitude && centro?.longitude === baseCentro.longitude, JSON.stringify(first));
+  const dennys = (await db.select().from(restaurants).where(eq(restaurants.id, "rest_tgu_dennys")))[0];
+  check("  pero no pisa una ubicación que ya tenía", dennys?.latitude === 14.5 && dennys?.longitude === -87.5 && dennys.name === "Denny's con su ubicación");
   check("  las marcas quedan con su id", (await db.select().from(brands)).length === BASE_BRANDS.length);
   check("  no pisa un restaurante que ya existía", centro?.name === "Nombre puesto a mano" && centro.slug === "slug-propio");
   check("  ni le añade zona si ya tenía una", (await zonesOf("rest_centro")).map((z) => z.id).join(",") === "zona-propia");
@@ -1026,9 +1034,36 @@ console.log("\nRestaurantes base (db:restaurantes, también en producción)");
     newZones.every((z) => z.length === 1 && z[0].isDefault && z[0].rotation === 0));
   const createdRows = await db.select().from(restaurants).where(inArray(restaurants.id, created.map((r) => r.id)));
   check("  con su marca, ciudad y posición del mapa",
-    createdRows.length === created.length && createdRows.every((r) => r.brandId && r.city && r.mapX !== null && r.mapY !== null));
+    createdRows.length === created.length && createdRows.every((r) => r.brandId && r.city && r.mapX !== null && r.mapY !== null && r.latitude !== null && r.longitude !== null));
   check("  no crea mesas, clientes ni usuarios",
     (await count(tables)) === before.tables && (await count(waitlistEntries)) === before.entries && (await count(user)) === before.users);
+}
+
+console.log("\nProyección del mapa de Honduras");
+
+{
+  const { MAP_HEIGHT, MAP_WIDTH, kmToUnits, project, restaurantPosition, unproject } = await import("@/lib/map/projection");
+  const { BASE_RESTAURANTS } = await import("@/lib/layout/base-restaurants");
+  const { CITIES, DEPARTMENTS, HONDURAS_PATH, NEIGHBORS } = await import("@/lib/map/world");
+  const tgu = { lat: 14.0723, lng: -87.1921 };
+  const back = unproject(project(tgu));
+  check("project y unproject son inversas", Math.abs(back.lat - tgu.lat) < 1e-9 && Math.abs(back.lng - tgu.lng) < 1e-9);
+  const corners = [{ lat: 12.98, lng: -89.36 }, { lat: 16.52, lng: -83.13 }, { lat: 17.41, lng: -83.93 }].map(project);
+  check("  todo Honduras, con las Islas del Cisne, cae dentro del lienzo", corners.every((p) => p.x > 0 && p.x < MAP_WIDTH && p.y > 0 && p.y < MAP_HEIGHT));
+  check("  San Pedro Sula queda al noroeste de Tegucigalpa", (() => { const a = project({ lat: 15.5042, lng: -88.025 }); const b = project(tgu); return a.x < b.x && a.y < b.y; })());
+  const cityOf = (name: string) => CITIES.find((c) => c.name === name)!;
+  check("  cada restaurante está a menos de 6 km del centro de su ciudad",
+    BASE_RESTAURANTS.every((r) => { const p = project({ lat: r.latitude, lng: r.longitude }); const c = cityOf(r.city); return Math.hypot(p.x - c.x, p.y - c.y) < kmToUnits(6); }));
+  check("  y su mapX/mapY es la proyección de su latitud y longitud",
+    BASE_RESTAURANTS.every((r) => { const p = project({ lat: r.latitude, lng: r.longitude }); return Math.abs(p.x - r.mapX) <= 0.5 && Math.abs(p.y - r.mapY) <= 0.5; }));
+  check("restaurantPosition prefiere latitud y longitud, y si no usa map_x/map_y",
+    restaurantPosition({ latitude: 14.0723, longitude: -87.1921, mapX: 1, mapY: 1 })!.x === project(tgu).x &&
+    restaurantPosition({ latitude: null, longitude: null, mapX: 12, mapY: 34 })!.y === 34 &&
+    restaurantPosition({ latitude: null, longitude: null, mapX: null, mapY: null }) === null);
+  check("el mapa trae los 18 departamentos, la silueta y los vecinos",
+    DEPARTMENTS.length === 18 && DEPARTMENTS.every((d) => d.path.startsWith("M")) && HONDURAS_PATH.length > 1000 &&
+    ["Guatemala", "El Salvador", "Nicaragua"].every((n) => NEIGHBORS.some((x) => x.name === n)));
+  check("  y las 11 ciudades principales", CITIES.length === 11 && CITIES.every((c) => c.x > 0 && c.x < MAP_WIDTH && c.y > 0 && c.y < MAP_HEIGHT));
 }
 
 // ---------------------------------------------------------------------------
