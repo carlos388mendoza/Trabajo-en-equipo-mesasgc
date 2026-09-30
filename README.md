@@ -767,10 +767,22 @@ Todos tienen la contraseña **`12345abc`**:
 | `norte@grupocomidas.test` | Host Norte | restaurante | rest_norte |
 | `analitica@grupocomidas.test` | Analista | analitica | todos (solo lectura) |
 | `gerente@grupocomidas.test` | Gerente Centro | restaurante, analitica | rest_centro |
+| `pizzahut-proceres@grupocomidas.test` | Host Pizza Hut Los Próceres | restaurante | rest_tgu_pizza |
+| `kfc-morazan@grupocomidas.test` | Host KFC Boulevard Morazán | restaurante | rest_tgu_kfc |
+| `dennys-lomas@grupocomidas.test` | Host Denny's Las Lomas | restaurante | rest_tgu_dennys |
+| `chinawok-circunvalacion@grupocomidas.test` | Host China Wok Circunvalación | restaurante | rest_sps_chinawok |
+| `kfc-riopiedras@grupocomidas.test` | Host KFC Río Piedras | restaurante | rest_sps_kfc |
+| `dennys-andes@grupocomidas.test` | Host Denny's Los Andes | restaurante | rest_sps_dennys |
 
 `rest_centro` es **China Wok Centro** (Tegucigalpa) y `rest_norte` es **Pizza
 Hut Norte** (San Pedro Sula): conservan sus ids, así que estos usuarios siguen
-valiendo. Los otros 6 restaurantes del mapa no tienen host de prueba.
+valiendo. Cada uno de los 8 restaurantes del mapa tiene su host de prueba.
+
+El seed también deja **8 semanas de historial** en los 8 restaurantes
+(`seedHistory`): unos 12 000 grupos ya sentados o ausentes, con más gente el
+fin de semana y en los picos del mediodía y de la noche, y clientes
+habituales que llenan el top de clientes. Es determinista: repetirlo no
+duplica nada. Con `NODE_ENV=production` el seed entero se niega a correr.
 
 `npm run seed:reset` borra los restaurantes, y con ellos las asignaciones de
 `user_restaurants`. El seed se las devuelve a estos usuarios sin tocar su
