@@ -4,24 +4,38 @@ Esta guía configura Table Waitlist en Railway con el repositorio de GitHub y la
 
 ## 1. Crear el proyecto desde GitHub
 
-1. Entra en [railway.app](https://railway.app/) e inicia sesión.
-2. Pulsa **New Project** y elige **Deploy from GitHub repo**.
-3. Selecciona `Trabajo-en-equipo-mesasgc`.
-4. En el servicio, abre **Settings → Source** y selecciona la rama `main` como rama de despliegue.
-5. Genera un dominio público de Railway desde la sección de dominios del servicio. Lo necesitarás para `BETTER_AUTH_URL`.
+1. Entra en [railway.com](https://railway.com/new) e inicia sesión.
+2. Elige **Deploy from GitHub repo**. Si lo pide, instala la app de Railway en GitHub solo para `carlos388mendoza/Trabajo-en-equipo-mesasgc` (**Only select repositories**).
+3. Selecciona `Trabajo-en-equipo-mesasgc` y pulsa **Deploy Now**. El primer despliegue puede fallar: todavía no hay variables ni comandos.
+4. En el servicio, abre **Settings → Source**, confirma la rama `main` y marca **Wait for CI**. Así Railway solo despliega cuando pasa el CI de GitHub.
+5. Genera el dominio público (`railway domain` en la CLI, o desde **Settings → Networking**). Lo necesitarás para `BETTER_AUTH_URL`.
+6. Escribe a mano los comandos de la tabla siguiente.
 
-### Los comandos salen de `railway.json`
+Producción hoy: proyecto `noble-energy`, servicio `Trabajo-en-equipo-mesasgc`, región US East, dominio `https://trabajo-en-equipo-mesasgc-production.up.railway.app`.
 
-El repositorio trae `railway.json` en la raíz, y Railway toma de ahí los comandos del servicio. No hace falta escribirlos a mano:
+### Los comandos se escriben a mano en Railway
 
-| Paso | Comando | Qué hace |
-|---|---|---|
-| Build | `npm ci && npm run build` | Instala las dependencias y compila la app |
-| Pre-deploy | `npm run db:migrate && npm run db:catalog` | Aplica a la base las migraciones que falten y carga el catálogo de elementos del editor (sin él, la paleta sale vacía) |
-| Start | `npm start` | Arranca Next y Socket.IO en el puerto que da Railway |
-| Healthcheck | `/api/health` | Railway espera un 200 antes de dar el despliegue por bueno |
+**Railway no lee `railway.json` en este servicio.** Desde el 28 de agosto de 2026, los servicios nuevos ya no pueden usar *Config as Code* (`railway.json`): Railway lo sustituye por *Infrastructure as Code* (`.railway/railway.ts`). Nuestro servicio se creó el 30 de septiembre, así que en el primer despliegue solo usó el comando de build. **No corrió el Pre-deploy ni el healthcheck, y la base quedó vacía.**
 
-Después del primer despliegue, abre **Settings** y comprueba que esos cuatro valores aparecen ahí. Si no aparecen, por ejemplo porque el servicio no leyó el archivo, escríbelos a mano con los mismos valores de la tabla: tienen que coincidir siempre con `railway.json`. Consulta la [documentación de Config as Code](https://docs.railway.com/config-as-code/reference) si la interfaz de Railway cambió.
+Por eso los valores se escriben a mano en el servicio, en **Settings**:
+
+| Sección de Settings | Campo | Valor | Qué hace |
+|---|---|---|---|
+| Build | Custom Build Command | `npm ci && npm run build` | Instala las dependencias y compila la app |
+| Deploy | Pre-deploy Command | `npm run db:migrate && npm run db:catalog` | Aplica las migraciones que falten y carga el catálogo de elementos del editor (sin él, la paleta sale vacía) |
+| Deploy | Custom Start Command | `npm start` | Arranca Next y Socket.IO en el puerto que da Railway |
+| Deploy | Healthcheck Path | `/api/health` (timeout `300`) | Railway espera un 200 antes de dar el despliegue por bueno |
+| Deploy | Restart Policy | *On Failure*, 5 reintentos | Reinicia el contenedor si se cae |
+
+`railway.json` se queda en el repositorio **solo como referencia** de esos valores: si cambias uno, cámbialo en los dos sitios. Los valores de Railway son los que mandan.
+
+Después de cada cambio de configuración, comprueba en el log del despliegue estas tres líneas:
+
+- `migrations applied successfully!` (Pre-deploy, `db:migrate`);
+- `catálogo de elementos: 8 tipos listos` (Pre-deploy, `db:catalog`);
+- `Healthcheck succeeded!` (log de build).
+
+> **Pendiente:** migrar esta configuración a *Infrastructure as Code* (`.railway/railway.ts`, ver `railway config migrate` y la [guía de migración](https://docs.railway.com/infrastructure-as-code#migrating-from-config-as-code)). Así los comandos vuelven a vivir en el repositorio y se revisan por PR. Los servicios antiguos pueden usar `railway.json` hasta el 1 de diciembre de 2026.
 
 Las migraciones de Drizzle son incrementales. El despliegue **nunca** ejecuta el seed ni `db:push`.
 
@@ -59,26 +73,23 @@ La URL y el token de Turso son de **producción**. No corras `npm run db:seed`, 
 
 Después del primer despliegue, con las variables de Railway ya guardadas:
 
-1. Instala e inicia sesión en [Railway CLI](https://docs.railway.com/cli).
-2. En PowerShell, entra a la carpeta del proyecto y enlaza la CLI con el proyecto y servicio:
+1. Instala e inicia sesión en [Railway CLI](https://docs.railway.com/cli) (`npm i -g @railway/cli` y `railway login`). En Windows con nvm, si PowerShell no encuentra `railway`, usa `& "$(npm prefix -g)\railway.cmd"` en su lugar.
+2. En PowerShell, entra a la carpeta del proyecto, ponla al día con `main` y enlaza la CLI con el proyecto y el servicio:
 
    ```powershell
-   railway link
+   git switch main; git pull
+   railway link --project noble-energy --service Trabajo-en-equipo-mesasgc --environment production
    ```
 
-3. Abre una consola dentro del contenedor desplegado:
+3. Corre el script con las variables de producción:
 
    ```powershell
-   railway ssh
+   railway run npm run create-admin
    ```
 
-4. En esa consola ejecuta:
+   `railway run` ejecuta el script **en tu computadora** con las variables del servicio, así que se conecta a la base de producción. `dotenv` no pisa esas variables con las de tu `.env.local`. Otra opción es `railway ssh` y, dentro del contenedor, `npm run create-admin`.
 
-   ```sh
-   npm run create-admin
-   ```
-
-5. Sigue las preguntas para el nombre, correo y contraseña. Usa una contraseña nueva y segura, distinta de `12345abc`. No la guardes en este repositorio ni la compartas por chat.
+4. Sigue las preguntas: correo, nombre y contraseña. La contraseña no se muestra al escribirla y necesita el largo mínimo que pide la app. Usa una contraseña nueva y segura, distinta de `12345abc`. No la guardes en este repositorio ni la compartas por chat.
 
 El comando crea solo al administrador inicial; no ejecutes el seed en producción.
 
@@ -88,8 +99,9 @@ El comando crea solo al administrador inicial; no ejecutes el seed en producció
 2. Entra a **Deployments**, selecciona el despliegue más reciente y abre sus logs de **Build** y **Deploy**.
 3. Si falla la compilación, revisa el primer error de Build. Si falla al iniciar, confirma que están las seis variables y que `BETTER_AUTH_URL` coincide con el dominio HTTPS.
 4. Si falló la migración, verifica la URL y el token de Turso y el permiso de escritura. Corrige la variable o el acceso y vuelve a desplegar; no intentes arreglarlo con `db:push`.
-5. Si el healthcheck falla, confirma en **Settings** que los comandos coinciden con `railway.json` (Healthcheck Path `/api/health`) y que `/api/health` responde `{"ok":true}`.
-6. Si el Pre-deploy dice que una tabla ya existe, la base no era nueva (ver 1b). Crea una base vacía, cambia `TURSO_DATABASE_URL` y `TURSO_AUTH_TOKEN` y vuelve a desplegar.
+5. Si el healthcheck falla, confirma en **Settings** que los comandos coinciden con la tabla de la sección 1 (Healthcheck Path `/api/health`) y que `/api/health` responde `{"ok":true}`.
+6. Si el despliegue sale bien pero no se puede iniciar sesión, mira si en el log aparece `migrations applied successfully!`. Si no aparece, el Pre-deploy no está configurado: escríbelo en **Settings → Deploy** (sección 1) y vuelve a desplegar. `/api/health` no consulta la base, así que responde 200 aunque esté vacía.
+7. Si el Pre-deploy dice que una tabla ya existe, la base no era nueva (ver 1b). Crea una base vacía, cambia `TURSO_DATABASE_URL` y `TURSO_AUTH_TOKEN` y vuelve a desplegar.
 
 ## 5. Controlar el gasto del asistente
 
