@@ -19,6 +19,7 @@
     "demo:host": "node scripts/demo-host.mjs",
     "db:migrate": "drizzle-kit migrate",
     "db:catalog": "tsx scripts/db-catalog.mts",
+    "db:restaurantes": "tsx scripts/db-restaurantes.mts",
     "create-admin": "tsx scripts/create-admin.mts",
     "verify:auth": "tsx scripts/verify-auth.mts"
   },

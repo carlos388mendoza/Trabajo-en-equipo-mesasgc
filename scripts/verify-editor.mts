@@ -988,6 +988,49 @@ console.log("\nCatálogo de elementos (db:catalog, también en producción)");
   check("  no toca ninguna mesa", JSON.stringify(tablesAfter) === JSON.stringify(tablesBefore));
 }
 
+console.log("\nRestaurantes base (db:restaurantes, también en producción)");
+
+{
+  // Se simula una base que ya tiene datos reales: `rest_centro` existe con
+  // otro nombre y su propia zona, y otro restaurante ocupa el slug de KFC Río
+  // Piedras. Nada de eso se puede pisar.
+  const { BASE_BRANDS, BASE_RESTAURANTS, ensureBaseRestaurants } = await import("@/lib/layout/base-restaurants");
+  const { brands, user, waitlistEntries } = await import("@/lib/db/schema");
+  const { eq, inArray, sql } = await import("drizzle-orm");
+  await db.insert(restaurants).values([
+    { id: "rest_centro", name: "Nombre puesto a mano", slug: "slug-propio" },
+    { id: "rest-ocupa-slug", name: "Otro local", slug: "kfc-rio-piedras" },
+  ]);
+  await db.insert(tableLayouts).values({ id: "zona-propia", restaurantId: "rest_centro", name: "Terraza dibujada", isDefault: true });
+  const count = async (table: typeof tables | typeof waitlistEntries | typeof user) =>
+    Number((await db.select({ n: sql<number>`count(*)` }).from(table))[0].n);
+  const before = { tables: await count(tables), entries: await count(waitlistEntries), users: await count(user) };
+
+  const first = await ensureBaseRestaurants();
+  const second = await ensureBaseRestaurants();
+  const created = BASE_RESTAURANTS.filter((r) => r.id !== "rest_centro" && r.id !== "rest_sps_kfc");
+  const zonesOf = async (restaurantId: string) => db.select().from(tableLayouts).where(eq(tableLayouts.restaurantId, restaurantId));
+  const centro = (await db.select().from(restaurants).where(eq(restaurants.id, "rest_centro")))[0];
+
+  check("crea las 4 marcas, los restaurantes que faltan y una zona por cada uno",
+    first.brandsCreated === BASE_BRANDS.length && first.restaurantsCreated === created.length && first.zonesCreated === created.length,
+    JSON.stringify(first));
+  check("  repetirlo no crea nada", second.brandsCreated === 0 && second.restaurantsCreated === 0 && second.zonesCreated === 0, JSON.stringify(second));
+  check("  las marcas quedan con su id", (await db.select().from(brands)).length === BASE_BRANDS.length);
+  check("  no pisa un restaurante que ya existía", centro?.name === "Nombre puesto a mano" && centro.slug === "slug-propio");
+  check("  ni le añade zona si ya tenía una", (await zonesOf("rest_centro")).map((z) => z.id).join(",") === "zona-propia");
+  check("  si otro restaurante ocupa su slug, no lo crea ni le hace zona",
+    (await db.select().from(restaurants).where(eq(restaurants.id, "rest_sps_kfc"))).length === 0 && (await zonesOf("rest_sps_kfc")).length === 0);
+  const newZones = await Promise.all(created.map((r) => zonesOf(r.id)));
+  check("  cada restaurante nuevo tiene una sola zona, vacía y predeterminada",
+    newZones.every((z) => z.length === 1 && z[0].isDefault && z[0].rotation === 0));
+  const createdRows = await db.select().from(restaurants).where(inArray(restaurants.id, created.map((r) => r.id)));
+  check("  con su marca, ciudad y posición del mapa",
+    createdRows.length === created.length && createdRows.every((r) => r.brandId && r.city && r.mapX !== null && r.mapY !== null));
+  check("  no crea mesas, clientes ni usuarios",
+    (await count(tables)) === before.tables && (await count(waitlistEntries)) === before.entries && (await count(user)) === before.users);
+}
+
 // ---------------------------------------------------------------------------
 
 // El cliente de libSQL sigue con la conexión abierta (el proxy de `lib/db` es

@@ -93,6 +93,20 @@ Después del primer despliegue, con las variables de Railway ya guardadas:
 
 El comando crea solo al administrador inicial; no ejecutes el seed en producción.
 
+## 3b. Cargar las marcas y los restaurantes
+
+La app todavía no tiene pantalla para crear restaurantes, marcas ni zonas. Se cargan una vez, con la CLI ya enlazada (sección 3):
+
+```powershell
+railway run npm run db:restaurantes
+```
+
+- Crea las 4 marcas (China Wok, Pizza Hut, KFC y Denny's), los 8 restaurantes con su ciudad y su posición en el mapa, y una zona vacía, «Comedor principal», en cada uno.
+- **No crea mesas, clientes ni usuarios**, y no borra ni actualiza nada: lo que ya existe se queda como está, y a un restaurante que ya tiene zonas no le añade otra.
+- Repetirlo no duplica nada: la segunda vez dice «0» en todo.
+
+Después, el admin crea desde `/admin` los usuarios de cada restaurante, y cada host dibuja su plano en el editor, sobre la zona vacía.
+
 ## 4. Revisar un despliegue fallido
 
 1. Abre el proyecto y servicio en Railway.

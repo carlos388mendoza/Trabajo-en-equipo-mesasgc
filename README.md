@@ -195,8 +195,10 @@ obligatorio para iniciar sesión (`openssl rand -base64 32`).
 se generan con `npm run db:generate` (quedan en `drizzle/`) y se aplican con
 `npm run db:migrate`. El catálogo de elementos del editor lo carga
 `npm run db:catalog` (solo toca `element_types`; Railway lo corre en el
-Pre-deploy). El primer admin de producción se crea con
-`npm run create-admin` (sección 15).
+Pre-deploy). Las 4 marcas, los 8 restaurantes y una zona vacía por
+restaurante los carga `npm run db:restaurantes`: solo añade lo que falta y
+nunca crea mesas, clientes ni usuarios. El primer admin de producción se crea
+con `npm run create-admin` (sección 15).
 
 Otros scripts: `db:generate` (genera SQL en `drizzle/`), `db:studio`,
 `seed:reset` (borra los datos de layout y vuelve a sembrar; **no** toca las
