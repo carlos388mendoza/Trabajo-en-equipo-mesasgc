@@ -51,7 +51,15 @@ Qué significa cada marca:
 | `plano:ver` | `/restaurante/[id]/mapa` y la action `loadLivePlan` (estados y ocupación) | Sí | Suyos | Sí |
 | `plano:clientes` | Nombre del cliente de cada mesa en el plano en vivo | Sí | Suyos | — |
 
-Tres casos que vale la pena tener presentes:
+Cuatro casos que vale la pena tener presentes:
+
+- **Varios restaurantes, un usuario** (el piloto: Denny's y Pizza Hut). Con
+  el rol restaurante y varios restaurantes asignados, tiene el modo sencillo
+  y el completo en **cada uno** y en ningún otro. En `/inicio` ve una
+  tarjeta por restaurante, y la cabecera le muestra un selector para cambiar
+  entre ellos. Es solo navegación: cada página, API y evento de socket vuelve
+  a comprobar `can()`, y el socket usa la room en la que entró, nunca el
+  `restaurantId` del payload.
 
 - **Un restaurante desactivado** (`restaurants.active = false`) deja de contar
   en los `restaurantIds` del usuario (`loadAuthUser`), así que su host pierde

@@ -117,8 +117,29 @@ clientes.
 
 ## 3. Plan de piloto
 
-**Dónde:** un solo restaurante con buen volumen, y un encargado dispuesto a
-dar comentarios. Sugerencia: **China Wok Centro** (Tegucigalpa).
+**Dónde:** los **4 restaurantes de Denny's y Pizza Hut**, dos en cada ciudad:
+
+| Restaurante | Marca | Ciudad |
+|---|---|---|
+| Denny's Las Lomas | Denny's | Tegucigalpa |
+| Denny's Los Andes | Denny's | San Pedro Sula |
+| Pizza Hut Los Próceres | Pizza Hut | Tegucigalpa |
+| Pizza Hut Norte | Pizza Hut | San Pedro Sula |
+
+China Wok y KFC **siguen en el sistema** (mapa, estadísticas y datos), pero
+no entran en el piloto.
+
+**Quién:** **un solo usuario de restaurante** con los 4 locales asignados,
+«Denny's y Pizza Hut» (`dennys-pizzahut@grupocomidas.test`). Al entrar ve
+una tarjeta por restaurante, con cuántos clientes esperan, y cambia de uno a
+otro con el selector de la cabecera. En cada uno tiene el modo sencillo (la
+lista de espera) y el completo (el plano). Cómo crearlo: ver 3.1.
+
+> **Ojo:** un usuario compartido entre 4 locales significa una contraseña que
+> conocen varias personas. Para el piloto se acepta a propósito, por
+> sencillez. Cuando termine, conviene un usuario por host (el administrador
+> puede asignar a cada uno solo su restaurante) y cambiar la contraseña del
+> compartido desde `/admin` (botón «Contraseña»).
 
 **Cuánto:** una semana completa, de lunes a domingo, incluido un fin de
 semana con hora pico.
@@ -139,7 +160,7 @@ semana con hora pico.
 | Errores y «Sin conexión» | La hoja del encargado | Ninguno que obligue a volver al papel más de 10 minutos |
 | ¿Los hosts la usan? | Charla con el encargado | Que la prefieran al papel |
 
-**Cuándo pasar a los 8 restaurantes:**
+**Cuándo pasar a China Wok y KFC:**
 
 - ✅ Durante la semana no hubo que volver al papel por más de 10 minutos
   seguidos.
@@ -147,16 +168,64 @@ semana con hora pico.
 - ✅ Ningún error que perdiera clientes de la lista.
 - ✅ La dirección tomó las decisiones de datos personales (2.5).
 
-Si se cumple todo: añadir **2 restaurantes por semana**, y no los 7 de
-golpe, para dar soporte a cada uno. Si no se cumple: corregir lo que falló y
-repetir una semana en el mismo restaurante.
+Si se cumple todo: añadir **2 restaurantes por semana** (por ejemplo, primero
+los dos China Wok y luego los dos KFC), para dar soporte a cada uno. Si no se
+cumple: corregir lo que falló y repetir una semana con los mismos 4.
+
+### 3.1 Preparar el piloto en /admin
+
+**Crear el usuario del piloto** (lo hace el administrador, entrando con su
+usuario):
+
+1. Abre **Administración** (`/admin`) y pulsa **Nuevo usuario**.
+2. **Nombre:** «Denny's y Pizza Hut». **Correo:**
+   `dennys-pizzahut@grupocomidas.test`.
+3. **Contraseña temporal:** escribe una o pulsa el botón de generar, y
+   compártela con el encargado por un canal seguro (no por el chat del grupo).
+4. **Roles:** deja solo **Restaurante**.
+5. **Restaurantes:** en el grupo **Denny's** pulsa **Marcar todos**, y lo
+   mismo en **Pizza Hut**. Arriba tiene que decir «4 de 8».
+6. Pulsa **Crear usuario**. Sale en verde «Usuario … creado».
+7. Para comprobarlo, entra con ese usuario en otra ventana privada: tiene que
+   ver sus 4 tarjetas en **Inicio**.
+
+**Dibujar el plano de cada local:** en cada tarjeta, **Modo completo** abre
+el editor sobre la zona vacía «Comedor principal»: arrastra mesas, baños,
+caja, barra, puertas y paredes, y pulsa **Guardar**.
+
+### 3.2 Agregar un restaurante o una marca nuevos
+
+Desde **Administración → Marcas y restaurantes**, sin scripts:
+
+- **Marca nueva:** **Nueva marca** → nombre y color → **Crear marca**.
+- **Restaurante nuevo:** **Nuevo restaurante** →
+  1. el nombre y la marca;
+  2. la **ubicación**: elige una ciudad del mapa (rellena la ciudad, la
+     latitud y la longitud) o escribe las coordenadas del local, que se
+     pueden copiar de cualquier mapa;
+  3. **Crear restaurante**.
+
+  Sale de inmediato en el mapa de Honduras, en las estadísticas y en los
+  accesos, con una zona vacía lista para dibujar su plano.
+- **Darle acceso a alguien:** en **Usuarios**, **Acceso** del usuario →
+  marca el restaurante → **Guardar acceso**.
+- **Cerrar un restaurante:** **Desactivar** (pide confirmación). No se borra
+  nada: sus usuarios dejan de verlo y sale del mapa, pero su historial sigue
+  en las estadísticas. **Activar** lo devuelve tal como estaba.
 
 ## 4. Manual del host (1 página)
 
 > **Imprime esta sección y déjala junto a la tablet.**
 
 **Entrar:** abre la aplicación, escribe tu correo y tu contraseña y pulsa
-**Entrar**. Llegas directo a **Modo sencillo**.
+**Entrar**. Llegas a **Inicio**, con una tarjeta por cada uno de tus
+restaurantes y cuántos clientes esperan en cada uno. Pulsa **Modo sencillo**
+en el tuyo. (Si solo tienes uno, entras directo.)
+
+**Cambiar de restaurante:** arriba, junto al logo, está el nombre del
+restaurante en el que estás. Tócalo y elige otro: se abre la misma pantalla
+en el restaurante elegido. **Revisa siempre ese nombre antes de agregar a
+alguien**, para no anotarlo en otro local.
 
 **Agregar un cliente**
 
@@ -186,8 +255,8 @@ puede: corrígelo a mano.
    encargado. Cuando vuelva la conexión, pasa a la tablet a los que sigan
    esperando.
 
-**Nunca compartas tu contraseña.** Si alguien nuevo necesita entrar, el
-administrador le crea su propio usuario.
+**No compartas la contraseña fuera del equipo del piloto.** Si alguien nuevo
+necesita entrar, el administrador le crea su propio usuario.
 
 ## 5. Costos mensuales aproximados
 

@@ -58,7 +58,9 @@ Todo esto está en `testing` y en `main`.
 | Modo rápido (Miembro B) | En vivo por Socket.IO (`waitlist:add`, `waitlist:resolve` y `waitlist:undo`, con `canModifyWaitlist`), tarjetas tipo Tinder con `motion` y Deshacer (botón y Ctrl+Z). | `components/quick-mode/`, `lib/waitlist/`, README §11 | #9 |
 | Estadísticas e IA (Miembro B) | Últimos 14 días en hora de Honduras, «tiempo hasta avisar» con `called_at`, top 10 de clientes y asistente. | `components/analytics/`, `lib/analytics/`, `app/api/` | #9 |
 | Marcas en estadísticas y privacidad del asistente (Miembro B) | Filtros por marca real (`restaurants.brand_id`) y por ciudad. El top de clientes viaja a OpenRouter con alias («Cliente 1»…) y sin teléfonos ni notas; los nombres se restauran solo en pantalla. La anonimización busca los datos sensibles sobre el texto original y solo como palabra entera: conserva fechas, días, cantidades, restaurantes y marcas. | `lib/analytics/`, README | #17, #19 |
-| Mapa general y marcas | Tabla `brands` (4 marcas). `/mapa`, en estilo radar, con **todo Honduras**: silueta real, 18 departamentos, vecinos, Islas de la Bahía, Golfo de Fonseca y 11 ciudades principales (Natural Earth, dominio público, dentro del repo). Restaurantes en su ubicación real (`latitude`/`longitude`, migración `0004`). Rueda, pellizco, arrastre, botones «Ver todo Honduras» / Tegucigalpa / San Pedro Sula, minimapa y grupos por ciudad vistos de lejos. En vivo (solo contadores), con filtros, lista por espera y zoom al plano. `/restaurante/[id]/mapa` para el host. Analitica no ve nombres. | `lib/map/`, `components/map/`, README §16, `docs/mapa-honduras.md`, `docs/rbac.md` | #11, este PR |
+| Mapa general y marcas | Tabla `brands` (4 marcas). `/mapa`, en estilo radar, con **todo Honduras**: silueta real, 18 departamentos, vecinos, Islas de la Bahía, Golfo de Fonseca y 11 ciudades principales (Natural Earth, dominio público, dentro del repo). Restaurantes en su ubicación real (`latitude`/`longitude`, migración `0004`). Rueda, pellizco, arrastre, botones «Ver todo Honduras» / Tegucigalpa / San Pedro Sula, minimapa y grupos por ciudad vistos de lejos. En vivo (solo contadores), con filtros, lista por espera y zoom al plano. `/restaurante/[id]/mapa` para el host. Analitica no ve nombres. | `lib/map/`, `components/map/`, README §16, `docs/mapa-honduras.md`, `docs/rbac.md` | #11, #28 |
+| Marcas y restaurantes desde /admin | Crear, editar y desactivar marcas (nombre y color) y restaurantes (nombre, marca, ciudad, latitud y longitud, o una ciudad del mapa). Un restaurante nuevo nace con una zona vacía y sale de inmediato en el mapa, las estadísticas y los accesos. Desactivar no borra nada (migración `0005`, `active`): sale de la operación, pero conserva su historial y sus asignaciones. Permiso `catalogo:gestionar` (solo admin). | `lib/layout/catalog-admin.ts`, `app/admin/catalog-actions.ts`, `components/admin/admin-catalog.tsx`, README §16 | #35 |
+| Un usuario para varios restaurantes | Selector de restaurante en la cabecera (color e inicial de la marca) que lleva al mismo modo, y `/inicio` con una tarjeta por restaurante (cuántos esperan y espera media, se refresca sola). Al cambiar, el socket sale de la room anterior y entra en la nueva. En `/admin`, restaurantes agrupados por marca, con «Marcar todos» y buscador. | `components/layout/restaurant-switcher.tsx`, `app/inicio/page.tsx`, `components/admin/admin-users.tsx` | #36, #37 |
 | Aspecto | Estilo de mapa «radar», minimapa, íconos de lucide y temas Claro, Oscuro, Sistema y Personalizado, sin parpadeo. | `lib/theme/`, `/ajustes`, README §13 | #7 |
 | CI | GitHub Actions en cada PR y cada push a `testing` y `main`: typecheck, lint, build y los tres `verify`, con Node 22 y `npm ci`. | `.github/workflows/ci.yml` | #10 |
 | Despliegue | Comandos de Railway (build, Pre-deploy `db:migrate && db:catalog`, start y healthcheck), `/api/health` público y guía paso a paso. `railway.json` queda como referencia. | `docs/despliegue.md`, `railway.json` | #13, #21 |
@@ -112,6 +114,11 @@ mismo árbol) el 30 de septiembre:
 | #31 | `fix/redirect-interno` (error SSL de las redirecciones) | Fusionado con revisión propia. |
 | #32 | `fix/admin-confirmar` (confirmar contraseña y desactivar en `/admin`) | Fusionado con revisión propia. |
 | #33 | `testing` → `main` (segunda publicación) | Fusionado con revisión propia; desplegado. |
+| #34 | `docs/estado-produccion-2` (estado tras la segunda publicación) | Fusionado con revisión propia. |
+| #35 | `feat/admin-restaurantes` (marcas y restaurantes desde `/admin`, migración `0005`) | Fusionado con revisión propia. |
+| #36 | `feat/varios-restaurantes` (selector de restaurante y tarjetas en `/inicio`) | Fusionado con revisión propia. |
+| #37 | `feat/accesos-por-marca` (accesos por marca, «marcar todos» y buscador) | Fusionado con revisión propia. |
+| — | `docs/piloto-dennys-pizzahut` (este documento: piloto con Denny's y Pizza Hut) | PR abierto hacia `testing`. |
 
 ### Protección de `main` y `testing`
 
@@ -264,13 +271,25 @@ Pendiente:
 - [ ] **¿Cuánto tiempo se guarda el historial de clientes** antes de
       borrarlo?
 
-**Piloto en China Wok Centro** (ver `docs/salida-a-produccion.md`, sección 3)
+**Piloto con Denny's y Pizza Hut** (ver `docs/salida-a-produccion.md`, sección 3)
 
-- [ ] Con los restaurantes cargados, el admin crea desde `/admin` un
-      usuario **restaurante** por cada host de China Wok Centro.
-- [ ] El host dibuja el plano real del local en el editor, en tablet.
-- [ ] Una semana completa, de lunes a domingo, con el encargado dando
+La empresa decidió que el piloto sea con los **4 restaurantes de Denny's y
+Pizza Hut** (Denny's Las Lomas, Denny's Los Andes, Pizza Hut Los Próceres y
+Pizza Hut Norte), con **un solo usuario** para los 4. China Wok y KFC siguen
+en el sistema (mapa, estadísticas y datos) y entran después.
+
+- [ ] El admin crea en `/admin` el usuario **«Denny's y Pizza Hut»**
+      (`dennys-pizzahut@grupocomidas.test`, rol restaurante, los 4
+      restaurantes con «Marcar todos» en Denny's y en Pizza Hut). Pasos en
+      `docs/salida-a-produccion.md`, sección 3.1.
+- [ ] Dibujar en el editor (modo completo) el plano real de cada uno de los
+      4 locales, sobre su zona vacía.
+- [ ] Probar con la mano en la tablet: deslizar con dedo, ratón y lápiz, y
+      Ctrl+Z (#29). El navegador de las pruebas automáticas no pintaba.
+- [ ] Una semana completa, de lunes a domingo, con los encargados dando
       comentarios. Se miden la espera promedio y el uso frente al papel.
+- [ ] Al terminar: un usuario por host y cambiar la contraseña del usuario
+      compartido.
 
 **Antes de presentar**
 
@@ -293,9 +312,12 @@ Pendiente:
 - **Pasar al tema el modo rápido y las estadísticas** (Miembro B).
 - **Guardar el tema por usuario** en la base de datos: hoy vive en el
   navegador.
-- **Pantalla en `/admin` para crear restaurantes**, marcas y zonas, y para
-  mover cada restaurante en el mapa. Hoy los crean `npm run db:restaurantes`
-  (producción) y el seed (desarrollo), y no se pueden editar desde la app.
+- **Varias zonas desde `/admin`.** Hoy cada restaurante nuevo nace con una
+  zona, «Comedor principal»; para una terraza o un segundo piso hay que
+  copiar el plano de otro restaurante (el editor lo permite) o pedirlo al
+  equipo.
+- **Logos de las marcas.** Hoy cada marca se distingue por su color y su
+  inicial.
 - **Que cada usuario cambie su propia contraseña.** El admin ya cambia la suya
   y restablece la de cualquiera desde `/admin` (botón «Contraseña», que
   además cierra las sesiones abiertas). Lo que falta es que un host o una
