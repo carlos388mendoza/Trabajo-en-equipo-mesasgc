@@ -97,15 +97,21 @@ Desde el 30 de septiembre, las dos ramas tienen en GitHub el *ruleset*
 `proteger-main-testing`, activo y **sin bypass para nadie**, ni siquiera para
 los administradores del repositorio:
 
-- **Solo se entra por PR**, y el PR necesita **1 aprobación**. GitHub no deja
-  que el autor apruebe su propio PR, así que en la práctica **lo aprueba el
-  otro miembro**.
+- **Solo se entra por PR.** Desde el 30 de septiembre, con el Miembro B ya
+  fuera del proyecto, el PR pide **0 aprobaciones** (antes pedía 1).
 - **El CI tiene que estar en verde.** El check obligatorio es el job
   «Typecheck, lint, build y verificaciones» de `.github/workflows/ci.yml`.
 - **No se puede borrar la rama ni hacer *force push*.**
 
-Con esto ya no se puede repetir lo del #17 (fusionado sin aprobación), ni
-llegar a `main` sin que el otro miembro lo apruebe.
+**Cómo se revisa ahora cada PR** (también en `CLAUDE.md`):
+
+1. Sin revisor asignado: ya no se pide la revisión de `vbgjptt89g-beep`.
+2. Quien abre el PR hace una revisión de código (bugs, seguridad, secretos y
+   cumplimiento del enunciado) y la deja como comentario en el PR.
+3. Se corren `typecheck`, `lint`, `build` y los tres `verify`.
+4. Se fusiona con merge normal solo con el CI en verde y sin problemas
+   abiertos en la revisión.
+5. Los PR hacia `main` esperan el «sí» explícito de Carlos (Miembro A).
 
 Reglas del equipo: nunca se trabaja ni se hace push en `main`; las ramas salen
 de `testing` y los PR van hacia `testing`; commits con prefijo (`feat`, `fix`,
@@ -208,9 +214,8 @@ Hecho el 30 de septiembre:
 
 Pendiente:
 
-- [ ] Crear el **primer admin real** con `railway run npm run create-admin`
-      (ver `docs/despliegue.md`, sección 3), con una contraseña nueva, nunca
-      `12345abc`. No correr nunca el seed contra producción.
+- [x] Crear el **primer admin real** con `railway run npm run create-admin`
+      (ver `docs/despliegue.md`, sección 3). Lo creó Carlos y entró bien.
 - [ ] **Cargar los restaurantes y las marcas reales** con
       `railway run npm run db:restaurantes` (ver `docs/despliegue.md`,
       sección 3b). La app no tiene pantalla para crear restaurantes, marcas
@@ -251,6 +256,10 @@ Pendiente:
 - [ ] El asistente sin `OPENROUTER_API_KEY` no entiende «¿qué semana fue más
       lenta?» (responde el mensaje genérico); con la clave sí la contesta.
       Si se quiere sin clave, hay que añadirla a `localAnswer` (Miembro B).
+- [ ] **Arreglo del modo rápido que quedó fuera:** el commit `4701330` de la
+      rama `feat/quick-mode-live` («permitir arrastre con mouse y lápiz») se
+      subió después de fusionar el #9 y nunca llegó a `testing`. La rama se
+      conserva hasta decidir si se incorpora.
 
 ### Más adelante
 
@@ -264,9 +273,10 @@ Pendiente:
 - **Pantalla en `/admin` para crear restaurantes**, marcas y zonas, y para
   mover cada restaurante en el mapa. Hoy los crean `npm run db:restaurantes`
   (producción) y el seed (desarrollo), y no se pueden editar desde la app.
-- **Cambiar la contraseña desde la app.** Hoy cada usuario se queda con la
-  contraseña que le puso el admin al crearlo; solo el admin puede
-  desactivarlo.
+- **Que cada usuario cambie su propia contraseña.** El admin ya cambia la suya
+  y restablece la de cualquiera desde `/admin` (botón «Contraseña», que
+  además cierra las sesiones abiertas). Lo que falta es que un host o una
+  analista la cambien sin pedírselo al admin.
 - **Que alguna pantalla ponga mesas en «reservada».**
 - **Más de un servidor.** El Deshacer del modo rápido y las salas de Socket.IO
   viven en la memoria del proceso: basta para 8 restaurantes en un solo
