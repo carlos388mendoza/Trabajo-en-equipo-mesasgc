@@ -132,7 +132,7 @@ function localAnswer(question: string, statistics: AnalyticsData): string {
   if (/avis|llamar|notificar|tiempo.*listo|listo.*tiempo/.test(normalized)) {
     if (!statistics.totals.calledGroups) return "No hay clientes avisados en el período seleccionado para calcular el tiempo hasta avisar.";
     const groups = statistics.totals.calledGroups;
-    return `Se avisó a ${groupCount(groups)}, con un promedio de ${statistics.totals.averageCallMinutes} minutos desde su llegada hasta marcarlo${groups === 1 ? "" : "s"} como listo${groups === 1 ? "" : "s"}.`;
+    return `Se avisó a ${groupCount(groups)}, con un promedio de ${minuteCount(statistics.totals.averageCallMinutes)} desde su llegada hasta marcarlo${groups === 1 ? "" : "s"} como listo${groups === 1 ? "" : "s"}.`;
   }
 
   if (/marca/.test(normalized) && /espera|lento|tard/.test(normalized)) {
@@ -148,7 +148,7 @@ function localAnswer(question: string, statistics: AnalyticsData): string {
       .map(([name, total]) => ({ name, ...total, average: total.totalMinutes / total.groups }))
       .sort((a, b) => b.average - a.average)[0];
     return slowest
-      ? `${slowest.name} tiene la mayor espera promedio: ${Math.round(slowest.average)} minutos en ${groupCount(slowest.groups)}.`
+      ? `${slowest.name} tiene la mayor espera promedio: ${minuteCount(Math.round(slowest.average))} en ${groupCount(slowest.groups)}.`
       : "No hay grupos sentados en el período seleccionado para comparar las marcas.";
   }
 
@@ -171,16 +171,16 @@ function localAnswer(question: string, statistics: AnalyticsData): string {
     if (!activeDays.length) return "No hay días con actividad en el período seleccionado.";
     if (activeDays.length === 1) {
       const onlyDay = activeDays[0];
-      return `Solo hay un día con actividad: ${onlyDay.day}, con ${onlyDay.minutes} minutos de espera promedio. No hay otros días para comparar y decidir cuál fue más rápido o más lento.`;
+      return `Solo hay un día con actividad: ${onlyDay.day}, con ${minuteCount(onlyDay.minutes)} de espera promedio. No hay otros días para comparar y decidir cuál fue más rápido o más lento.`;
     }
     if (asksSlow && asksFast) {
       const slow = statistics.totals.slowestDay;
       const fast = statistics.totals.fastestDay;
-      return `El día más lento fue ${slow?.day} con ${slow?.minutes} minutos; el más rápido fue ${fast?.day} con ${fast?.minutes} minutos de espera promedio.`;
+      return `El día más lento fue ${slow?.day} con ${minuteCount(slow?.minutes ?? 0)}; el más rápido fue ${fast?.day} con ${minuteCount(fast?.minutes ?? 0)} de espera promedio.`;
     }
     const day = asksSlow ? statistics.totals.slowestDay : statistics.totals.fastestDay;
     return day
-      ? `${day.day} fue el día ${asksSlow ? "más lento" : "más rápido"}, con ${day.minutes} minutos de espera promedio.`
+      ? `${day.day} fue el día ${asksSlow ? "más lento" : "más rápido"}, con ${minuteCount(day.minutes)} de espera promedio.`
       : "No hay datos suficientes para comparar los días.";
   }
 
@@ -221,4 +221,8 @@ function localAnswer(question: string, statistics: AnalyticsData): string {
 
 function groupCount(count: number): string {
   return `${count} ${count === 1 ? "grupo" : "grupos"}`;
+}
+
+function minuteCount(count: number): string {
+  return `${count} ${count === 1 ? "minuto" : "minutos"}`;
 }

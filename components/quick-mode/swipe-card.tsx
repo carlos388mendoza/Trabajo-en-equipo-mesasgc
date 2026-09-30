@@ -121,7 +121,7 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
       transition={{ layout: { type: "spring", stiffness: 420, damping: 32 }, y: { type: "spring", stiffness: 420, damping: 32 }, scale: { type: "spring", stiffness: 420, damping: 32 } }}
       style={{ x, rotate, opacity, zIndex: 10 - depth, touchAction: isTop ? "pan-y" : "auto" }}
       className={`absolute inset-x-0 top-0 mx-auto flex h-[330px] w-full max-w-[430px] flex-col overflow-hidden rounded-[2rem] border border-app-border bg-panel p-6 text-panel-text shadow-xl sm:h-[350px] sm:p-8 ${isTop ? "cursor-grab active:cursor-grabbing" : "pointer-events-none"}`}
-      aria-label={`${guest.name}, ${waitingMinutes} minutos esperando`}
+      aria-label={`${guest.name}, ${waitingMinutes} ${waitingMinutes === 1 ? "minuto" : "minutos"} esperando`}
     >
       <AnimatePresence>
         {isTop && (

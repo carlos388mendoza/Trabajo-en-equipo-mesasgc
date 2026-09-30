@@ -93,49 +93,55 @@ function sanitizeText(
   aliases: { name: string; alias: string }[],
   allowedTerms: string[],
 ): string {
-  // Conserva información útil y pública aunque coincida con una nota conocida
-  // o con el formato usado para detectar teléfonos.
-  const protectedValues: string[] = [];
-  let safe = text;
-  const protect = (value: string, pattern?: RegExp) => {
-    const expression = pattern ?? new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(value)}(?![\\p{L}\\p{N}])`, "giu");
-    safe = safe.replace(expression, (match) => {
-      protectedValues.push(match);
-      return `\u0000PROTEGIDO${protectedValues.length - 1}\u0000`;
-    });
-  };
-  protect("", /(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/g);
-  for (const weekday of ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]) {
-    protect(weekday);
-  }
-  protect("", /(?<![\p{L}\p{N}])\d+\s*(?:minutos?|personas?|grupos?)(?![\p{L}\p{N}])/giu);
-  for (const term of allowedTerms.filter(Boolean).sort((a, b) => b.length - a.length)) protect(term);
-
-  const values = [...new Set(sensitiveValues)]
+  // Los datos sensibles se buscan sobre el texto ORIGINAL. Si antes se
+  // apartaran los días, las marcas o las cantidades, un nombre como
+  // «Domingo Pérez» o una nota con «2 personas» dejaría de coincidir completo
+  // y saldría entero hacia OpenRouter. Un término permitido solo gana cuando
+  // el dato sensible queda estrictamente dentro de él (un cliente «China»
+  // dentro de «China Wok Centro»).
+  const allowedSpans = [...allowedTerms, ...WEEKDAYS]
+    .filter(Boolean)
+    .flatMap((term) => wholeValueSpans(text, term));
+  const aliasFor = new Map(aliases.map(({ name, alias }) => [name.toLocaleLowerCase("es-HN"), alias]));
+  const values = [...new Set([...sensitiveValues, ...aliases.map(({ name }) => name)])]
+    .filter(Boolean)
     .sort((a, b) => b.length - a.length);
 
+  const replacements: { start: number; end: number; replacement: string }[] = [];
   for (const value of values) {
-    const alias = aliases.find(({ name }) => name.toLocaleLowerCase("es-HN") === value.toLocaleLowerCase("es-HN"))?.alias;
-    safe = replaceWholeValue(safe, value, alias ?? "[dato privado]");
+    const replacement = aliasFor.get(value.toLocaleLowerCase("es-HN")) ?? "[dato privado]";
+    for (const span of wholeValueSpans(text, value)) {
+      const insideAllowed = allowedSpans.some((allowed) =>
+        allowed.start <= span.start && span.end <= allowed.end && allowed.end - allowed.start > span.end - span.start);
+      // Los valores van de más largo a más corto: si ya hay uno que cubre este
+      // tramo, el más corto no se aplica encima.
+      const overlaps = replacements.some((taken) => span.start < taken.end && taken.start < span.end);
+      if (!insideAllowed && !overlaps) replacements.push({ ...span, replacement });
+    }
   }
-  for (const { name, alias } of aliases) {
-    safe = replaceWholeValue(safe, name, alias);
+  let safe = "";
+  let cursor = 0;
+  for (const { start, end, replacement } of replacements.sort((a, b) => a.start - b.start)) {
+    safe += text.slice(cursor, start) + replacement;
+    cursor = end;
   }
+  safe += text.slice(cursor);
 
-  // Los teléfonos escritos en la pregunta también se quitan. La detección no
-  // altera fechas (protegidas arriba), días de semana ni cantidades pequeñas.
+  // Los teléfonos escritos en la pregunta también se quitan aunque el formato
+  // difiera del guardado. Las fechas AAAA-MM-DD se apartan solo de este patrón,
+  // que las confundiría con un teléfono.
+  const dates: string[] = [];
+  safe = safe.replace(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/g, (date) => `\u0000FECHA${dates.push(date) - 1}\u0000`);
   safe = safe.replace(/(?<![\p{L}\p{N}])\+?\d[\d\s().-]{6,}\d(?![\p{L}\p{N}])/gu, "[dato privado]");
-
-  return safe.replace(/\u0000PROTEGIDO(\d+)\u0000/g, (_match, index: string) => protectedValues[Number(index)]);
+  return safe.replace(/\u0000FECHA(\d+)\u0000/g, (_match, index: string) => dates[Number(index)]);
 }
 
-function replaceWholeValue(text: string, value: string, replacement: string): string {
-  if (!value) return text;
-  const pattern = new RegExp(
-    `(?<![\\p{L}\\p{N}])${escapeRegExp(value)}(?![\\p{L}\\p{N}])`,
-    "giu",
-  );
-  return text.replace(pattern, replacement);
+const WEEKDAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
+
+/** Tramos donde `value` aparece como palabra completa, sin distinguir mayúsculas. */
+function wholeValueSpans(text: string, value: string): { start: number; end: number }[] {
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(value)}(?![\\p{L}\\p{N}])`, "giu");
+  return [...text.matchAll(pattern)].map((match) => ({ start: match.index, end: match.index + match[0].length }));
 }
 
 function escapeRegExp(value: string): string {

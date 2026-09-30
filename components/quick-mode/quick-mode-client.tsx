@@ -63,6 +63,8 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
   const current = waiting[0];
   const today = hondurasToday();
   const todayEntries = guests.filter((guest) => hondurasDateKey(guest.arrived) === today);
+  const readyCount = todayEntries.filter((guest) => guest.status === "ready").length;
+  const absentCount = todayEntries.filter((guest) => guest.status === "absent").length;
 
   function fromSnapshot(entry: WaitlistEntrySnapshot): Guest {
     return {
@@ -517,9 +519,9 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
             <div className="mt-3 flex gap-3 text-sm text-panel-muted">
               <CircleCheck aria-hidden size={17} className="mt-0.5 shrink-0 text-accent" />
               <p>
-                {todayEntries.filter((guest) => guest.status === "ready").length} grupos listos
+                {readyCount} {readyCount === 1 ? "grupo listo" : "grupos listos"}
                 <span className="mx-1">·</span>
-                {todayEntries.filter((guest) => guest.status === "absent").length} ausentes
+                {absentCount} {absentCount === 1 ? "ausente" : "ausentes"}
               </p>
             </div>
           </div>

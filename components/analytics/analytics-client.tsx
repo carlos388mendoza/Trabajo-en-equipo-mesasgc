@@ -339,7 +339,7 @@ function DailyChart({ daily }: { daily: DailyStat[] }) {
           <div key={day.date} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
             <div className="flex h-[85%] items-end gap-1">
               <div title={`${day.groups} ${day.groups === 1 ? "grupo" : "grupos"}`} className="w-4 rounded-t-md bg-accent sm:w-6" style={{ height: `${Math.max(day.groups ? 5 : 0, day.groups / maxGroups * 100)}%` }} />
-              <div title={`${day.minutes} minutos`} className="w-4 rounded-t-md bg-estado-ocupada sm:w-6" style={{ height: `${Math.max(day.minutes ? 5 : 0, day.minutes / maxMinutes * 100)}%` }} />
+              <div title={`${day.minutes} ${day.minutes === 1 ? "minuto" : "minutos"}`} className="w-4 rounded-t-md bg-estado-ocupada sm:w-6" style={{ height: `${Math.max(day.minutes ? 5 : 0, day.minutes / maxMinutes * 100)}%` }} />
             </div>
             <span className="-mb-6 text-xs text-app-muted">{day.day}</span>
           </div>

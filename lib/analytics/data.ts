@@ -184,12 +184,12 @@ export async function getAnalytics(
   const averageCallMinutes = average(calledRows.map((entry) => waitMinutes(entry.arrivedAt, entry.calledAt!)));
   const summary = [
     currentRows.length
-      ? `En los últimos 14 días (hora de Honduras) se sentaron ${currentRows.length} ${currentRows.length === 1 ? "grupo" : "grupos"}; la espera promedio fue de ${average(waits)} minutos.`
+      ? `En los últimos 14 días (hora de Honduras) se sentaron ${currentRows.length} ${currentRows.length === 1 ? "grupo" : "grupos"}; la espera promedio fue de ${minuteCount(average(waits))}.`
       : "Todavía no hay grupos sentados en los últimos 14 días.",
-    slowestDay ? `El día más lento fue ${slowestDay.day}, con ${slowestDay.minutes} minutos de espera.` : "",
+    slowestDay ? `El día más lento fue ${slowestDay.day}, con ${minuteCount(slowestDay.minutes)} de espera.` : "",
     topCustomers[0] ? `El cliente con más grupos acumuló ${topCustomers[0].groups} ${topCustomers[0].groups === 1 ? "grupo" : "grupos"}.` : "",
     calledRows.length
-      ? `Se avisó a ${calledRows.length} ${calledRows.length === 1 ? "grupo" : "grupos"} después de un promedio de ${averageCallMinutes} minutos desde su llegada.`
+      ? `Se avisó a ${calledRows.length} ${calledRows.length === 1 ? "grupo" : "grupos"} después de un promedio de ${minuteCount(averageCallMinutes)} desde su llegada.`
       : "Todavía no hay avisos registrados en los últimos 14 días.",
   ].filter(Boolean).join(" ");
 
@@ -228,4 +228,8 @@ function average(values: number[]): number {
 
 function averageWait(entries: { arrivedAt: Date; seatedAt: Date | null }[]): number {
   return average(entries.map((entry) => waitMinutes(entry.arrivedAt, entry.seatedAt!)));
+}
+
+function minuteCount(count: number): string {
+  return `${count} ${count === 1 ? "minuto" : "minutos"}`;
 }
