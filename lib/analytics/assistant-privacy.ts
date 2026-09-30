@@ -46,7 +46,10 @@ export function buildOpenRouterMessages(
     name: customer.name,
     alias: `Cliente ${index + 1}`,
   }));
-  const sanitize = (value: string) => sanitizeText(value, sensitiveValues, aliases);
+  const allowedTerms = [
+    ...statistics.restaurantsAvailable.flatMap((restaurant) => [restaurant.name, restaurant.brand?.name ?? ""]),
+  ];
+  const sanitize = (value: string) => sanitizeText(value, sensitiveValues, aliases, allowedTerms);
 
   return [
     { role: "system" as const, content: SYSTEM_MESSAGE },
@@ -88,25 +91,51 @@ function sanitizeText(
   text: string,
   sensitiveValues: string[],
   aliases: { name: string; alias: string }[],
+  allowedTerms: string[],
 ): string {
+  // Conserva información útil y pública aunque coincida con una nota conocida
+  // o con el formato usado para detectar teléfonos.
+  const protectedValues: string[] = [];
   let safe = text;
+  const protect = (value: string, pattern?: RegExp) => {
+    const expression = pattern ?? new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(value)}(?![\\p{L}\\p{N}])`, "giu");
+    safe = safe.replace(expression, (match) => {
+      protectedValues.push(match);
+      return `\u0000PROTEGIDO${protectedValues.length - 1}\u0000`;
+    });
+  };
+  protect("", /(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/g);
+  for (const weekday of ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]) {
+    protect(weekday);
+  }
+  protect("", /(?<![\p{L}\p{N}])\d+\s*(?:minutos?|personas?|grupos?)(?![\p{L}\p{N}])/giu);
+  for (const term of allowedTerms.filter(Boolean).sort((a, b) => b.length - a.length)) protect(term);
+
   const values = [...new Set(sensitiveValues)]
     .sort((a, b) => b.length - a.length);
 
   for (const value of values) {
     const alias = aliases.find(({ name }) => name.toLocaleLowerCase("es-HN") === value.toLocaleLowerCase("es-HN"))?.alias;
-    safe = replaceLiteral(safe, value, alias ?? "[dato privado]");
+    safe = replaceWholeValue(safe, value, alias ?? "[dato privado]");
   }
   for (const { name, alias } of aliases) {
-    safe = replaceLiteral(safe, name, alias);
+    safe = replaceWholeValue(safe, name, alias);
   }
 
-  // Quita también teléfonos escritos en una pregunta aunque el formato difiera del guardado.
-  return safe.replace(/(?<!\w)\+?\d[\d\s().-]{6,}\d(?!\w)/g, "[dato privado]");
+  // Los teléfonos escritos en la pregunta también se quitan. La detección no
+  // altera fechas (protegidas arriba), días de semana ni cantidades pequeñas.
+  safe = safe.replace(/(?<![\p{L}\p{N}])\+?\d[\d\s().-]{6,}\d(?![\p{L}\p{N}])/gu, "[dato privado]");
+
+  return safe.replace(/\u0000PROTEGIDO(\d+)\u0000/g, (_match, index: string) => protectedValues[Number(index)]);
 }
 
-function replaceLiteral(text: string, value: string, replacement: string): string {
-  return value ? text.replace(new RegExp(escapeRegExp(value), "giu"), replacement) : text;
+function replaceWholeValue(text: string, value: string, replacement: string): string {
+  if (!value) return text;
+  const pattern = new RegExp(
+    `(?<![\\p{L}\\p{N}])${escapeRegExp(value)}(?![\\p{L}\\p{N}])`,
+    "giu",
+  );
+  return text.replace(pattern, replacement);
 }
 
 function escapeRegExp(value: string): string {

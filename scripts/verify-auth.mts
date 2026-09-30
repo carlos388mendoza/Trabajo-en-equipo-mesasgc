@@ -462,16 +462,23 @@ section("Privacidad del asistente con OpenRouter");
   const seedPhonesAndNotes = [...new Set(seededRows.flatMap((row) => [row.phone, row.notes])
     .filter((value): value is string => typeof value === "string" && Boolean(value)))];
   const questionWithPrivateData = [
-    "Dame el top de clientes",
+    "Dame el top de clientes. ¿Qué semana fue más lenta? El 2026-09-20 y el 2026-10-03. El martes fueron 25 minutos en China Wok.",
     ...seedNames,
     ...seedPhonesAndNotes,
   ].join(" ");
   const messages = buildOpenRouterMessages(questionWithPrivateData, statistics, sensitiveValues);
   const serializedMessages = JSON.stringify(messages);
-  const userContext = JSON.parse(messages[1].content) as { topClientes: { alias: string; grupos: number }[] };
+  const userContext = JSON.parse(messages[1].content) as {
+    pregunta: string;
+    topClientes: { alias: string; grupos: number }[];
+  };
 
   check("el cuerpo enviado a OpenRouter no contiene nombres de clientes del seed", seedNames.every((name) => !serializedMessages.includes(name)));
   check("el cuerpo enviado a OpenRouter no contiene teléfonos ni notas del seed", seedPhonesAndNotes.every((value) => !serializedMessages.includes(value)));
+  check("la anonimización conserva intacta la palabra semana", userContext.pregunta.includes("¿Qué semana fue más lenta?"));
+  check("la anonimización conserva intactas las fechas ISO", userContext.pregunta.includes("2026-09-20") && userContext.pregunta.includes("2026-10-03"));
+  check("se conservan días de semana, cantidades de espera y nombres de marcas", userContext.pregunta.includes("martes fueron 25 minutos en China Wok"));
+  check("Ana Torres no se filtra ni se reemplaza dentro de otra palabra", seedNames.includes("Ana Torres") && !serializedMessages.includes("Ana Torres") && userContext.pregunta.includes("semana"));
   check("el top enviado contiene alias y métricas, sin nombres", userContext.topClientes.every((customer) => /^Cliente \d+$/.test(customer.alias)));
   check("la respuesta restaura los alias solo para mostrar los nombres del top", statistics.topCustomers.length > 0 && restoreCustomerAliases("Cliente 1", statistics) === statistics.topCustomers[0].name);
 }

@@ -481,7 +481,7 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
                   className="mt-1.5 w-full rounded-xl border border-app-border bg-panel px-4 py-3 text-panel-text outline-none focus:border-accent"
                 >
                   {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((count) => (
-                    <option key={count} value={count}>{count} personas</option>
+                    <option key={count} value={count}>{count} {count === 1 ? "persona" : "personas"}</option>
                   ))}
                 </select>
               </label>
