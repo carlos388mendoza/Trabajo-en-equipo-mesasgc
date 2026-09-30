@@ -559,6 +559,37 @@ check(
   check("cambiar de restaurante sale de la room anterior", layoutA.length === 0);
 }
 
+{
+  // Un host con varios restaurantes (el piloto: un usuario para 4 locales de
+  // Denny's y Pizza Hut) cambia entre ellos sin recargar: entra en la room
+  // del nuevo, sale de la del anterior, y lo que hace va al restaurante nuevo.
+  const { eq } = await import("drizzle-orm");
+  await db.insert(restaurants).values({ id: "rest-3", name: "Tercero", slug: "tercero" }).onConflictDoNothing();
+  const cookieVarios = await sessionCookie("varios@verify.test", ["restaurante"], [REST, REST_2]);
+  const varios = await connect(cookieVarios);
+  check("un host con dos restaurantes entra en el primero", (await ask(varios, "restaurant:join", { restaurantId: REST })).ok);
+  const layouts = counter(varios, "layout:updated");
+  emitToRestaurant(REST, "layout:updated", { layoutId: "layout-1", version: 20 });
+  await settle();
+  check("  y recibe sus avisos", layouts.length === 1);
+  check("  cambia al segundo", (await ask(varios, "restaurant:join", { restaurantId: REST_2 })).ok);
+  emitToRestaurant(REST, "layout:updated", { layoutId: "layout-1", version: 21 });
+  emitToRestaurant(REST_2, "layout:updated", { layoutId: "layout-2", version: 5 });
+  await settle();
+  check("  deja de recibir los del primero y recibe los del segundo", layouts.length === 2 && (layouts[1] as { layoutId: string }).layoutId === "layout-2");
+  const added = (await ask(varios, "waitlist:add", { customerName: "Cliente del segundo", partySize: 2 })) as AnyAck & { entry?: { id: string } };
+  const [row] = added.entry ? await db.select().from(waitlistEntries).where(eq(waitlistEntries.id, added.entry.id)) : [];
+  check("  lo que añade a la lista va al restaurante en el que está", added.ok && row?.restaurantId === REST_2, added.error);
+  // Se quita para no mover los contadores de REST_2 que se miden más abajo.
+  if (added.entry) await db.delete(waitlistEntries).where(eq(waitlistEntries.id, added.entry.id));
+  check("  no entra en un restaurante que no es suyo", !(await ask(varios, "restaurant:join", { restaurantId: "rest-3" })).ok);
+  await db.update(restaurants).set({ active: false }).where(eq(restaurants.id, REST));
+  check("  ni en uno suyo desactivado", !(await ask(varios, "restaurant:join", { restaurantId: REST })).ok);
+  await db.update(restaurants).set({ active: true }).where(eq(restaurants.id, REST));
+  check("  al reactivarlo vuelve a entrar", (await ask(varios, "restaurant:join", { restaurantId: REST })).ok);
+  varios.close();
+}
+
 // ---------------------------------------------------------------------------
 // Sala overview (mapa general)
 // ---------------------------------------------------------------------------

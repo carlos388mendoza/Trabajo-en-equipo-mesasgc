@@ -777,6 +777,7 @@ Todos tienen la contraseña **`12345abc`**:
 | `chinawok-circunvalacion@grupocomidas.test` | Host China Wok Circunvalación | restaurante | rest_sps_chinawok |
 | `kfc-riopiedras@grupocomidas.test` | Host KFC Río Piedras | restaurante | rest_sps_kfc |
 | `dennys-andes@grupocomidas.test` | Host Denny's Los Andes | restaurante | rest_sps_dennys |
+| `dennys-pizzahut@grupocomidas.test` | Denny's y Pizza Hut (el del piloto) | restaurante | rest_tgu_dennys, rest_sps_dennys, rest_norte, rest_tgu_pizza |
 
 `rest_centro` es **China Wok Centro** (Tegucigalpa) y `rest_norte` es **Pizza
 Hut Norte** (San Pedro Sula): conservan sus ids, así que estos usuarios siguen

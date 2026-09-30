@@ -35,7 +35,7 @@ export default async function PlanoEnVivoPage({ params }: { params: Promise<{ id
         </p>
       </div>
       <div className="min-h-0 flex-1">
-        <RestaurantLivePlan restaurantId={id} initialPlan={plan} live={live} />
+        <RestaurantLivePlan key={id} restaurantId={id} initialPlan={plan} live={live} />
       </div>
     </div>
   );

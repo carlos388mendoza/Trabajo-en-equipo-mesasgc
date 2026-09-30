@@ -557,6 +557,13 @@ const TEST_USERS: { email: string; name: string; roles: Role[]; restaurantIds: s
   { email: "chinawok-circunvalacion@grupocomidas.test", name: "Host China Wok Circunvalación", roles: ["restaurante"], restaurantIds: ["rest_sps_chinawok"] },
   { email: "kfc-riopiedras@grupocomidas.test", name: "Host KFC Río Piedras", roles: ["restaurante"], restaurantIds: ["rest_sps_kfc"] },
   { email: "dennys-andes@grupocomidas.test", name: "Host Denny's Los Andes", roles: ["restaurante"], restaurantIds: ["rest_sps_dennys"] },
+  // El del piloto: un solo usuario para los 4 locales de Denny's y Pizza Hut.
+  {
+    email: "dennys-pizzahut@grupocomidas.test",
+    name: "Denny's y Pizza Hut",
+    roles: ["restaurante"],
+    restaurantIds: ["rest_tgu_dennys", "rest_sps_dennys", "rest_norte", "rest_tgu_pizza"],
+  },
 ];
 
 async function seedTestUsers() {
