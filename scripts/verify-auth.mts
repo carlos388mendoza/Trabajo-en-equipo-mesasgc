@@ -387,6 +387,30 @@ for (const [method, path, body] of API_NO_SESSION) {
   check(`sin sesión, ${method} ${path} -> 401`, res.status === 401, `HTTP ${res.status}`);
 }
 
+section("Healthcheck de Railway");
+
+{
+  // El healthcheck es la ÚNICA API pública (excepción exacta en `proxy.ts`).
+  // Mientras `next dev` compila la ruta puede dar 404: se reintenta un poco.
+  let res = await http("GET", "/api/health");
+  for (let i = 0; res.status === 404 && i < 10; i += 1) {
+    await new Promise((r) => setTimeout(r, 1_000));
+    res = await http("GET", "/api/health");
+  }
+  let body: unknown = null;
+  try {
+    body = JSON.parse(res.text);
+  } catch {
+    // Se comprueba abajo: si no es JSON, `body` se queda en null.
+  }
+  check("sin sesión, GET /api/health -> 200", res.status === 200, `HTTP ${res.status}`);
+  check("  y responde {\"ok\":true}", JSON.stringify(body) === JSON.stringify({ ok: true }), res.text.slice(0, 80));
+  for (const path of ["/api/healthz", "/api/health/x"]) {
+    const other = await http("GET", path);
+    check(`  la excepción es exacta: sin sesión, GET ${path} -> 401`, other.status === 401, `HTTP ${other.status}`);
+  }
+}
+
 section("API por rol");
 
 async function status(who: Who, method: string, path: string, body?: unknown): Promise<number> {
