@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-_Actualizado el 29 de septiembre de 2026._
+_Actualizado el 30 de septiembre de 2026._
 
 **Table Waitlist:** listas de espera en tiempo real para los restaurantes de
 Grupo Comidas.
@@ -23,6 +23,7 @@ Todo esto está en `testing`.
 | Autenticación y roles | Better Auth con correo y contraseña. Roles admin, restaurante y analitica. `/login`, `/inicio`, `/admin`, `/sin-acceso`, y encabezado con sesión y favicon. | `lib/auth/`, `proxy.ts`, README §14–15, `docs/rbac.md` | #8 |
 | Modo rápido (Miembro B) | En vivo por Socket.IO (`waitlist:add`, `waitlist:resolve` y `waitlist:undo`, con `canModifyWaitlist`), tarjetas tipo Tinder con `motion` y Deshacer (botón y Ctrl+Z). | `components/quick-mode/`, `lib/waitlist/`, README §11 | #9 |
 | Estadísticas e IA (Miembro B) | Últimos 14 días en hora de Honduras, «tiempo hasta avisar» con `called_at`, top 10 de clientes y asistente. | `components/analytics/`, `lib/analytics/`, `app/api/` | #9 |
+| Marcas en estadísticas y privacidad del asistente (Miembro B) | Filtros por marca real (`restaurants.brand_id`) y por ciudad. El top de clientes viaja a OpenRouter con alias («Cliente 1»…) y sin teléfonos ni notas; los nombres se restauran solo en pantalla. Queda un fallo de la anonimización (ver «Lo que falta»). | `lib/analytics/`, README | #17 |
 | Mapa general y marcas | Tabla `brands` (4 marcas). `/mapa` estilo radar con los 8 restaurantes en vivo (solo contadores), filtros, lista por espera y zoom al plano en vivo. `/restaurante/[id]/mapa` para el host. Analitica no ve nombres. `emitOverview` avisa también desde el modo rápido. | `lib/map/`, `components/map/`, README §16, `docs/rbac.md` | #11 |
 | Aspecto | Estilo de mapa «radar», minimapa, íconos de lucide y temas Claro, Oscuro, Sistema y Personalizado, sin parpadeo. | `lib/theme/`, `/ajustes`, README §13 | #7 |
 | CI | GitHub Actions en cada PR y cada push a `testing` y `main`: typecheck, lint, build y los tres `verify`, con Node 22 y `npm ci`. | `.github/workflows/ci.yml` | #10 |
@@ -30,14 +31,14 @@ Todo esto está en `testing`.
 | Documentos | Guion de la demo y plan de salida a producción para la dirección. | `docs/demo.md`, `docs/salida-a-produccion.md` | #14 |
 
 Las verificaciones automáticas no usan ningún *runner* de tests: son scripts
-contra una base temporal. Estado en `chore/pre-release` (`testing` más este
-PR):
+contra una base temporal. Estado en `testing` (`b69910b`) el 30 de
+septiembre:
 
 | Comando | Resultado |
 |---|---|
 | `npm run verify:editor` | 102/102 |
 | `npm run verify:realtime` | 113/113 |
-| `npm run verify:auth` | 128/128 (levanta la app real; incluye el healthcheck) |
+| `npm run verify:auth` | 139/139 (levanta la app real; incluye el healthcheck y la privacidad del asistente) |
 | `npm run typecheck`, `npm run lint`, `npm run build` | pasan (solo la advertencia antigua de `postcss.config.mjs`) |
 
 ## Ramas y PR
@@ -55,10 +56,28 @@ PR):
 | #9 | `feat/quick-mode-live` (Miembro B) | Fusionado. Revisado y aprobado por el Miembro A. |
 | #10 | `chore/ci` (Miembro B) | Fusionado. Revisado y aprobado por el Miembro A. |
 | #11 | `feat/world-map` (mapa general y marcas) | Fusionado. Aprobado por el Miembro B. |
-| #12 | `fix/verify-auth-flake` (404 intermitente de `verify:auth`) | **Abierto.** CI en verde, sin conflictos, **sin aprobación registrada** en GitHub. |
+| #12 | `fix/verify-auth-flake` (404 intermitente de `verify:auth`) | Fusionado. Aprobado por el Miembro B. |
 | #13 | `chore/deploy` (Railway y `/api/health`, Miembro B) | Fusionado. Revisado y aprobado por el Miembro A. |
 | #14 | `feat/layout-rotation` (giro guardado; barra, puerta y pared) | Fusionado. Aprobado por el Miembro B. |
-| — | `chore/pre-release` (healthcheck en `verify:auth`, mejoras del CI, guía de despliegue y este documento) | PR abierto hacia `testing`. |
+| #15 | `chore/pre-release` (healthcheck en `verify:auth`, mejoras del CI, guía de despliegue y este documento) | Fusionado. Aprobado por el Miembro B. |
+| #16 | `feat/analytics-brands` → `main` (Miembro B) | **Cerrado sin fusionar.** Iba a `main` por error; el mismo trabajo entró en `testing` por el #17. La rama no se borró. |
+| #17 | `feat/analytics-brands` → `testing` (marcas y privacidad del asistente, Miembro B) | Fusionado **sin aprobación**: la única revisión, del Miembro A, pedía cambios. El arreglo va en un PR nuevo (ver «Lo que falta»). |
+
+### Protección de `main` y `testing`
+
+Desde el 30 de septiembre, las dos ramas tienen en GitHub el *ruleset*
+`proteger-main-testing`, activo y **sin bypass para nadie**, ni siquiera para
+los administradores del repositorio:
+
+- **Solo se entra por PR**, y el PR necesita **1 aprobación**. GitHub no deja
+  que el autor apruebe su propio PR, así que en la práctica **lo aprueba el
+  otro miembro**.
+- **El CI tiene que estar en verde.** El check obligatorio es el job
+  «Typecheck, lint, build y verificaciones» de `.github/workflows/ci.yml`.
+- **No se puede borrar la rama ni hacer *force push*.**
+
+Con esto ya no se puede repetir lo del #17 (fusionado sin aprobación), ni
+llegar a `main` sin que el otro miembro lo apruebe.
 
 Reglas del equipo: nunca se trabaja ni se hace push en `main`; las ramas salen
 de `testing` y los PR van hacia `testing`; commits con prefijo (`feat`, `fix`,
@@ -155,18 +174,19 @@ lo de abajo esté listo.
 
 **PR pendientes**
 
-- [ ] **#12** (`fix/verify-auth-flake`): falta que el Miembro B registre su
-      aprobación en GitHub. Después, fusionarlo.
-- [ ] **PR de marcas del Miembro B:** cambiar `lib/analytics/brand.ts` para
-      que lea la marca de `restaurants.brand_id` en vez de usar el nombre del
-      restaurante. Todavía no está abierto.
-- [ ] **Este PR** (`chore/pre-release`).
-
-**Pendientes del Miembro B (no bloquean)**
-
-- [ ] El asistente pide quitar los filtros aunque ya estén en «Todos los
-      restaurantes» («Compara restaurantes»).
-- [ ] Singulares: «1 clientes avisados», «1 personas».
+- [ ] **PR de privacidad del asistente** (`fix/assistant-privacy`, Miembro
+      B, hacia `testing`). Todavía no está abierto. Tiene que:
+  - reemplazar los nombres de clientes solo como palabra entera: hoy, con
+    una clienta «Ana», «semana» llega a OpenRouter como «semCliente 1»;
+  - dejar intactas las fechas: hoy `2026-09-20` llega como «[dato privado]»;
+  - seguir sin enviar nombres, teléfonos ni notas, y añadir a la prueba de
+    privacidad de `verify:auth` el caso «Ana» dentro de «semana» y una fecha;
+  - corregir el último singular: el selector de personas del modo rápido
+    dice «1 personas».
+- [ ] **Este PR** (`docs/estado-final`).
+- [ ] **PR final `testing` → `main`**, cuando esté todo lo de esta lista. Lo
+      aprueba el otro miembro y necesita el CI en verde (ver «Protección de
+      `main` y `testing`»). Es el que publica la app en Railway.
 
 **Producción** (ver `docs/despliegue.md`)
 
@@ -177,17 +197,22 @@ lo de abajo esté listo.
 - [ ] En el primer despliegue, comprobar que el Pre-deploy dice «migrations
       applied». `drizzle-kit` está en `devDependencies`: si faltara en el
       contenedor, moverlo a `dependencies`.
-- [ ] Crear el primer admin con `npm run create-admin` y no correr nunca el
-      seed contra producción.
+- [ ] Crear el **primer admin real** con `npm run create-admin` (con una
+      contraseña nueva, nunca `12345abc`) y no correr nunca el seed contra
+      producción.
 - [ ] Poner un límite de gasto en OpenRouter y probar a restaurar un
       respaldo de Turso.
 
 **Decisiones de la dirección** (ver `docs/salida-a-produccion.md`)
 
-- [ ] ¿Se aceptan que los nombres del top de clientes se envíen a OpenRouter
-      cuando se usa el asistente?
-- [ ] ¿Puede analitica ver el top 10 de clientes con nombres?
-- [ ] ¿Cuánto tiempo se guarda el historial de clientes?
+- [ ] **¿Se activa el asistente con OpenRouter?** Desde el #17 los nombres
+      del top de clientes viajan como alias («Cliente 1»…), sin teléfonos ni
+      notas, pero las estadísticas sí salen a un servicio externo. Sin
+      `OPENROUTER_API_KEY`, el asistente solo responde las preguntas básicas.
+- [ ] **¿Puede analitica ver el top 10 de clientes con nombres** en
+      `/analiticas`? Si no, se quita o se muestra anónimo.
+- [ ] **¿Cuánto tiempo se guarda el historial de clientes** antes de
+      borrarlo?
 
 **Antes de presentar**
 
