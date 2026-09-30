@@ -980,6 +980,8 @@ section("Marcas y restaurantes desde /admin");
       check("  ni por el socket", sock !== null && !(await emit(sock, "restaurant:join", { restaurantId: rest.id })).ok);
       sock?.close();
       check("  pero sigue en rest_norte", landing(await http("GET", "/restaurante/rest_norte/rapido", { cookie: cookies.norte })) === "200");
+      check("  y no se puede asignar a mano mientras está desactivado",
+        (await call(ids.access, "admin", { userId: norte.id, roles: ["restaurante"], restaurantIds: ["rest_norte", rest.id] })).includes("desactivado"));
       check("  sale del mapa general", !(await http("GET", "/mapa", { cookie: cookies.admin })).text.includes("Local Verificado"));
       const statsAfter = JSON.parse((await http("GET", "/api/analiticas", { cookie: cookies.analitica })).text) as { restaurantsAvailable: { id: string }[] };
       check("  y su historial sigue en las estadísticas", statsAfter.restaurantsAvailable.some((r) => r.id === rest.id));
