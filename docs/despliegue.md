@@ -93,6 +93,21 @@ Después del primer despliegue, con las variables de Railway ya guardadas:
 
 El comando crea solo al administrador inicial; no ejecutes el seed en producción.
 
+### Si nadie puede entrar (contraseña olvidada)
+
+`create-admin` **no cambia la contraseña** de un correo que ya existe: solo le asegura el rol admin y lo activa. Para cambiarla sin entrar en `/admin`:
+
+```powershell
+railway run npm run reset-password
+```
+
+- Muestra a qué base se conecta (solo el host, nunca el token).
+- Pide el correo y la contraseña nueva **dos veces, sin mostrarla**. No la acepta por variables de entorno ni por argumentos, para que no quede en el historial.
+- Exige al menos 8 caracteres, sin espacios al principio ni al final, y pide confirmar con «si».
+- Solo cambia la contraseña de ese usuario y cierra sus sesiones. No crea usuarios ni cambia roles, y avisa si el usuario está desactivado.
+
+Antes de cambiarla, conviene mirar en los logs de Railway si hay `[Better Auth]: Invalid password` (contraseña incorrecta) o respuestas 429 (demasiados intentos).
+
 ## 3b. Cargar las marcas y los restaurantes
 
 La app todavía no tiene pantalla para crear restaurantes, marcas ni zonas. Se cargan una vez, con la CLI ya enlazada (sección 3):
