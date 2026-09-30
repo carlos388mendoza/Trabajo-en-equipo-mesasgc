@@ -87,6 +87,10 @@ function run(command: string, args: string[], extraEnv: Record<string, string> =
 }
 check("el seed se niega a correr con NODE_ENV=production", (await run("npx", ["tsx", "scripts/seed.ts"], { NODE_ENV: "production" })) !== 0);
 check("seed con usuarios de prueba", (await run("npx", ["tsx", "scripts/seed.ts"])) === 0);
+// reset-password solo pregunta en una terminal: sin ella (aquí stdin no es una
+// TTY) se niega y no cambia nada. La contraseña de admin se sigue usando en
+// los logins de abajo, así que si cambiara, esos fallarían.
+check("reset-password sin terminal se niega a correr", (await run("npx", ["tsx", "scripts/reset-password.mts"])) !== 0);
 
 let server: ChildProcess | null = null;
 let serverLog = "";
