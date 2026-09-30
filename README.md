@@ -193,7 +193,9 @@ obligatorio para iniciar sesión (`openssl rand -base64 32`).
 
 **Contra una base remota (Turso) no se usa `db:push`**: los cambios de esquema
 se generan con `npm run db:generate` (quedan en `drizzle/`) y se aplican con
-`npm run db:migrate`. El primer admin de producción se crea con
+`npm run db:migrate`. El catálogo de elementos del editor lo carga
+`npm run db:catalog` (solo toca `element_types`; Railway lo corre en el
+Pre-deploy). El primer admin de producción se crea con
 `npm run create-admin` (sección 15).
 
 Otros scripts: `db:generate` (genera SQL en `drizzle/`), `db:studio`,

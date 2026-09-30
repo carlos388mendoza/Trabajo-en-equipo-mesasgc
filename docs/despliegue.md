@@ -17,7 +17,7 @@ El repositorio trae `railway.json` en la raíz, y Railway toma de ahí los coman
 | Paso | Comando | Qué hace |
 |---|---|---|
 | Build | `npm ci && npm run build` | Instala las dependencias y compila la app |
-| Pre-deploy | `npm run db:migrate` | Aplica a la base las migraciones que falten |
+| Pre-deploy | `npm run db:migrate && npm run db:catalog` | Aplica a la base las migraciones que falten y carga el catálogo de elementos del editor (sin él, la paleta sale vacía) |
 | Start | `npm start` | Arranca Next y Socket.IO en el puerto que da Railway |
 | Healthcheck | `/api/health` | Railway espera un 200 antes de dar el despliegue por bueno |
 
@@ -33,7 +33,7 @@ Las migraciones de Drizzle son incrementales. El despliegue **nunca** ejecuta el
 
 1. En Turso, crea una base nueva, por ejemplo `mesasgc-prod`, y no le cargues nada.
 2. Copia su URL y crea un token para ella: van en `TURSO_DATABASE_URL` y `TURSO_AUTH_TOKEN` (ver 2).
-3. En el primer despliegue, revisa el log del paso de Pre-deploy: tiene que decir que las migraciones se aplicaron (`migrations applied`).
+3. En el primer despliegue, revisa el log del paso de Pre-deploy: tiene que decir que las migraciones se aplicaron (`migrations applied`) y, después, `catálogo de elementos: 8 tipos listos`.
 4. La base queda con las tablas y **sin ningún usuario**. El primer administrador se crea en el paso 3.
 
 ## 2. Agregar las variables
