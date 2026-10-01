@@ -12,20 +12,25 @@ Grupo Comidas.
 ## En producción
 
 Desde el 30 de septiembre de 2026 hay una versión publicada en Railway. La
-última es `main` = `df550bd` (PR #33), desplegada el 30 de septiembre:
+última es `main` = `675c687` (PR #43), desplegada el 1 de octubre (despliegue
+`f9e13d63`): cartas del modo rápido como baraja y agregar varios (#40), mapa a
+60 fps (#41) y `npm run create-user` (#42).
 
 - **Dominio:** https://trabajo-en-equipo-mesasgc-production.up.railway.app
 - **Railway:** proyecto `noble-energy`, servicio `Trabajo-en-equipo-mesasgc`,
   región US East, rama `main` con **Wait for CI**.
 - **Base:** Turso `mesasgc-prod`, nueva, en la cuenta del Miembro A
-  (`aws-us-east-1`). Tiene las 5 migraciones (hasta la `0004`, con latitud
-  y longitud), las 12 tablas y el catálogo de 8 tipos. **Sin datos de
+  (`aws-us-east-1`). Tiene las 7 migraciones (hasta la `0006`, con
+  `resolved_at` y `resolved_by_user_id`; comprobado con una consulta de solo
+  lectura), las 12 tablas y el catálogo de 8 tipos. **Sin datos de
   ejemplo:** el seed no se corre en producción.
 - **Restaurantes:** cargados con `railway run npm run db:restaurantes`: las
   4 marcas, los 8 restaurantes con su latitud y longitud, y una zona vacía
   «Comedor principal» en cada uno (sin mesas ni clientes todavía).
 - **Usuarios:** el admin (`admin@grupocomidas.test`) y
-  `analitica@grupocomidas.test`. Si se pierde el acceso:
+  `analitica@grupocomidas.test`. Los del piloto, `dennys@` y `pizzahut@`,
+  los crea Carlos con `railway run npm run create-user` (comandos en
+  `docs/salida-a-produccion.md`, sección 3.1). Si se pierde el acceso:
   `railway run npm run reset-password` (ver `docs/despliegue.md`, sección 3).
 - **Variables:** `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`,
   `BETTER_AUTH_SECRET` (nuevo, de 48 bytes), `BETTER_AUTH_URL`,
@@ -33,6 +38,13 @@ Desde el 30 de septiembre de 2026 hay una versión publicada en Railway. La
   valor está en el repositorio.
 - **Comandos:** se escriben a mano en Railway, porque los servicios nuevos
   ya no leen `railway.json` (ver `docs/despliegue.md`, sección 1).
+- **Comprobado en el despliegue del #43 (1 de octubre):**
+  - en el log salen «migrations applied successfully!» (con la `0006`),
+    «catálogo de elementos: 8 tipos listos» y «Healthcheck succeeded!», y
+    ningún error de la app;
+  - `/api/health` responde `{"ok":true}` y `/login`, 200;
+  - sin sesión, `/mapa` y el modo rápido redirigen a `/login?next=…`, y
+    `/api/restaurante/[id]/cartas` responde 401.
 - **Comprobado en el despliegue del #33:**
   - en el log salen «migrations applied successfully!», «catálogo de
     elementos: 8 tipos listos» y «Healthcheck succeeded!»;
@@ -44,7 +56,7 @@ Desde el 30 de septiembre de 2026 hay una versión publicada en Railway. La
 
 ## Lo que ya está hecho
 
-Todo esto está en `testing` y en `main`.
+Todo esto está en `testing` y en `main` (desde el #43).
 
 | Área | Qué hay | Dónde está | PR |
 |---|---|---|---|
@@ -126,6 +138,7 @@ mismo árbol) el 30 de septiembre, y en `feat/cartas-baraja` el 1 de octubre:
 | #40 | `feat/cartas-baraja` (formulario al tocar, abanico, «Ver todas las cartas» y agregar varios; migración `0006`) | Fusionado con revisión propia. |
 | #41 | `perf/mapa` (mapa general a 60 fps) | Fusionado con revisión propia. |
 | #42 | `feat/create-user` (`npm run create-user` y el piloto con un usuario por marca) | Fusionado con revisión propia. |
+| #43 | `testing` → `main` (cuarta publicación: #40, #41 y #42, migración `0006`) | Fusionado con revisión propia; desplegado el 1 de octubre. |
 
 ### Protección de `main` y `testing`
 
