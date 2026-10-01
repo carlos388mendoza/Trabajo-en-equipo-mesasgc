@@ -217,6 +217,7 @@ const WARM_UP: [string, string][] = [
   ["POST", "/api/assistant"],
   ["GET", "/api/restaurante/rest_centro/clientes"],
   ["PATCH", "/api/restaurante/rest_centro/clientes/wl_1"],
+  ["GET", "/api/restaurante/rest_centro/cartas"],
 ];
 {
   const deadline = Date.now() + 120_000;
@@ -386,6 +387,7 @@ const API_NO_SESSION: [string, string, unknown?][] = [
   ["GET", "/api/restaurante/rest_centro/clientes"],
   ["POST", "/api/restaurante/rest_centro/clientes", newGuest],
   ["PATCH", "/api/restaurante/rest_centro/clientes/wl_1", { status: "listo" }],
+  ["GET", "/api/restaurante/rest_centro/cartas"],
 ];
 for (const [method, path, body] of API_NO_SESSION) {
   const res = await http(method, path, { body });
@@ -441,6 +443,16 @@ const API: [Who, string, string, unknown, number][] = [
   ["gerente", "GET", "/api/restaurante/rest_norte/clientes", undefined, 403],
   ["admin", "GET", "/api/restaurante/rest_norte/clientes", undefined, 200],
   ["admin", "GET", "/api/analiticas", undefined, 200],
+  // «Ver todas las cartas» del modo rápido: rapido:ver. Analítica no opera.
+  ["analitica", "GET", "/api/restaurante/rest_centro/cartas", undefined, 403],
+  ["centro", "GET", "/api/restaurante/rest_centro/cartas", undefined, 200],
+  ["centro", "GET", "/api/restaurante/rest_centro/cartas?rango=7dias", undefined, 200],
+  ["centro", "GET", "/api/restaurante/rest_centro/cartas?rango=mes", undefined, 400],
+  ["centro", "GET", "/api/restaurante/rest_norte/cartas", undefined, 403],
+  ["norte", "GET", "/api/restaurante/rest_centro/cartas", undefined, 403],
+  ["gerente", "GET", "/api/restaurante/rest_centro/cartas", undefined, 200],
+  ["gerente", "GET", "/api/restaurante/rest_norte/cartas", undefined, 403],
+  ["admin", "GET", "/api/restaurante/rest_norte/cartas", undefined, 200],
 ];
 for (const [who, method, path, body, expected] of API) {
   const got = await status(who, method, path, body);
@@ -659,7 +671,7 @@ section("Mapa: nombres de clientes");
 // Los clientes sentados ahora en rest_centro (los sienta el seed).
 const { db } = await import("@/lib/db");
 const { waitlistEntries, tables: tablesTable, elementTypes } = await import("@/lib/db/schema");
-const { and, eq, inArray, isNotNull, isNull } = await import("drizzle-orm");
+const { and, eq, inArray, isNotNull, isNull, like } = await import("drizzle-orm");
 const seatedAtCentro = await db
   .select({ id: waitlistEntries.id, name: waitlistEntries.customerName })
   .from(tablesTable)
@@ -1037,6 +1049,88 @@ section("Un usuario de restaurante con los 4 locales de Denny's y Pizza Hut");
   check("un host con un solo restaurante no tiene selector", !(await http("GET", "/restaurante/rest_centro/rapido", { cookie: cookies.centro })).text.includes("Cambiar de restaurante"));
   check("  ni el admin", !(await http("GET", "/restaurante/rest_centro/rapido", { cookie: cookies.admin })).text.includes("Cambiar de restaurante"));
   check("  y no ve /admin ni /mapa", landing(await get("/admin")) === "/sin-acceso" && landing(await get("/mapa")) === "/sin-acceso");
+}
+
+// ---------------------------------------------------------------------------
+// Modo rápido: «Ver todas las cartas» y agregar varios a la vez
+// ---------------------------------------------------------------------------
+
+section("Modo rápido: todas las cartas y agregar varios");
+
+{
+  // Lo que devuelve la API: solo cartas de ese restaurante, con los campos de la vista.
+  const res = await http("GET", "/api/restaurante/rest_centro/cartas?rango=7dias", { cookie: cookies.centro });
+  const body = JSON.parse(res.text) as { entries: { id: string; resolvedByName: string | null; arrivedAt: number }[] };
+  const ids = body.entries.map((e) => e.id);
+  const own = ids.length
+    ? await db.select({ id: waitlistEntries.id, restaurantId: waitlistEntries.restaurantId }).from(waitlistEntries).where(inArray(waitlistEntries.id, ids))
+    : [];
+  check("las cartas de 7 días traen el historial del seed", body.entries.length > 20, `${body.entries.length}`);
+  check("  todas del restaurante pedido", own.length === ids.length && own.every((e) => e.restaurantId === "rest_centro"));
+  check("  ordenadas de la más reciente a la más vieja", body.entries.every((e, i, all) => i === 0 || all[i - 1].arrivedAt >= e.arrivedAt));
+  check("  con el campo de quién la resolvió", body.entries.every((e) => "resolvedByName" in e));
+  const sinSesion = await http("GET", "/api/restaurante/rest_centro/cartas");
+  check("sin sesión, las cartas -> 401", sinSesion.status === 401, `HTTP ${sinSesion.status}`);
+  const piloto = (await login("dennys-pizzahut@grupocomidas.test")).cookie;
+  for (const [id, expected] of [["rest_norte", 200], ["rest_tgu_dennys", 200], ["rest_centro", 403]] as const) {
+    const got = (await http("GET", `/api/restaurante/${id}/cartas`, { cookie: piloto })).status;
+    check(`el usuario del piloto: cartas de ${id} -> ${expected}`, got === expected, `HTTP ${got}`);
+  }
+}
+
+{
+  const centro = await connect(cookies.centro);
+  const analitica = await connect(cookies.analitica);
+  const norte = await connect(cookies.norte);
+  check("los sockets de centro, norte y analitica conectan", Boolean(centro && analitica && norte));
+  if (centro && analitica && norte) {
+    await emit(centro, "restaurant:join", { restaurantId: "rest_centro" });
+    await emit(norte, "restaurant:join", { restaurantId: "rest_norte" });
+    const lote = (n: number, prefix: string) =>
+      ({ entries: Array.from({ length: n }, (_, i) => ({ customerName: `${prefix} ${i + 1}`, partySize: 2 })) });
+    const countLike = async (prefix: string) =>
+      (await db.select({ id: waitlistEntries.id }).from(waitlistEntries).where(like(waitlistEntries.customerName, `${prefix}%`))).length;
+    type ManyAck = { ok: boolean; error?: string; entries?: { id: string }[]; actionId?: string };
+
+    const ok = (await emit(centro, "waitlist:add-many", lote(3, "Lote auth"))) as ManyAck;
+    const rows = ok.entries?.length
+      ? await db.select().from(waitlistEntries).where(inArray(waitlistEntries.id, ok.entries.map((e) => e.id)))
+      : [];
+    check("centro agrega 3 clientes de una vez en su restaurante", ok.ok && rows.length === 3 && rows.every((r) => r.restaurantId === "rest_centro"), ok.error);
+    const undo = await emit(centro, "waitlist:undo", { actionId: ok.actionId });
+    check("  y los quita a los 3 con deshacer", undo.ok && (await countLike("Lote auth")) === 0, undo.error);
+
+    const limit = await emit(centro, "waitlist:add-many", lote(31, "Limite auth"));
+    check("más de 30 por vez -> rechazado, sin guardar nada", !limit.ok && /hasta 30/.test(limit.error ?? "") && (await countLike("Limite auth")) === 0, limit.error);
+    const thirty = (await emit(centro, "waitlist:add-many", lote(30, "Treinta auth"))) as ManyAck;
+    check("  30 justos sí entran", thirty.ok && (await countLike("Treinta auth")) === 30, thirty.error);
+    await emit(centro, "waitlist:undo", { actionId: thirty.actionId });
+    const bad = await emit(centro, "waitlist:add-many", { entries: [{ customerName: "Malo auth", partySize: 2 }, { customerName: "Malo auth 2", partySize: 11 }] });
+    check("una fila con 11 personas tumba el lote entero", !bad.ok && (await countLike("Malo auth")) === 0, bad.error);
+    const noName = await emit(centro, "waitlist:add-many", { entries: [{ customerName: "   ", partySize: 2 }] });
+    check("una fila sin nombre se rechaza", !noName.ok);
+
+    const fromAnalitica = await emit(analitica, "waitlist:add-many", lote(2, "Analitica auth"));
+    check("analitica no agrega varios (no entra en la room)", !fromAnalitica.ok && (await countLike("Analitica auth")) === 0);
+    // norte, desde su room, nunca escribe en rest_centro: el restaurante sale de la room.
+    const fromNorte = (await emit(norte, "waitlist:add-many", lote(1, "Norte auth"))) as ManyAck;
+    const [norteRow] = fromNorte.entries?.length
+      ? await db.select().from(waitlistEntries).where(eq(waitlistEntries.id, fromNorte.entries[0].id))
+      : [];
+    check("norte agrega en SU restaurante, nunca en otro", fromNorte.ok && norteRow?.restaurantId === "rest_norte", fromNorte.error);
+    if (norteRow) await db.delete(waitlistEntries).where(eq(waitlistEntries.id, norteRow.id));
+
+    // Volver a la espera: mismo permiso que resolver.
+    const [listo] = await db.select({ id: waitlistEntries.id }).from(waitlistEntries)
+      .where(and(eq(waitlistEntries.restaurantId, "rest_centro"), eq(waitlistEntries.status, "listo"))).limit(1);
+    check("el seed tiene un cliente listo en rest_centro", Boolean(listo));
+    check("analitica no puede volver a la espera a nadie", !(await emit(analitica, "waitlist:reopen", { entryId: listo?.id ?? "" })).ok);
+    check("norte no puede volver a la espera a un cliente de rest_centro", !(await emit(norte, "waitlist:reopen", { entryId: listo?.id ?? "" })).ok);
+    const reopen = (await emit(centro, "waitlist:reopen", { entryId: listo?.id ?? "" })) as ManyAck;
+    check("centro vuelve a la espera a un cliente listo de su restaurante", reopen.ok, reopen.error);
+    check("  y lo puede deshacer", (await emit(centro, "waitlist:undo", { actionId: reopen.actionId })).ok);
+  }
+  for (const s of [centro, analitica, norte]) s?.close();
 }
 
 // ---------------------------------------------------------------------------
