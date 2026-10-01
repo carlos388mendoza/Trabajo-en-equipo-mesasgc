@@ -129,17 +129,24 @@ clientes.
 China Wok y KFC **siguen en el sistema** (mapa, estadísticas y datos), pero
 no entran en el piloto.
 
-**Quién:** **un solo usuario de restaurante** con los 4 locales asignados,
-«Denny's y Pizza Hut» (`dennys-pizzahut@grupocomidas.test`). Al entrar ve
-una tarjeta por restaurante, con cuántos clientes esperan, y cambia de uno a
-otro con el selector de la cabecera. En cada uno tiene el modo sencillo (la
-lista de espera) y el completo (el plano). Cómo crearlo: ver 3.1.
+**Quién:** **dos usuarios de restaurante, uno por marca**, cada uno con sus
+2 locales:
 
-> **Ojo:** un usuario compartido entre 4 locales significa una contraseña que
-> conocen varias personas. Para el piloto se acepta a propósito, por
-> sencillez. Cuando termine, conviene un usuario por host (el administrador
-> puede asignar a cada uno solo su restaurante) y cambiar la contraseña del
-> compartido desde `/admin` (botón «Contraseña»).
+| Usuario | Nombre | Restaurantes |
+|---|---|---|
+| `dennys@grupocomidas.test` | Denny's | Denny's Las Lomas y Denny's Los Andes |
+| `pizzahut@grupocomidas.test` | Pizza Hut | Pizza Hut Norte y Pizza Hut Los Próceres |
+
+Al entrar, cada uno ve una tarjeta por restaurante, con cuántos clientes
+esperan, y cambia de uno a otro con el selector de la cabecera. En cada uno
+tiene el modo sencillo (la lista de espera) y el completo (el plano). No ve
+los locales de la otra marca. Cómo crearlos: ver 3.1.
+
+> **Ojo:** cada usuario lo comparten los hosts de los 2 locales de su marca:
+> una contraseña que conocen varias personas. Para el piloto se acepta a
+> propósito, por sencillez. Cuando termine, conviene un usuario por host (el
+> administrador puede asignar a cada uno solo su restaurante) y cambiar la
+> contraseña de los compartidos desde `/admin` (botón «Contraseña»).
 
 **Cuánto:** una semana completa, de lunes a domingo, incluido un fin de
 semana con hora pico.
@@ -174,20 +181,39 @@ cumple: corregir lo que falló y repetir una semana con los mismos 4.
 
 ### 3.1 Preparar el piloto en /admin
 
-**Crear el usuario del piloto** (lo hace el administrador, entrando con su
-usuario):
+**Crear los dos usuarios del piloto.** Hay dos formas; las dos usan las
+mismas reglas.
+
+*Desde la terminal* (recomendado: cada contraseña la escribe quien corre el
+comando, oculta, y no pasa por ninguna pantalla compartida). En PowerShell,
+dentro de la carpeta del proyecto y con la CLI de Railway enlazada:
+
+```powershell
+& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo dennys@grupocomidas.test --nombre "Denny's" --rol restaurante --marca "Denny's"
+& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo pizzahut@grupocomidas.test --nombre "Pizza Hut" --rol restaurante --marca "Pizza Hut"
+```
+
+Cada uno muestra la base (solo el host), el resumen con sus 2 restaurantes,
+pide la contraseña dos veces y confirmar con «si». Si el usuario ya existe,
+solo le pone el nombre, el rol y los restaurantes, sin tocar su contraseña.
+
+*Desde `/admin`* (entrando con el administrador):
 
 1. Abre **Administración** (`/admin`) y pulsa **Nuevo usuario**.
-2. **Nombre:** «Denny's y Pizza Hut». **Correo:**
-   `dennys-pizzahut@grupocomidas.test`.
+2. **Nombre:** «Denny's». **Correo:** `dennys@grupocomidas.test`.
 3. **Contraseña temporal:** escribe una o pulsa el botón de generar, y
    compártela con el encargado por un canal seguro (no por el chat del grupo).
 4. **Roles:** deja solo **Restaurante**.
-5. **Restaurantes:** en el grupo **Denny's** pulsa **Marcar todos**, y lo
-   mismo en **Pizza Hut**. Arriba tiene que decir «4 de 8».
+5. **Restaurantes:** en el grupo **Denny's** pulsa **Marcar todos**. Arriba
+   tiene que decir «2 de 8».
 6. Pulsa **Crear usuario**. Sale en verde «Usuario … creado».
-7. Para comprobarlo, entra con ese usuario en otra ventana privada: tiene que
-   ver sus 4 tarjetas en **Inicio**.
+7. Repite con «Pizza Hut» (`pizzahut@grupocomidas.test`) y **Marcar todos**
+   en **Pizza Hut**.
+8. Para comprobarlo, entra con cada usuario en otra ventana privada: tiene
+   que ver sus 2 tarjetas en **Inicio**, y ninguna de la otra marca.
+
+Si antes se creó el usuario único `dennys-pizzahut@grupocomidas.test`,
+desactívalo en `/admin` (botón «Desactivar»): ya no se usa.
 
 **Dibujar el plano de cada local:** en cada tarjeta, **Modo completo** abre
 el editor sobre la zona vacía «Comedor principal»: arrastra mesas, baños,

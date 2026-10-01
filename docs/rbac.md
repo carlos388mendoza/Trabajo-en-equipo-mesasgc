@@ -53,8 +53,9 @@ Qué significa cada marca:
 
 Cuatro casos que vale la pena tener presentes:
 
-- **Varios restaurantes, un usuario** (el piloto: Denny's y Pizza Hut). Con
-  el rol restaurante y varios restaurantes asignados, tiene el modo sencillo
+- **Varios restaurantes, un usuario** (el piloto: `dennys@` con los 2 de
+  Denny's y `pizzahut@` con los 2 de Pizza Hut). Con el rol restaurante y
+  varios restaurantes asignados, tiene el modo sencillo
   y el completo en **cada uno** y en ningún otro. En `/inicio` ve una
   tarjeta por restaurante, y la cabecera le muestra un selector para cambiar
   entre ellos. Es solo navegación: cada página, API y evento de socket vuelve
