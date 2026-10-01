@@ -7,8 +7,9 @@
 
 /* Mapa general (components/map/world-map.tsx): el halo que pulsa cuando la
    espera pasa de 20 min, más rápido pasados los 40, y el barrido del radar.
-   `transform-box: fill-box` hace que un <circle> de SVG escale sobre su
-   propio centro y no sobre el origen del lienzo. */
+   Los dos son elementos HTML que solo animan `transform` y `opacity`, para
+   que los mueva el compositor sin repintar el mapa (`PulseLayer` y
+   `RadarSweep`). `transform-box: fill-box` se queda por si se usa en un SVG. */
 @keyframes map-pulse {
   0% { transform: scale(0.85); opacity: 0.95; }
   100% { transform: scale(1.35); opacity: 0; }
@@ -24,8 +25,8 @@
 .map-pulse-fast {
   animation-duration: 1.1s;
 }
-/* El centro del giro lo pone el componente (`style.transformOrigin`): es el
-   centro del mapa de Honduras. */
+/* El barrido es un `div` redondo centrado en el centro del mapa: gira sobre
+   su propio centro. Al animar solo `transform`, lo mueve el compositor. */
 .map-sweep {
   animation: map-sweep 12s linear infinite;
 }
