@@ -114,6 +114,10 @@ export type UndoWaitlistInput = z.infer<typeof undoWaitlistSchema>;
 export const reopenWaitlistEntrySchema = z.object({ entryId: idSchema });
 export type ReopenWaitlistEntryInput = z.infer<typeof reopenWaitlistEntrySchema>;
 
+/** Eliminar a un cliente de la lista («Ver todas las cartas»). */
+export const deleteWaitlistEntrySchema = z.object({ entryId: idSchema });
+export type DeleteWaitlistEntryInput = z.infer<typeof deleteWaitlistEntrySchema>;
+
 export type WaitlistUndoState = {
   actionId: string;
   label: string;
@@ -168,6 +172,12 @@ export interface ClientToServerEvents {
   "waitlist:resolve": (payload: ResolveWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
   /** Volver a la espera a un grupo listo o ausente. Se puede deshacer. */
   "waitlist:reopen": (payload: ReopenWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
+  /**
+   * Eliminar a un grupo de la lista. La room recibe `waitlist:changed` con
+   * `removed`, igual que al deshacer un «agregar», así que los dos clientes lo
+   * borran de su pantalla sin ninguna ruta nueva. Se puede deshacer.
+   */
+  "waitlist:delete": (payload: DeleteWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
   /** Deshacer la última acción de la lista para ese restaurante. */
   "waitlist:undo": (payload: UndoWaitlistInput, ack: (res: Ack<{ action: "removed" | "restored"; entry: WaitlistEntrySnapshot; entries?: WaitlistEntrySnapshot[] }>) => void) => void;
 }

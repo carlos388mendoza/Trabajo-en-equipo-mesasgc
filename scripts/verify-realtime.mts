@@ -618,6 +618,126 @@ section("Ver todas las cartas: volver a la espera");
 }
 
 // ---------------------------------------------------------------------------
+// «Ver todas las cartas»: eliminar un cliente de la fila
+// ---------------------------------------------------------------------------
+
+section("Eliminar un cliente de la lista");
+
+{
+  await db.insert(waitlistEntries).values([
+    cliente("borrar-espera"),
+    cliente("borrar-oculto"),
+    { ...cliente("borrar-demo"), isDemo: true, demoBatchId: "demo_test" },
+    { ...cliente("borrar-ajeno"), restaurantId: REST_2 },
+    { ...cliente("borrar-sentado"), status: "sentado" },
+  ]);
+  await db.update(tables).set({ currentEntryId: "borrar-sentado", status: "ocupada" }).where(eq(tables.id, "m3"));
+
+  type DelAck = AnyAck & {
+    entry?: { id: string; customerName: string; status: string };
+    actionId?: string;
+    action?: string;
+  };
+  const changesA = counter(hostA, "waitlist:changed");
+  const changesB = counter(hostB, "waitlist:changed");
+  const changesOtro = counter(otro, "waitlist:changed");
+  const undoStates = counter(hostA, "waitlist:undo-state");
+  await settle();
+  const before = { a: changesA.length, b: changesB.length, otro: changesOtro.length };
+
+  const bad = await ask(hostA, "waitlist:delete", { entryId: "" });
+  check("waitlist:delete rechaza un payload inválido con Zod", !bad.ok && /no válidos/.test(bad.error ?? ""), bad.error);
+
+  const seated = await ask(hostA, "waitlist:delete", { entryId: "borrar-sentado" });
+  check("un cliente con mesa ocupada no se elimina", !seated.ok && /mesa ocupada/.test(seated.error ?? ""), seated.error);
+  check("  y sigue sentado, con su mesa", (await entryRow("borrar-sentado"))?.status === "sentado" && (await tableRow("m3"))?.currentEntryId === "borrar-sentado");
+  check("  la mesa no se toca", (await tableRow("m3"))?.status === "ocupada", (await tableRow("m3"))?.status);
+
+  // `borrar-ajeno` es de REST_2 y `hostA` está en la room de REST: el borrado
+  // va siempre al restaurante del socket, así que ni lo ve.
+  const fromOther = await ask(hostA, "waitlist:delete", { entryId: "borrar-ajeno" });
+  check(
+    "waitlist:delete no toca un cliente de otro restaurante",
+    !fromOther.ok && (await db.query.waitlistEntries.findFirst({ where: eq(waitlistEntries.id, "borrar-ajeno") })) !== undefined,
+    fromOther.error,
+  );
+
+  const fromAnalitica = await ask(analitica, "waitlist:delete", { entryId: "borrar-espera" });
+  check("analítica no puede eliminar a nadie", !fromAnalitica.ok && (await entryRow("borrar-espera")) !== undefined, fromAnalitica.error);
+
+  const missing = await ask(hostA, "waitlist:delete", { entryId: "no-existe" });
+  check("un cliente que no existe 'no existe'", !missing.ok && /no existe/.test(missing.error ?? ""), missing.error);
+
+  // Un cliente de DEMOSTRACIÓN se borra como cualquier otro: a veces hay que
+  // limpiar una carta de mentira. Y al deshacer vuelve con su lote intacto,
+  // que es justo lo que no puede pasar en producción. Se borra y se deshace
+  // aquí seguido porque el «deshacer» es de una sola acción a la vez: el
+  // borrado siguiente taparía el registro.
+  const demo = (await ask(hostA, "waitlist:delete", { entryId: "borrar-demo" })) as DelAck;
+  await settle();
+  check("un cliente de demostración también se elimina", demo.ok && (await entryRow("borrar-demo")) === undefined, demo.error);
+  const undoneDemo = (await ask(hostA, "waitlist:undo", { actionId: demo.actionId })) as DelAck;
+  await settle();
+  const backDemo = await entryRow("borrar-demo");
+  check(
+    "  y al deshacer vuelve con su is_demo y su lote intactos: el lote demo sigue valiendo",
+    undoneDemo.ok && undoneDemo.action === "restored" && backDemo?.isDemo === true && backDemo?.demoBatchId === "demo_test",
+    JSON.stringify(backDemo),
+  );
+
+  const done = (await ask(hostB, "waitlist:delete", { entryId: "borrar-espera" })) as DelAck;
+  await settle();
+  check(
+    "waitlist:delete quita al cliente y devuelve actionId",
+    done.ok && done.entry?.id === "borrar-espera" && Boolean(done.actionId) && (await entryRow("borrar-espera")) === undefined,
+    done.error,
+  );
+  check(
+    "  lo avisa a las dos tablets como «removed», que es lo que ya saben quitar de la pantalla",
+    changesA.length === before.a + 3 && changesB.length === before.b + 3 && (changesB.at(-1) as { action?: string })?.action === "removed",
+    `A=${changesA.length} B=${changesB.length}`,
+  );
+  check("  y no a otra room", changesOtro.length === before.otro);
+  check("  y se puede deshacer, con el nombre del cliente", /borrar-espera/.test((undoStates.at(-1) as { label?: string } | null)?.label ?? ""), JSON.stringify(undoStates.at(-1)));
+
+  const undone = (await ask(hostA, "waitlist:undo", { actionId: done.actionId })) as DelAck;
+  await settle();
+  const back = await entryRow("borrar-espera");
+  check(
+    "deshacer «eliminar» lo devuelve entero a la lista",
+    undone.ok && undone.action === "restored" && undone.entry?.id === "borrar-espera" && back !== undefined,
+    undone.error,
+  );
+  check("  con sus mismos datos", back?.customerName === "borrar-espera" && back?.partySize === 2 && back?.status === "esperando", JSON.stringify(back));
+
+  const again = await ask(hostA, "waitlist:undo", { actionId: done.actionId });
+  check("la misma eliminación no se puede deshacer dos veces", !again.ok, again.error);
+
+  // Un cliente marcado «listo» en otra tablet SÍ se puede borrar: el borrado
+  // no depende del estado. La carrera de verdad (la fila cambia entre leerla
+  // y borrarla) no se puede provocar desde fuera, así que lo que se comprueba
+  // aquí es que un cambio de estado previo no estorba.
+  await resolveViaDb("borrar-oculto");
+  const afterResolve = (await ask(hostA, "waitlist:delete", { entryId: "borrar-oculto" })) as DelAck;
+  await settle();
+  check(
+    "un cliente ya resuelto también se elimina",
+    afterResolve.ok && (await entryRow("borrar-oculto")) === undefined,
+    afterResolve.error,
+  );
+
+  // El permiso se mira en cada evento, también aquí.
+  const sessionB = await getAuth().api.getSession({ headers: new Headers({ cookie: cookieB }) });
+  await setUserAccess(sessionB!.user.id, ["analitica"], []);
+  const revoked = await ask(hostB, "waitlist:delete", { entryId: "borrar-espera" });
+  check("waitlist:delete exige permiso actualizado", !revoked.ok && /permiso/.test(revoked.error ?? ""), revoked.error);
+  check("  y no se borra nada", (await entryRow("borrar-espera")) !== undefined);
+  await setUserAccess(sessionB!.user.id, ["restaurante"], [REST]);
+  await db.delete(waitlistEntries).where(inArray(waitlistEntries.id, ["borrar-espera", "borrar-oculto", "borrar-demo", "borrar-ajeno", "borrar-sentado"]));
+  await db.update(tables).set({ currentEntryId: null, status: "libre" }).where(eq(tables.id, "m3"));
+}
+
+// ---------------------------------------------------------------------------
 // Agregar varios clientes de una vez
 // ---------------------------------------------------------------------------
 

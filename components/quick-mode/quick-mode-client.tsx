@@ -359,6 +359,33 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
     }
   }
 
+  async function deleteGuest(entryId: string): Promise<boolean> {
+    const socket = socketRef.current;
+    if (!socket?.connected) {
+      setError("Esperando la conexión en tiempo real.");
+      return false;
+    }
+    setError("");
+    try {
+      const result = await socket.timeout(5000).emitWithAck("waitlist:delete", { entryId });
+      if (!result.ok) {
+        // «Tiene una mesa ocupada» o «cambió en otro dispositivo»: es un
+        // problema que el usuario tiene que ver y resolver, así que el
+        // mensaje se queda en la pantalla en vez de salir como un aviso.
+        setError(result.error);
+        return false;
+      }
+      // No se quita nada a mano: el `waitlist:changed` con `removed` que
+      // emite el socket para toda la room la borra de la lista y del mazo.
+      offerUndoForFiveSeconds();
+      showNotice(`Se eliminó a ${result.entry.customerName}.`, 2500);
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se pudo eliminar.");
+      return false;
+    }
+  }
+
   async function undoLastAction() {
     if (!undoState || undoing) return;
     const socket = socketRef.current;
@@ -416,16 +443,16 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="mx-auto max-w-6xl px-4 pb-32 pt-6 sm:px-6 sm:pt-8">
+      <div className="mx-auto max-w-6xl px-4 pb-32 pt-6 movil-horizontal:pb-24 movil-horizontal:pt-3 sm:px-6 sm:pt-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[.18em] text-accent">
               Servicio en vivo · Local {restaurantId}
             </p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-app-text">
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-app-text movil-horizontal:mt-1 movil-horizontal:text-2xl">
               Modo sencillo
             </h1>
-            <p className="mt-1 text-app-muted">Gestiona la fila en unos pocos toques.</p>
+            <p className="mt-1 text-app-muted movil-horizontal:hidden">Gestiona la fila en unos pocos toques.</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <div className="rounded-2xl border border-app-border bg-panel px-5 py-3 shadow-sm">
@@ -449,7 +476,7 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
           </p>
         )}
 
-        <section className="mt-6 rounded-3xl border border-app-border bg-panel p-5 text-panel-text shadow-xl sm:p-7">
+        <section className="mt-6 rounded-3xl border border-app-border bg-panel p-5 text-panel-text shadow-xl movil-horizontal:mt-3 movil-horizontal:!p-4 sm:p-7">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="rounded-full bg-app-border/60 px-3 py-1.5 text-xs font-semibold tracking-wide text-panel-text">
               SIGUIENTE EN LA FILA
@@ -478,55 +505,60 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
             <div className="grid h-[420px] place-items-center text-panel-muted sm:h-[460px]" role="status">Cargando lista…</div>
           ) : waiting.length ? (
             <>
-              <div className="relative mx-auto mt-6 h-[400px] w-full max-w-[560px] touch-pan-y sm:h-[440px]">
-                <AnimatePresence custom={exitDirections} initial={false}>
-                  {waiting.slice(0, 3).map((guest, depth) => (
-                    <SwipeCard
-                      key={guest.id}
-                      ref={depth === 0 ? cardRef : undefined}
-                      guest={guest}
-                      depth={depth}
-                      isTop={depth === 0}
-                      now={now}
-                      enterFrom={enterDirections[guest.id]}
-                      onResolve={markGuest}
-                      onTap={depth === 0 ? onCardTap : undefined}
-                    />
-                  ))}
-                </AnimatePresence>
-              </div>
-              <div className="mx-auto mt-2 grid max-w-[560px] grid-cols-[1fr_auto_1fr] items-center gap-3">
-                <button
-                  type="button"
-                  disabled={!current || resolving || !connected}
-                  onClick={() => void cardRef.current?.swipe("ausente")}
-                  className="flex min-h-[68px] flex-col items-center justify-center gap-1 rounded-2xl border border-estado-ocupada/50 bg-panel px-3 py-2 font-semibold text-estado-ocupada transition hover:bg-estado-ocupada/10 disabled:opacity-45"
-                  aria-label="Marcar ausente"
-                >
-                  <X aria-hidden size={25} strokeWidth={2.5} />
-                  <span className="text-xs">Ausente</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={!undoState || undoing || !connected}
-                  onClick={() => void undoLastAction()}
-                  className="flex min-h-[60px] min-w-[74px] flex-col items-center justify-center gap-1 rounded-2xl border border-app-border bg-panel px-3 py-2 font-semibold text-panel-muted transition hover:bg-app-border/50 hover:text-panel-text disabled:opacity-40"
-                  aria-label="Deshacer última acción (Ctrl+Z)"
-                  title="Deshacer · Ctrl+Z"
-                >
-                  <Undo2 aria-hidden size={22} />
-                  <span className="text-xs">Deshacer</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={!current || resolving || !connected}
-                  onClick={() => void cardRef.current?.swipe("listo")}
-                  className="flex min-h-[68px] flex-col items-center justify-center gap-1 rounded-2xl border border-estado-libre/50 bg-panel px-3 py-2 font-semibold text-estado-libre transition hover:bg-estado-libre/10 disabled:opacity-45"
-                  aria-label="Marcar listo"
-                >
-                  <Check aria-hidden size={25} strokeWidth={2.5} />
-                  <span className="text-xs">Listo</span>
-                </button>
+              {/* Con el teléfono tumbado el ancho sobra y el alto escasea: la
+                  carta y los botones van uno al lado del otro, para que los
+                  botones no se coman una columna entera debajo de la carta. */}
+              <div className="movil-horizontal:mt-3 movil-horizontal:flex movil-horizontal:items-start movil-horizontal:gap-8">
+                <div className="relative mx-auto mt-6 h-[400px] w-full max-w-[560px] touch-pan-y movil-horizontal:mx-0 movil-horizontal:mt-0 movil-horizontal:!h-[288px] movil-horizontal:max-w-none movil-horizontal:flex-1 sm:h-[440px]">
+                  <AnimatePresence custom={exitDirections} initial={false}>
+                    {waiting.slice(0, 3).map((guest, depth) => (
+                      <SwipeCard
+                        key={guest.id}
+                        ref={depth === 0 ? cardRef : undefined}
+                        guest={guest}
+                        depth={depth}
+                        isTop={depth === 0}
+                        now={now}
+                        enterFrom={enterDirections[guest.id]}
+                        onResolve={markGuest}
+                        onTap={depth === 0 ? onCardTap : undefined}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </div>
+                <div className="mx-auto mt-2 grid max-w-[560px] grid-cols-[1fr_auto_1fr] items-center gap-3 movil-horizontal:mx-0 movil-horizontal:mt-0 movil-horizontal:w-[13.5rem] movil-horizontal:max-w-none movil-horizontal:shrink-0 movil-horizontal:grid-cols-1 movil-horizontal:gap-2.5">
+                  <button
+                    type="button"
+                    disabled={!current || resolving || !connected}
+                    onClick={() => void cardRef.current?.swipe("ausente")}
+                    className="flex min-h-[68px] flex-col items-center justify-center gap-1 rounded-2xl border border-estado-ocupada/50 bg-panel px-3 py-2 font-semibold text-estado-ocupada transition hover:bg-estado-ocupada/10 disabled:opacity-45"
+                    aria-label="Marcar ausente"
+                  >
+                    <X aria-hidden size={25} strokeWidth={2.5} />
+                    <span className="text-xs">Ausente</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!undoState || undoing || !connected}
+                    onClick={() => void undoLastAction()}
+                    className="flex min-h-[60px] min-w-[74px] flex-col items-center justify-center gap-1 rounded-2xl border border-app-border bg-panel px-3 py-2 font-semibold text-panel-muted transition hover:bg-app-border/50 hover:text-panel-text disabled:opacity-40"
+                    aria-label="Deshacer última acción (Ctrl+Z)"
+                    title="Deshacer · Ctrl+Z"
+                  >
+                    <Undo2 aria-hidden size={22} />
+                    <span className="text-xs">Deshacer</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!current || resolving || !connected}
+                    onClick={() => void cardRef.current?.swipe("listo")}
+                    className="flex min-h-[68px] flex-col items-center justify-center gap-1 rounded-2xl border border-estado-libre/50 bg-panel px-3 py-2 font-semibold text-estado-libre transition hover:bg-estado-libre/10 disabled:opacity-45"
+                    aria-label="Marcar listo"
+                  >
+                    <Check aria-hidden size={25} strokeWidth={2.5} />
+                    <span className="text-xs">Listo</span>
+                  </button>
+                </div>
               </div>
               <AnimatePresence>
                 {undoPrompt && undoState && (
@@ -541,7 +573,7 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
                   </motion.p>
                 )}
               </AnimatePresence>
-              <p className="mx-auto mt-3 max-w-[560px] text-center text-xs text-panel-muted">
+              <p className="mx-auto mt-3 max-w-[560px] text-center text-xs text-panel-muted movil-horizontal:mt-2">
                 Desliza la carta (o usa las flechas) para marcarla lista o ausente. Tócala para agregar un cliente; toca una esquina para ver la fila en abanico.
                 {waiting.length > 3 && ` Detrás hay ${plural(waiting.length - 3, "carta más", "cartas más")}.`}
               </p>
@@ -593,7 +625,12 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
       <button
         type="button"
         onClick={() => setOverlay("form")}
-        className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-40 inline-flex min-h-14 items-center gap-2 rounded-full bg-accent px-5 font-semibold text-accent-text shadow-[0_12px_30px_rgba(0,0,0,0.25)] transition hover:bg-accent/85 sm:right-8"
+        // Con el teléfono tumbado los botones de la fila se quedan a la derecha,
+        // así que el botón flotante se va a la IZQUIERDA: si no, «Agregar
+        // cliente» se pondría encima de «Listo» y un dedo errado abriría el
+        // formulario en vez de marcar. Encima de la carta no hay problema:
+        // tocar la carta también abre el formulario.
+        className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-40 inline-flex min-h-14 items-center gap-2 rounded-full bg-accent px-5 font-semibold text-accent-text shadow-[0_12px_30px_rgba(0,0,0,0.25)] transition hover:bg-accent/85 movil-horizontal:!right-auto movil-horizontal:left-4 sm:right-8"
       >
         <Plus aria-hidden size={22} />
         Agregar cliente
@@ -651,6 +688,7 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
         subscribe={subscribe}
         onResolve={(entryId, status) => markGuest(entryId, status, status === "listo" ? 1 : -1)}
         onReopen={reopenGuest}
+        onDelete={deleteGuest}
         onUndo={undoLastAction}
       />
     </MotionConfig>

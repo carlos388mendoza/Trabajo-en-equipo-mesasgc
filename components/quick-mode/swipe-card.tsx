@@ -162,7 +162,7 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
       exit="exit"
       transition={{ layout: { type: "spring", stiffness: 420, damping: 32 }, y: { type: "spring", stiffness: 420, damping: 32 }, scale: { type: "spring", stiffness: 420, damping: 32 } }}
       style={{ x, rotate, opacity, zIndex: 10 - depth, touchAction: isTop ? "pan-y" : "auto" }}
-      className={`absolute inset-x-0 top-0 mx-auto flex h-[360px] w-full max-w-[560px] select-none flex-col overflow-hidden rounded-[2rem] border border-app-border bg-panel p-7 text-panel-text shadow-xl sm:h-[400px] sm:p-9 ${isTop ? "cursor-grab active:cursor-grabbing" : "pointer-events-none"}`}
+      className={`absolute inset-x-0 top-0 mx-auto flex h-[360px] w-full max-w-[560px] select-none flex-col overflow-hidden rounded-[2rem] border border-app-border bg-panel p-7 text-panel-text shadow-xl movil-horizontal:!h-[252px] movil-horizontal:!p-4 sm:h-[400px] sm:p-9 ${isTop ? "cursor-grab active:cursor-grabbing" : "pointer-events-none"}`}
       aria-label={`${guest.name}, ${waitingMinutes} ${waitingMinutes === 1 ? "minuto" : "minutos"} esperando`}
     >
       {isTop && <CornerMarks />}
@@ -185,8 +185,16 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
         )}
       </AnimatePresence>
       <div className="mt-auto">
-        <h2 className="break-words text-3xl font-bold tracking-tight sm:text-4xl">{guest.name}</h2>
-        <p className="mt-5 inline-flex items-center gap-2 text-panel-muted">
+        {/* El nombre es lo primero que hay que ver: dos líneas como mucho y el
+            texto completo en el `title`, para que «los clientes de la mesa 4»
+            se lean enteros y no se recorten a medias. */}
+        <h2
+          title={guest.name}
+          className="break-words text-3xl font-bold leading-tight tracking-tight line-clamp-2 movil-horizontal:!text-2xl sm:text-4xl"
+        >
+          {guest.name}
+        </h2>
+        <p className="mt-5 inline-flex items-center gap-2 text-panel-muted movil-horizontal:mt-2">
           <UsersRound aria-hidden size={19} />
           <span>{guest.party} {guest.party === 1 ? "persona" : "personas"}</span>
         </p>
@@ -195,7 +203,7 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
             {guest.note}
           </p>
         )}
-        <p className={`mt-5 inline-flex items-center gap-2 text-sm font-semibold ${waitingColor}`}>
+        <p className={`mt-5 inline-flex items-center gap-2 text-sm font-semibold ${waitingColor} movil-horizontal:mt-2`}>
           <Clock3 aria-hidden size={17} />
           {waitingMinutes} {waitingMinutes === 1 ? "minuto" : "minutos"} esperando
         </p>
