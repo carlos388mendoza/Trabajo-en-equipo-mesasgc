@@ -17,8 +17,10 @@ import { restaurantExists } from "@/lib/db/queries/layouts";
 import { getCounters } from "@/lib/map/counters";
 import { assignTable, releaseTable } from "@/lib/tables/assign";
 import {
+  addWaitlistEntries,
   addWaitlistEntry,
   getWaitlistUndoState,
+  reopenWaitlistEntry,
   resolveWaitlistEntry,
   undoWaitlistAction,
 } from "@/lib/waitlist/quick-actions";
@@ -27,10 +29,13 @@ import { canAssignTables, canJoinOverview, canJoinRestaurant, canModifyWaitlist,
 import {
   type Ack,
   OVERVIEW_ROOM,
+  MAX_BATCH_ENTRIES,
+  addManyWaitlistEntriesSchema,
   addWaitlistEntrySchema,
   assignTableSchema,
   joinRestaurantSchema,
   releaseTableSchema,
+  reopenWaitlistEntrySchema,
   resolveWaitlistEntrySchema,
   roomFor,
   undoWaitlistSchema,
@@ -179,6 +184,33 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
       });
     });
 
+    socket.on("waitlist:add-many", async (raw, ack) => {
+      await respond(ack, async () => {
+        const restaurantId = socket.data.restaurantId;
+        if (!restaurantId) return fail("Primero entra en un restaurante.");
+        if (!(await canModifyWaitlist({ userId: socket.data.userId }, restaurantId))) {
+          return fail("No tienes permiso para modificar la lista de espera en este restaurante.");
+        }
+        const parsed = addManyWaitlistEntriesSchema.safeParse(raw);
+        if (!parsed.success) {
+          const tooMany = parsed.error.issues.some((issue) => issue.code === "too_big" && issue.path.length === 1);
+          return fail(tooMany
+            ? `Se pueden agregar hasta ${MAX_BATCH_ENTRIES} clientes de una vez.`
+            : "Revisa el nombre y la cantidad de personas de cada cliente.");
+        }
+
+        const result = await addWaitlistEntries(restaurantId, parsed.data.entries);
+        if (!result.ok) return fail(result.error);
+        const undo = getWaitlistUndoState(restaurantId);
+        for (const entry of result.entries) {
+          io.to(roomFor(restaurantId)).emit("waitlist:changed", { action: "added", entry, undo });
+        }
+        io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
+        void emitOverview(restaurantId);
+        return { ok: true, entries: result.entries, actionId: result.actionId };
+      });
+    });
+
     socket.on("waitlist:resolve", async (raw, ack) => {
       await respond(ack, async () => {
         const restaurantId = socket.data.restaurantId;
@@ -193,11 +225,36 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
           restaurantId,
           parsed.data.entryId,
           parsed.data.status,
+          socket.data.userId,
         );
         if (!result.ok) return fail(result.error);
         const undo = getWaitlistUndoState(restaurantId);
         io.to(roomFor(restaurantId)).emit("waitlist:changed", {
           action: "resolved",
+          entry: result.entry,
+          undo,
+        });
+        io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
+        void emitOverview(restaurantId);
+        return { ok: true, entry: result.entry, actionId: result.actionId };
+      });
+    });
+
+    socket.on("waitlist:reopen", async (raw, ack) => {
+      await respond(ack, async () => {
+        const restaurantId = socket.data.restaurantId;
+        if (!restaurantId) return fail("Primero entra en un restaurante.");
+        if (!(await canModifyWaitlist({ userId: socket.data.userId }, restaurantId))) {
+          return fail("No tienes permiso para modificar la lista de espera en este restaurante.");
+        }
+        const parsed = reopenWaitlistEntrySchema.safeParse(raw);
+        if (!parsed.success) return fail("Datos del cliente no válidos.");
+
+        const result = await reopenWaitlistEntry(restaurantId, parsed.data.entryId);
+        if (!result.ok) return fail(result.error);
+        const undo = getWaitlistUndoState(restaurantId);
+        io.to(roomFor(restaurantId)).emit("waitlist:changed", {
+          action: "reopened",
           entry: result.entry,
           undo,
         });
@@ -220,14 +277,17 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         const result = await undoWaitlistAction(restaurantId, parsed.data.actionId);
         if (!result.ok) return fail(result.error);
         const undo = getWaitlistUndoState(restaurantId);
-        io.to(roomFor(restaurantId)).emit("waitlist:changed", {
-          action: result.action,
-          entry: result.entry,
-          undo,
-        });
+        // Deshacer «agregar varios» quita a todos: un aviso por cada uno.
+        for (const entry of result.entries ?? [result.entry]) {
+          io.to(roomFor(restaurantId)).emit("waitlist:changed", {
+            action: result.action,
+            entry,
+            undo,
+          });
+        }
         io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
         void emitOverview(restaurantId);
-        return { ok: true, action: result.action, entry: result.entry };
+        return { ok: true, action: result.action, entry: result.entry, entries: result.entries };
       });
     });
   });

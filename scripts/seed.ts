@@ -482,13 +482,17 @@ async function seedHistory() {
         if (random() < absentRate) {
           // Unos se fueron antes del aviso; otros no volvieron cuando se les avisó.
           const leftEarly = random() < 0.4;
+          const markedAbsent = new Date(leftEarly
+            ? arrivedAt.getTime() + Math.round(waitMinutes * 0.7) * 60_000
+            : calledAt.getTime() + (8 + Math.floor(random() * 5)) * 60_000);
           rows.push({
             ...base,
             status: "ausente",
             calledAt: leftEarly ? null : calledAt,
-            updatedAt: new Date(leftEarly
-              ? arrivedAt.getTime() + Math.round(waitMinutes * 0.7) * 60_000
-              : calledAt.getTime() + (8 + Math.floor(random() * 5)) * 60_000),
+            // Para «Ver todas las cartas» («esperó X min»). Sin quién: el
+            // historial es anterior a los usuarios de prueba.
+            resolvedAt: markedAbsent,
+            updatedAt: markedAbsent,
           });
           return;
         }
