@@ -190,7 +190,20 @@ a `/analiticas`.
    ```
 
    Deja 8 restaurantes con mesas, clientes y los 5 usuarios de prueba.
-5. Pasa las comprobaciones, para no llevarte sorpresas:
+5. **Carga además los datos de demostración** (README §17), para que
+   `/analiticas` y el asistente tengan ocho semanas de historia que contar:
+
+   ```bash
+   npm run db:demo
+   ```
+
+   Pide escribir «si». Avisa de que hay datos falsos arriba, en todas las
+   pantallas, y eso es parte de la demostración: enseña el aviso, enséñale a
+   un host o a analitica que lo ven, y luego bórralos desde
+   `/admin/datos-demo` escribiendo `BORRAR` para que el aviso desaparezca solo.
+   Si prefieres la demo limpia, sáltate este paso (pero entonces las
+   estadísticas salen casi vacías).
+6. Pasa las comprobaciones, para no llevarte sorpresas:
 
    ```bash
    npm run verify:realtime
@@ -201,7 +214,9 @@ a `/analiticas`.
 **15 minutos antes:**
 
 1. Otra vez `npm run seed:reset`: las esperas del mapa cuentan desde ese
-   momento, así que salen los tres colores (normal, amarillo y rojo).
+   momento, así que salen los tres colores (normal, amarillo y rojo). Si
+   cargaste el lote de demostración, `db:demo` también es idempotente: volver a
+   correrlo no duplica nada y deja las esperas como estaban.
 2. Arranca la app con `npm run dev` (Next y Socket.IO en el puerto 3000).
 3. Abre y deja listas:
    - **Pestaña 1:** `/login`.
@@ -260,17 +275,29 @@ el mismo puerto: Railway expone un solo puerto, y así el navegador se conecta
 al mismo origen, sin CORS.
 
 **¿Tienen CI/CD?**
-Contéstalo con sinceridad: está en camino, todavía no activo. El workflow de
-GitHub Actions está en el PR #10 (`chore/ci`), pendiente de revisión, y
-todavía no está en `testing`. El plan es correr en cada push typecheck, lint,
-build y los tres `verify` (editor, tiempo real y auth), que ya existen y
-salen con error si algo falla. El deploy a Railway solo se dispara al
-fusionar `testing` → `main`. Mientras tanto se trabaja así: ramas desde
-`testing`, PR hacia `testing` con revisión del otro miembro, y nunca push a
-`main`.
+Sí. GitHub Actions corre en cada pull request hacia `testing` o `main` y en
+cada push a esas ramas: typecheck, lint, build y las cuatro verificaciones
+(`verify:editor`, `verify:realtime`, `verify:auth` y `verify:demo`). No usa
+ningún *runner* de tests: son scripts que levantan una SQLite temporal y aplican
+las migraciones del repositorio, así que nunca tocan Turso ni OpenRouter. Las dos
+ramas tienen un *ruleset* que exige el CI en verde y **no permite borrarlas ni
+hacer *force push***, ni siquiera para los administradores. El despliegue a
+Railway solo se dispara al fusionar `testing` → `main`, y con «Wait for CI»
+activo, así que Railway tampoco despliega nada con el CI en rojo.
 
 **Otras que pueden salir:**
 
+- **¿Y si quieren datos de mentira para probar?** Hay un lote que se carga con
+  `npm run db:demo` y se borra desde `/admin/datos-demo` escribiendo `BORRAR` (o
+  con `npm run db:demo:borrar`). Cada fila que inserta lleva `is_demo` y
+  `demo_batch_id`, dos columnas de una migración que solo añade cosas
+  (`0007`). El borrado usa esas columnas y **nunca el nombre**, así que
+  renombrar una zona de demostración no la salva ni renombrar una real la mete
+  en el lote. Va en una transacción y, si algún dato **real** dependiera de algo
+  de demostración, **aborta sin escribir nada**: es más preferable fallar a que
+  se lleve por delante algo que no era suyo. Mientras haya datos de
+  demostración, un aviso lo dice en todas las pantallas y desaparece solo
+  cuando ya no queda nada. Nunca crea ni toca usuarios ni contraseñas.
 - **¿Por qué SQLite y Turso?** Es SQLite en la nube, con la misma base en
   local (`local.db`) y en producción. Las migraciones se generan con
   `drizzle-kit generate` y son solo aditivas.

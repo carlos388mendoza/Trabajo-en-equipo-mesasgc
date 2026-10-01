@@ -30,10 +30,12 @@ local.db
 local.db-wal
 local.db-shm
 
-# bases de datos temporales de `npm run verify:editor` y `verify:realtime`
+# bases de datos temporales de `npm run verify:editor`, `verify:realtime`,
+# `verify:auth` y `verify:demo`
 .verify-editor.db*
 .verify-realtime.db*
 .verify-auth.db*
+.verify-demo.db*
 
 # logs de `next dev` en segundo plano
 .dev-*.log

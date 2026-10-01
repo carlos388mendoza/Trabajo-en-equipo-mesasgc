@@ -132,6 +132,79 @@ railway run npm run db:restaurantes
 
 Después, el admin crea desde `/admin` los usuarios de cada restaurante, y cada host dibuja su plano en el editor, sobre la zona vacía.
 
+## 3c. Cargar los datos de demostración (opcional)
+
+Para probar en producción el mapa, las estadísticas y el asistente sin esperar al
+piloto, hay un lote de datos **falsos** (`README`, sección 17). **No es parte del
+despliegue**: no está en el Pre-deploy y no se carga solo.
+
+1. **Primero, comprueba que el despliegue está bien.** Si la última versión publicada
+   no pasó el CI o el log no trae «migrations applied successfully!»,
+   «catálogo de elementos: 8 tipos listos» y «Healthcheck succeeded!», arregla
+   eso primero: con datos de demostración encima, un despliegue malo es difícil
+   de leer.
+2. **Mira primero qué hay y qué haría el borrado, sin escribir nada:**
+
+   ```powershell
+   railway run npm run db:demo:borrar
+   ```
+
+   Antes de preguntar, el script hace una pasada en seco: enseña el host de la
+   base, los conteos (zonas, mesas, clientes) y qué **no** toca. Si quieres ver
+   esa información y no borrar, escribe cualquier cosa que no sea `BORRAR`
+   (por ejemplo `ver`): sale «Cancelado. No se escribió nada». Si el host no es
+   el de `mesasgc-prod`, para aquí.
+3. Antes de cargar, comprueba con consultas de **solo lectura** que no hay datos
+   reales que una carga demo pudiera pisar (el lote es idempotente y solo
+   inserta filas nuevas marcadas, pero conviene verlo). Se ejecutan en el
+   **shell de la base en el panel de Turso** (o con `turso db execute
+   mesasgc-prod "SELECT …"` desde la CLI de Turso):
+
+   ```sql
+   SELECT COUNT(*) FROM restaurants;              -- 8
+   SELECT COUNT(*) FROM brands;                   -- 4
+   SELECT COUNT(*) FROM table_layouts;            -- 8 (las zonas vacías reales)
+   SELECT COUNT(*) FROM table_layouts WHERE is_demo;  -- 0
+   SELECT COUNT(*) FROM tables;                   -- 0
+   SELECT COUNT(*) FROM waitlist_entries;         -- 0
+   ```
+
+   Si `table_layouts` no son 8 o hay filas en `tables` o `waitlist_entries`,
+   ya hay uso real de la app: sigue, pero avisa a quien esté probando. Guárdalo
+   como «antes», porque es lo que hay que comparar al terminar.
+4. Carga el lote:
+
+   ```powershell
+   railway run npm run db:demo
+   ```
+
+   Muestra solo el **host** de la base (nunca el token) y pide escribir «si».
+5. Comprueba que salió bien: debe decir **8 zonas, 86 mesas, 29 clientes
+   esperando, 29 sentados, 6 mesas reservadas y ~12 251 de historial** (12 403
+   filas en total), y **0 omitidos**. Si sale «Omitidos», es que en esa base
+   falta algún restaurante: corre `db:restaurantes` y vuelve a correrlo.
+6. En el navegador: entra como admin, `/analiticas` y `/mapa` tienen cifras y el
+   aviso «Hay datos de demostración cargados» aparece arriba en todas las
+   pantallas. Como analitica, el aviso también sale, sin el botón de borrar.
+7. **Al terminar las pruebas, borra el lote** desde la web: `/admin/datos-demo`,
+   escribir `BORRAR`. Es la vía normal, y el aviso desaparece solo. Si hace
+   falta desde la terminal:
+
+   ```powershell
+   railway run npm run db:demo:borrar
+   ```
+
+8. Comprueba que quedó limpio: `SELECT COUNT(*) FROM table_layouts WHERE
+   is_demo;` → 0, y `table_layouts` sigue con 8 filas (las reales), con
+   `brands` 4 y `restaurants` 8.
+
+**Lo que el lote nunca toca**, en producción ni en local: marcas, restaurantes,
+el catálogo de tipos, los usuarios y sus contraseñas, y las zonas reales. Cada
+fila que inserta va marcada con `is_demo` y `demo_batch_id` (migración `0007`, solo
+aditiva), y el borrado usa esas columnas, nunca el nombre. Si al borrar un dato
+**real** dependiera de algo de demostración, el borrado **aborta** sin escribir
+nada y explica cuál es la referencia, en vez de romper el dato real.
+
 ## 4. Revisar un despliegue fallido
 
 1. Abre el proyecto y servicio en Railway.
