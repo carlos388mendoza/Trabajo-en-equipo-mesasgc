@@ -73,3 +73,55 @@ Si cambias el encuadre en `projection.ts`, vuelve a generarlo.
 - Admin y analitica: `/mapa`, con todos los restaurantes (`mapa:ver`).
 - El rol restaurante no entra en `/mapa`: ve el plano en vivo de los suyos en
   `/restaurante/[id]/mapa` (ver `docs/rbac.md`).
+
+## Rendimiento (perf/mapa, 1 de octubre de 2026)
+
+El mapa se sentía lagueado. Se midió con Chrome en modo headless (60 Hz
+reales), contra la app compilada en producción y el seed de desarrollo, con
+un script que en cada cuadro manda un `pointermove` (arrastre en círculo) o
+un `wheel` (acercar y alejar) y cuenta los cuadros. «Tablet» es 768 × 1024
+con la CPU 4 veces más lenta.
+
+| Escenario | Antes | Después |
+|---|---|---|
+| Computadora 1280 × 800: reposo / arrastre / rueda | 60 / 24,3 / 14,8 fps | 60 / 60 / 60 fps |
+| Tablet (CPU 4×): reposo / arrastre / rueda | 44,7 / 11 / 13 fps | 51,7 / 54 / 47,3 fps |
+| Tiempo de pintado en la prueba de tablet | 2,9 s | 0,05 s |
+
+Qué lo hacía lento (según la traza del navegador):
+
+1. **Cada cuadro del gesto cambiaba el `viewBox` con `setState`**: React
+   volvía a renderizar todo el componente (filtros, lista, ~165 nodos SVG y
+   los grupos), y el navegador recalculaba estilos, layout y repintaba el SVG
+   entero.
+2. **Los rótulos cambiaban de `fontSize` en cada cuadro**, con su layout.
+3. **El barrido del radar y los halos que pulsan eran elementos SVG
+   animados**: el SVG no se compone en la GPU, así que se repintaba el mapa
+   en cada cuadro aunque nadie lo tocara.
+4. **`backdrop-blur` en los controles de encima**: había que desenfocar de
+   nuevo lo de detrás en cada cuadro.
+
+No había filtros SVG (`blur`, `drop-shadow`), las líneas ya usaban
+`vector-effect="non-scaling-stroke"` y los polígonos son pocos (unos 3 300
+puntos), así que no hizo falta simplificarlos por zoom ni pasar a canvas.
+
+Qué se cambió (`components/map/world-map.tsx`):
+
+- **Cámara en dos tiempos.** Durante el gesto (o una animación de los
+  botones) solo cambia el `transform` CSS de una capa con
+  `will-change: transform`, con `requestAnimationFrame`: lo mueve la GPU,
+  sin React. Al soltar, o 150 ms después de la última rueda, se confirma la
+  cámara: un render, con los rótulos a su tamaño y los grupos recalculados.
+- **La capa mide el doble que la ventana del mapa**, para que al arrastrar no
+  se vean bordes vacíos antes de confirmar.
+- **`MapBase` está memoizado** y en su propia capa: los contadores en vivo
+  solo redibujan los marcadores.
+- **Barrido y halos son `div`** que animan solo `transform` y `opacity`
+  (`RadarSweep`, `PulseLayer`): los anima el compositor. Se paran con
+  «reducir movimiento» y el navegador los pausa con la pestaña oculta. De
+  muy cerca (más de 4 000 px de diámetro) el barrido no se pinta.
+- **Controles sin `backdrop-blur`**, con fondo al 95 %.
+- **El minimapa se mueve en vivo** por `ref`, sin renderizar.
+
+Mientras dura un gesto, los rótulos y marcadores se agrandan o achican con
+el zoom y vuelven a su tamaño al soltar, como en los mapas de los teléfonos.
