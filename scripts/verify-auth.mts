@@ -204,6 +204,8 @@ section("Calentar rutas");
 
 const WARM_UP: [string, string][] = [
   ["GET", "/login"],
+  // La de Better Auth también: un 404 aquí tumbaba todos los login (1 de octubre).
+  ["POST", "/api/auth/sign-in/email"],
   ["GET", "/inicio"],
   ["GET", "/admin"],
   ["GET", "/analiticas"],
@@ -217,6 +219,7 @@ const WARM_UP: [string, string][] = [
   ["POST", "/api/assistant"],
   ["GET", "/api/restaurante/rest_centro/clientes"],
   ["PATCH", "/api/restaurante/rest_centro/clientes/wl_1"],
+  ["GET", "/api/restaurante/rest_centro/cartas"],
 ];
 {
   const deadline = Date.now() + 120_000;
@@ -386,6 +389,7 @@ const API_NO_SESSION: [string, string, unknown?][] = [
   ["GET", "/api/restaurante/rest_centro/clientes"],
   ["POST", "/api/restaurante/rest_centro/clientes", newGuest],
   ["PATCH", "/api/restaurante/rest_centro/clientes/wl_1", { status: "listo" }],
+  ["GET", "/api/restaurante/rest_centro/cartas"],
 ];
 for (const [method, path, body] of API_NO_SESSION) {
   const res = await http(method, path, { body });
@@ -441,6 +445,16 @@ const API: [Who, string, string, unknown, number][] = [
   ["gerente", "GET", "/api/restaurante/rest_norte/clientes", undefined, 403],
   ["admin", "GET", "/api/restaurante/rest_norte/clientes", undefined, 200],
   ["admin", "GET", "/api/analiticas", undefined, 200],
+  // «Ver todas las cartas» del modo rápido: rapido:ver. Analítica no opera.
+  ["analitica", "GET", "/api/restaurante/rest_centro/cartas", undefined, 403],
+  ["centro", "GET", "/api/restaurante/rest_centro/cartas", undefined, 200],
+  ["centro", "GET", "/api/restaurante/rest_centro/cartas?rango=7dias", undefined, 200],
+  ["centro", "GET", "/api/restaurante/rest_centro/cartas?rango=mes", undefined, 400],
+  ["centro", "GET", "/api/restaurante/rest_norte/cartas", undefined, 403],
+  ["norte", "GET", "/api/restaurante/rest_centro/cartas", undefined, 403],
+  ["gerente", "GET", "/api/restaurante/rest_centro/cartas", undefined, 200],
+  ["gerente", "GET", "/api/restaurante/rest_norte/cartas", undefined, 403],
+  ["admin", "GET", "/api/restaurante/rest_norte/cartas", undefined, 200],
 ];
 for (const [who, method, path, body, expected] of API) {
   const got = await status(who, method, path, body);
@@ -659,7 +673,7 @@ section("Mapa: nombres de clientes");
 // Los clientes sentados ahora en rest_centro (los sienta el seed).
 const { db } = await import("@/lib/db");
 const { waitlistEntries, tables: tablesTable, elementTypes } = await import("@/lib/db/schema");
-const { and, eq, inArray, isNotNull, isNull } = await import("drizzle-orm");
+const { and, eq, inArray, isNotNull, isNull, like } = await import("drizzle-orm");
 const seatedAtCentro = await db
   .select({ id: waitlistEntries.id, name: waitlistEntries.customerName })
   .from(tablesTable)
@@ -1002,41 +1016,182 @@ section("Marcas y restaurantes desde /admin");
 }
 
 // ---------------------------------------------------------------------------
-// Un usuario para varios restaurantes (el piloto: Denny's y Pizza Hut)
+// Un usuario para varios restaurantes (el piloto: uno por marca)
 // ---------------------------------------------------------------------------
 
-section("Un usuario de restaurante con los 4 locales de Denny's y Pizza Hut");
+section("Piloto: un usuario de Denny's y otro de Pizza Hut, con 2 locales cada uno");
 
-{
+for (const pilot of [
+  { email: "dennys@grupocomidas.test", own: ["rest_tgu_dennys", "rest_sps_dennys"], names: ["Denny's Las Lomas", "Denny's Los Andes"], other: ["rest_norte", "rest_tgu_pizza", "rest_centro"], otherName: "Pizza Hut Norte" },
+  { email: "pizzahut@grupocomidas.test", own: ["rest_norte", "rest_tgu_pizza"], names: ["Pizza Hut Norte", "Pizza Hut Los Próceres"], other: ["rest_tgu_dennys", "rest_sps_dennys", "rest_sps_kfc"], otherName: "Denny's Las Lomas" },
+]) {
   // Lo crea el seed (usuario de prueba del piloto), con la contraseña de desarrollo.
-  const four = ["rest_tgu_dennys", "rest_sps_dennys", "rest_norte", "rest_tgu_pizza"];
-  const piloto = await login("dennys-pizzahut@grupocomidas.test");
-  check("el seed crea el usuario del piloto y entra", piloto.status === 200 && piloto.cookie.includes("session_token"), `HTTP ${piloto.status}`);
+  const piloto = await login(pilot.email);
+  check(`el seed crea a ${pilot.email} y entra`, piloto.status === 200 && piloto.cookie.includes("session_token"), `HTTP ${piloto.status}`);
   const cookie = piloto.cookie;
   const get = (path: string) => http("GET", path, { cookie });
 
   const inicio = await get("/inicio");
-  check("/inicio no lo manda directo a un restaurante: elige", inicio.status === 200);
+  check("  /inicio no lo manda directo a un restaurante: elige", inicio.status === 200);
   // Se cuenta el texto entre etiquetas (`>…<`): el payload de React, en los
   // <script>, repite los mismos textos, pero entre comillas.
   const cards = (inicio.text.match(/>grupos? esperando</g) ?? []).length;
-  check("  y ve las 4 tarjetas, con cuántos esperan en cada una", />Tus 4 restaurantes</.test(inicio.text) && cards === 4, `${cards} tarjetas`);
-  check("  de sus restaurantes y de ninguno más", inicio.text.includes("Pizza Hut Los Próceres") && inicio.text.includes("Pizza Hut Norte") && !inicio.text.includes("China Wok Centro") && !inicio.text.includes("KFC Boulevard"));
+  check("  ve sus 2 tarjetas, con cuántos esperan en cada una", />Tus 2 restaurantes</.test(inicio.text) && cards === 2, `${cards} tarjetas`);
+  check("  de sus restaurantes y de ninguno más", pilot.names.every((n) => inicio.text.includes(n)) && !inicio.text.includes(pilot.otherName) && !inicio.text.includes("China Wok Centro"));
 
-  for (const id of four) {
+  for (const id of pilot.own) {
     const rapido = landing(await get(`/restaurante/${id}/rapido`));
     const editor = landing(await get(`/restaurante/${id}/editor`));
     check(`  ${id}: modo sencillo y completo`, rapido === "200" && editor === "200", `${rapido} / ${editor}`);
+    check(`  ${id}: sus cartas por la API`, (await get(`/api/restaurante/${id}/cartas`)).status === 200);
   }
-  for (const id of ["rest_centro", "rest_sps_kfc"]) {
-    check(`  ${id} (otra marca) -> /sin-acceso`, landing(await get(`/restaurante/${id}/rapido`)) === "/sin-acceso");
+  for (const id of pilot.other) {
+    check(`  ${id} (otra marca) -> /sin-acceso y 403 en la API`, landing(await get(`/restaurante/${id}/rapido`)) === "/sin-acceso" && (await get(`/api/restaurante/${id}/clientes`)).status === 403);
   }
-  const page = (await get("/restaurante/rest_norte/rapido")).text;
-  check("en la cabecera tiene el selector de restaurante", page.includes("Cambiar de restaurante"));
-  check("  que solo lista sus restaurantes", page.includes("Pizza Hut Los Próceres") && !page.includes("China Wok Centro") && !page.includes("KFC Río Piedras"));
-  check("un host con un solo restaurante no tiene selector", !(await http("GET", "/restaurante/rest_centro/rapido", { cookie: cookies.centro })).text.includes("Cambiar de restaurante"));
-  check("  ni el admin", !(await http("GET", "/restaurante/rest_centro/rapido", { cookie: cookies.admin })).text.includes("Cambiar de restaurante"));
+  const page = (await get(`/restaurante/${pilot.own[0]}/rapido`)).text;
+  check("  en la cabecera tiene el selector de restaurante", page.includes("Cambiar de restaurante"));
+  check("  que solo lista sus restaurantes", pilot.names.every((n) => page.includes(n)) && !page.includes(pilot.otherName) && !page.includes("China Wok Centro"));
   check("  y no ve /admin ni /mapa", landing(await get("/admin")) === "/sin-acceso" && landing(await get("/mapa")) === "/sin-acceso");
+}
+check("un host con un solo restaurante no tiene selector", !(await http("GET", "/restaurante/rest_centro/rapido", { cookie: cookies.centro })).text.includes("Cambiar de restaurante"));
+check("  ni el admin", !(await http("GET", "/restaurante/rest_centro/rapido", { cookie: cookies.admin })).text.includes("Cambiar de restaurante"));
+check("el usuario único de antes (dennys-pizzahut@) ya no lo crea el seed", (await login("dennys-pizzahut@grupocomidas.test")).status !== 200);
+
+// ---------------------------------------------------------------------------
+// npm run create-user
+// ---------------------------------------------------------------------------
+
+section("npm run create-user");
+
+{
+  const { findUserIdByEmail } = await import("@/lib/auth/users");
+  const { resolveRestaurants, upsertUser, validateUpsert } = await import("@/lib/auth/user-upsert");
+  const { user: userTable, userRoles, userRestaurants } = await import("@/lib/db/schema");
+  /** El script de verdad, sin terminal (stdin es un tubo): tiene que negarse. */
+  const cli = (args: string[]) => spawnSync("npx", ["tsx", "scripts/create-user.mts", ...args], {
+    cwd: ROOT, env, input: "si\n", encoding: "utf8", shell: process.platform === "win32", timeout: 60_000,
+  });
+
+  const nuevo = cli(["--correo", "cli-nuevo@grupocomidas.test", "--nombre", "CliNuevo", "--rol", "restaurante", "--marca", "dennys"]);
+  check("sin terminal, create-user se niega (sale con 1)", nuevo.status === 1 && /terminal/.test(nuevo.stderr + nuevo.stdout), `${nuevo.status} ${(nuevo.stderr + nuevo.stdout).slice(-160)}`);
+  check("  y no crea el usuario", (await findUserIdByEmail("cli-nuevo@grupocomidas.test")) === null);
+  const norteId = await findUserIdByEmail(USERS.norte);
+  const [norteAntes] = await db.select({ name: userTable.name }).from(userTable).where(eq(userTable.id, norteId!));
+  const existente = cli(["--correo", USERS.norte, "--nombre", "Cambiado", "--rol", "admin"]);
+  check("  ni cambia a un usuario que ya existe", existente.status === 1 && (await db.select({ name: userTable.name }).from(userTable).where(eq(userTable.id, norteId!)))[0]?.name === norteAntes?.name);
+  const conClave = cli(["--correo", "cli-clave@grupocomidas.test", "--nombre", "X", "--rol", "admin", "--contrasena", "no-se-acepta"]);
+  check("la contraseña por argumento se rechaza", conClave.status === 1 && /argumentos/.test(conClave.stderr + conClave.stdout) && (await findUserIdByEmail("cli-clave@grupocomidas.test")) === null);
+
+  // Lo que hace el script tras preguntar (lib/auth/user-upsert.ts).
+  const dennys = await resolveRestaurants({ slugs: [], brands: ["Denny's"] });
+  check("--marca \"Denny's\" da sus 2 restaurantes", JSON.stringify(dennys.map((r) => r.id).sort()) === JSON.stringify(["rest_sps_dennys", "rest_tgu_dennys"]), JSON.stringify(dennys));
+  check("  también escrita «dennys», sin apóstrofo ni mayúsculas", (await resolveRestaurants({ slugs: [], brands: ["dennys"] })).length === 2);
+  const pizza = await resolveRestaurants({ slugs: [], brands: ["Pizza Hut"] });
+  check("--marca \"Pizza Hut\" da sus 2 restaurantes", JSON.stringify(pizza.map((r) => r.id).sort()) === JSON.stringify(["rest_norte", "rest_tgu_pizza"]));
+  check("--restaurante por slug", (await resolveRestaurants({ slugs: ["kfc-rio-piedras"], brands: [] }))[0]?.id === "rest_sps_kfc");
+  const fails = async (work: () => Promise<unknown>) => work().then(() => false, () => true);
+  check("una marca o un slug que no existe es un error", await fails(() => resolveRestaurants({ slugs: [], brands: ["Burger"] })) && await fails(() => resolveRestaurants({ slugs: ["no-existe"], brands: [] })));
+  check("las validaciones son las de /admin (restaurante sin restaurantes)", validateUpsert({ email: "a@b.test", name: "A", roles: ["restaurante"], restaurantIds: [] }) === "Un usuario de restaurante necesita al menos un restaurante.");
+  check("  y correo no válido", validateUpsert({ email: "no-es-correo", name: "A", roles: ["admin"], restaurantIds: [] }) === "Ese correo no es válido.");
+  check("  y rol desconocido", validateUpsert({ email: "a@b.test", name: "A", roles: ["jefe"], restaurantIds: [] }) !== null);
+
+  const email = "cli-piloto@grupocomidas.test";
+  const created = await upsertUser({ email, name: "Piloto CLI", roles: ["restaurante"], restaurantIds: dennys.map((r) => r.id), password: "clave-del-cli-123" });
+  const id = await findUserIdByEmail(email);
+  const roles = id ? await db.select().from(userRoles).where(eq(userRoles.userId, id)) : [];
+  const rests = id ? await db.select().from(userRestaurants).where(eq(userRestaurants.userId, id)) : [];
+  check("crea el usuario con sus roles y restaurantes", created.action === "creado" && roles.map((r) => r.role).join() === "restaurante" && rests.length === 2);
+  check("  y entra con su contraseña", (await login(email, "clave-del-cli-123")).status === 200);
+
+  const updated = await upsertUser({ email, name: "Piloto CLI 2", roles: ["restaurante"], restaurantIds: pizza.map((r) => r.id) });
+  const users = await db.select({ id: userTable.id, name: userTable.name }).from(userTable).where(eq(userTable.email, email));
+  const rests2 = await db.select().from(userRestaurants).where(eq(userRestaurants.userId, id!));
+  check("si ya existe, no lo duplica", updated.action === "actualizado" && users.length === 1);
+  check("  le cambia el nombre y los restaurantes", users[0]?.name === "Piloto CLI 2" && JSON.stringify(rests2.map((r) => r.restaurantId).sort()) === JSON.stringify(["rest_norte", "rest_tgu_pizza"]));
+  check("  y no toca la contraseña", (await login(email, "clave-del-cli-123")).status === 200);
+  check("sin contraseña no crea a nadie", await fails(() => upsertUser({ email: "cli-sin@grupocomidas.test", name: "X", roles: ["admin"], restaurantIds: [] })) && (await findUserIdByEmail("cli-sin@grupocomidas.test")) === null);
+}
+
+// ---------------------------------------------------------------------------
+// Modo rápido: «Ver todas las cartas» y agregar varios a la vez
+// ---------------------------------------------------------------------------
+
+section("Modo rápido: todas las cartas y agregar varios");
+
+{
+  // Lo que devuelve la API: solo cartas de ese restaurante, con los campos de la vista.
+  const res = await http("GET", "/api/restaurante/rest_centro/cartas?rango=7dias", { cookie: cookies.centro });
+  const body = JSON.parse(res.text) as { entries: { id: string; resolvedByName: string | null; arrivedAt: number }[] };
+  const ids = body.entries.map((e) => e.id);
+  const own = ids.length
+    ? await db.select({ id: waitlistEntries.id, restaurantId: waitlistEntries.restaurantId }).from(waitlistEntries).where(inArray(waitlistEntries.id, ids))
+    : [];
+  check("las cartas de 7 días traen el historial del seed", body.entries.length > 20, `${body.entries.length}`);
+  check("  todas del restaurante pedido", own.length === ids.length && own.every((e) => e.restaurantId === "rest_centro"));
+  check("  ordenadas de la más reciente a la más vieja", body.entries.every((e, i, all) => i === 0 || all[i - 1].arrivedAt >= e.arrivedAt));
+  check("  con el campo de quién la resolvió", body.entries.every((e) => "resolvedByName" in e));
+  const sinSesion = await http("GET", "/api/restaurante/rest_centro/cartas");
+  check("sin sesión, las cartas -> 401", sinSesion.status === 401, `HTTP ${sinSesion.status}`);
+  const piloto = (await login("pizzahut@grupocomidas.test")).cookie;
+  for (const [id, expected] of [["rest_norte", 200], ["rest_tgu_pizza", 200], ["rest_tgu_dennys", 403], ["rest_centro", 403]] as const) {
+    const got = (await http("GET", `/api/restaurante/${id}/cartas`, { cookie: piloto })).status;
+    check(`el usuario del piloto: cartas de ${id} -> ${expected}`, got === expected, `HTTP ${got}`);
+  }
+}
+
+{
+  const centro = await connect(cookies.centro);
+  const analitica = await connect(cookies.analitica);
+  const norte = await connect(cookies.norte);
+  check("los sockets de centro, norte y analitica conectan", Boolean(centro && analitica && norte));
+  if (centro && analitica && norte) {
+    await emit(centro, "restaurant:join", { restaurantId: "rest_centro" });
+    await emit(norte, "restaurant:join", { restaurantId: "rest_norte" });
+    const lote = (n: number, prefix: string) =>
+      ({ entries: Array.from({ length: n }, (_, i) => ({ customerName: `${prefix} ${i + 1}`, partySize: 2 })) });
+    const countLike = async (prefix: string) =>
+      (await db.select({ id: waitlistEntries.id }).from(waitlistEntries).where(like(waitlistEntries.customerName, `${prefix}%`))).length;
+    type ManyAck = { ok: boolean; error?: string; entries?: { id: string }[]; actionId?: string };
+
+    const ok = (await emit(centro, "waitlist:add-many", lote(3, "Lote auth"))) as ManyAck;
+    const rows = ok.entries?.length
+      ? await db.select().from(waitlistEntries).where(inArray(waitlistEntries.id, ok.entries.map((e) => e.id)))
+      : [];
+    check("centro agrega 3 clientes de una vez en su restaurante", ok.ok && rows.length === 3 && rows.every((r) => r.restaurantId === "rest_centro"), ok.error);
+    const undo = await emit(centro, "waitlist:undo", { actionId: ok.actionId });
+    check("  y los quita a los 3 con deshacer", undo.ok && (await countLike("Lote auth")) === 0, undo.error);
+
+    const limit = await emit(centro, "waitlist:add-many", lote(31, "Limite auth"));
+    check("más de 30 por vez -> rechazado, sin guardar nada", !limit.ok && /hasta 30/.test(limit.error ?? "") && (await countLike("Limite auth")) === 0, limit.error);
+    const thirty = (await emit(centro, "waitlist:add-many", lote(30, "Treinta auth"))) as ManyAck;
+    check("  30 justos sí entran", thirty.ok && (await countLike("Treinta auth")) === 30, thirty.error);
+    await emit(centro, "waitlist:undo", { actionId: thirty.actionId });
+    const bad = await emit(centro, "waitlist:add-many", { entries: [{ customerName: "Malo auth", partySize: 2 }, { customerName: "Malo auth 2", partySize: 11 }] });
+    check("una fila con 11 personas tumba el lote entero", !bad.ok && (await countLike("Malo auth")) === 0, bad.error);
+    const noName = await emit(centro, "waitlist:add-many", { entries: [{ customerName: "   ", partySize: 2 }] });
+    check("una fila sin nombre se rechaza", !noName.ok);
+
+    const fromAnalitica = await emit(analitica, "waitlist:add-many", lote(2, "Analitica auth"));
+    check("analitica no agrega varios (no entra en la room)", !fromAnalitica.ok && (await countLike("Analitica auth")) === 0);
+    // norte, desde su room, nunca escribe en rest_centro: el restaurante sale de la room.
+    const fromNorte = (await emit(norte, "waitlist:add-many", lote(1, "Norte auth"))) as ManyAck;
+    const [norteRow] = fromNorte.entries?.length
+      ? await db.select().from(waitlistEntries).where(eq(waitlistEntries.id, fromNorte.entries[0].id))
+      : [];
+    check("norte agrega en SU restaurante, nunca en otro", fromNorte.ok && norteRow?.restaurantId === "rest_norte", fromNorte.error);
+    if (norteRow) await db.delete(waitlistEntries).where(eq(waitlistEntries.id, norteRow.id));
+
+    // Volver a la espera: mismo permiso que resolver.
+    const [listo] = await db.select({ id: waitlistEntries.id }).from(waitlistEntries)
+      .where(and(eq(waitlistEntries.restaurantId, "rest_centro"), eq(waitlistEntries.status, "listo"))).limit(1);
+    check("el seed tiene un cliente listo en rest_centro", Boolean(listo));
+    check("analitica no puede volver a la espera a nadie", !(await emit(analitica, "waitlist:reopen", { entryId: listo?.id ?? "" })).ok);
+    check("norte no puede volver a la espera a un cliente de rest_centro", !(await emit(norte, "waitlist:reopen", { entryId: listo?.id ?? "" })).ok);
+    const reopen = (await emit(centro, "waitlist:reopen", { entryId: listo?.id ?? "" })) as ManyAck;
+    check("centro vuelve a la espera a un cliente listo de su restaurante", reopen.ok, reopen.error);
+    check("  y lo puede deshacer", (await emit(centro, "waitlist:undo", { actionId: reopen.actionId })).ok);
+  }
+  for (const s of [centro, analitica, norte]) s?.close();
 }
 
 // ---------------------------------------------------------------------------

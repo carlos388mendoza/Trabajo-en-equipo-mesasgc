@@ -476,6 +476,46 @@ restaurante. `Deshacer` revierte la última acción del local: elimina un grupo
 que acaba de agregarse o restaura el estado anterior. El registro de deshacer
 vive en memoria y se reinicia al reiniciar el servidor.
 
+### Las cartas: agregar, abanico y «Ver todas las cartas»
+
+Desde el PR `feat/cartas-baraja` el montón ocupa todo el ancho y el
+formulario ya no está al lado (`components/quick-mode/`):
+
+- **Toque o arrastre.** `swipe-card.tsx` mide cuánto se movió el puntero:
+  menos de 10 px y 600 ms es un toque. Un toque en el centro abre el
+  formulario; en una de las 4 esquinas (48 × 48 px, con un doblez de
+  indicador), el abanico. Deslizar nunca abre nada.
+- **Formulario** (`add-guest-sheet.tsx`, sobre `overlay.tsx`): panel que sube
+  desde abajo en celular y tablet, y ventana desde 1024 px. Esc, Cancelar o
+  tocar fuera lo cierran. Pestañas **Uno** y **Varios**: en Varios hay filas
+  editables (Enter en la nota crea la siguiente) y **Pegar lista**
+  («Nombre, personas[, nota]», `lib/waitlist/guest-list.ts`). Las filas con
+  errores bloquean el guardado.
+- **Agregar varios** es un solo evento, `waitlist:add-many` (máximo 30,
+  `MAX_BATCH_ENTRIES` en `lib/realtime/events.ts`), con el mismo permiso
+  (`rapido:modificar`). Es un único `INSERT` de varias filas: entran todas o
+  ninguna, cada una 1 ms después de la anterior para respetar el orden. La
+  room recibe un `waitlist:changed` por cliente. Deshacer (aviso o Ctrl+Z)
+  los quita a todos en una transacción, y no quita a ninguno si alguno ya
+  cambió.
+- **Abanico** (`card-fan.tsx`): hasta 7 cartas giradas alrededor de un punto
+  bajo la mano; con más, «+N» abre «Ver todas las cartas». Solo anima
+  `rotate`, `scale` y `opacity`, y `MotionConfig reducedMotion="user"` lo
+  respeta. Elegir una carta la pone arriba del montón **en esa tablet**; el
+  orden de la fila no cambia.
+- **Ver todas las cartas** (`all-cards-view.tsx`): `GET
+  /api/restaurante/[id]/cartas?rango=hoy|7dias` (`rapido:ver`: el host, sus
+  restaurantes; el admin, todos; analitica, 403). Las que siguen esperando
+  salen siempre. Filtros por estado y buscador sin tildes. Una en espera se
+  resuelve con `waitlist:resolve`; una lista o ausente vuelve con
+  `waitlist:reopen` (conserva su hora de llegada y su lugar; se puede
+  deshacer). Un sentado no vuelve: tiene mesa. Se actualiza con los
+  `waitlist:changed` de la room.
+- **Migración `0006`** (solo aditiva): `waitlist_entries.resolved_at` y
+  `resolved_by_user_id` (sin FK, como `seated_by_user_id`), para «esperó 12
+  minutos, la resolvió Ana». Volver a la espera las vacía, junto con
+  `called_at`.
+
 Las estadísticas (`/analiticas`) se calculan en `/api/analiticas` sobre los
 registros reales: grupos sentados durante los últimos 14 días (zona
 `America/Tegucigalpa`), espera desde `arrived_at` hasta `seated_at`, comparación con los 14 días anteriores,
@@ -777,12 +817,36 @@ Todos tienen la contraseña **`12345abc`**:
 | `chinawok-circunvalacion@grupocomidas.test` | Host China Wok Circunvalación | restaurante | rest_sps_chinawok |
 | `kfc-riopiedras@grupocomidas.test` | Host KFC Río Piedras | restaurante | rest_sps_kfc |
 | `dennys-andes@grupocomidas.test` | Host Denny's Los Andes | restaurante | rest_sps_dennys |
-| `dennys-pizzahut@grupocomidas.test` | Denny's y Pizza Hut (el del piloto) | restaurante | rest_tgu_dennys, rest_sps_dennys, rest_norte, rest_tgu_pizza |
+| `dennys@grupocomidas.test` | Denny's (piloto) | restaurante | rest_tgu_dennys, rest_sps_dennys |
+| `pizzahut@grupocomidas.test` | Pizza Hut (piloto) | restaurante | rest_norte, rest_tgu_pizza |
 
-`dennys-pizzahut@` es el usuario del **piloto** (`docs/salida-a-produccion.md`,
-sección 3): un solo host para los 4 locales de Denny's y Pizza Hut. Entra a
-`/inicio`, con sus 4 tarjetas, y cambia de restaurante con el selector de la
-cabecera.
+`dennys@` y `pizzahut@` son los usuarios del **piloto**
+(`docs/salida-a-produccion.md`, sección 3): uno por marca, cada uno con sus 2
+locales. Entran a `/inicio`, con sus 2 tarjetas, y cambian de restaurante con
+el selector de la cabecera. (Hasta el 1 de octubre era un solo usuario,
+`dennys-pizzahut@`, para los 4; el seed ya no lo crea, pero no lo borra de una
+base local que ya lo tenga.)
+
+### `npm run create-user`: crear o actualizar un usuario desde la terminal
+
+Para dar de alta usuarios en producción sin entrar a `/admin`:
+
+```bash
+npm run create-user -- --correo dennys@grupocomidas.test --nombre "Denny's" --rol restaurante --marca "Denny's"
+```
+
+- `--rol` (admin, restaurante o analitica), `--restaurante` (slug, p. ej.
+  `pizza-hut-norte`) y `--marca` (todos sus restaurantes activos; vale
+  «Denny's» o «dennys») se pueden repetir o separar con comas.
+- Muestra la base a la que se conecta (solo el host), un resumen, pide la
+  contraseña **dos veces, oculta** y confirmar con «si». La contraseña no se
+  acepta por argumentos ni por variables de entorno; sin terminal no hace
+  nada.
+- Si el correo ya existe **no lo duplica**: solo cambia nombre, roles y
+  restaurantes, sin preguntar ni tocar la contraseña (para eso,
+  `npm run reset-password`).
+- Usa las mismas validaciones y funciones que `/admin`
+  (`lib/auth/user-upsert.ts`). Lo prueba `verify:auth`.
 
 `rest_centro` es **China Wok Centro** (Tegucigalpa) y `rest_norte` es **Pizza
 Hut Norte** (San Pedro Sula): conservan sus ids, así que estos usuarios siguen

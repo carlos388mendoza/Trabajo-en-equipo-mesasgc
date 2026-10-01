@@ -35,6 +35,8 @@ export async function PATCH(request: Request, { params }: Context) {
         status: parsed.data.status,
         ...(parsed.data.status === "listo" ? { calledAt: now } : {}),
         seatedAt: null,
+        resolvedAt: now,
+        resolvedByUserId: guard.user.id,
         updatedAt: now,
       })
       .where(and(

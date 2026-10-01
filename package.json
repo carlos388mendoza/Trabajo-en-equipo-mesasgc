@@ -21,6 +21,7 @@
     "db:catalog": "tsx scripts/db-catalog.mts",
     "db:restaurantes": "tsx scripts/db-restaurantes.mts",
     "create-admin": "tsx scripts/create-admin.mts",
+    "create-user": "tsx scripts/create-user.mts",
     "reset-password": "tsx scripts/reset-password.mts",
     "verify:auth": "tsx scripts/verify-auth.mts"
   },

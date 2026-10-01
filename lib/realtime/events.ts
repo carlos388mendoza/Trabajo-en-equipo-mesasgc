@@ -89,6 +89,17 @@ export const addWaitlistEntrySchema = z.object({
 
 export type AddWaitlistEntryInput = z.infer<typeof addWaitlistEntrySchema>;
 
+/**
+ * Varios grupos de una vez, con las mismas reglas que uno. El tope vive aquí
+ * porque lo usan el formulario (navegador), este schema y `lib/waitlist`.
+ */
+export const MAX_BATCH_ENTRIES = 30;
+export const addManyWaitlistEntriesSchema = z.object({
+  entries: z.array(addWaitlistEntrySchema).min(1).max(MAX_BATCH_ENTRIES),
+});
+
+export type AddManyWaitlistEntriesInput = z.infer<typeof addManyWaitlistEntriesSchema>;
+
 export const resolveWaitlistEntrySchema = z.object({
   entryId: idSchema,
   status: z.enum(["listo", "ausente"]),
@@ -99,13 +110,18 @@ export type ResolveWaitlistEntryInput = z.infer<typeof resolveWaitlistEntrySchem
 export const undoWaitlistSchema = z.object({ actionId: idSchema });
 export type UndoWaitlistInput = z.infer<typeof undoWaitlistSchema>;
 
+/** Volver a la espera a un cliente listo o ausente («Ver todas las cartas»). */
+export const reopenWaitlistEntrySchema = z.object({ entryId: idSchema });
+export type ReopenWaitlistEntryInput = z.infer<typeof reopenWaitlistEntrySchema>;
+
 export type WaitlistUndoState = {
   actionId: string;
   label: string;
 } | null;
 
 export type WaitlistChange = {
-  action: "added" | "resolved" | "removed" | "restored";
+  /** `reopened`: volvió a la espera desde «Ver todas las cartas». */
+  action: "added" | "resolved" | "removed" | "restored" | "reopened";
   entry: WaitlistEntrySnapshot;
   undo: WaitlistUndoState;
 };
@@ -143,10 +159,17 @@ export interface ClientToServerEvents {
   ) => void;
   /** Agregar un grupo a la lista rápida. */
   "waitlist:add": (payload: AddWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
+  /**
+   * Agregar varios grupos de una vez: todos o ninguno. La room recibe un
+   * `waitlist:changed` («added») por cada uno, en el orden de llegada.
+   */
+  "waitlist:add-many": (payload: AddManyWaitlistEntriesInput, ack: (res: Ack<{ entries: WaitlistEntrySnapshot[]; actionId: string }>) => void) => void;
   /** Marcar un grupo listo o ausente. */
   "waitlist:resolve": (payload: ResolveWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
+  /** Volver a la espera a un grupo listo o ausente. Se puede deshacer. */
+  "waitlist:reopen": (payload: ReopenWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
   /** Deshacer la última acción de la lista para ese restaurante. */
-  "waitlist:undo": (payload: UndoWaitlistInput, ack: (res: Ack<{ action: "removed" | "restored"; entry: WaitlistEntrySnapshot }>) => void) => void;
+  "waitlist:undo": (payload: UndoWaitlistInput, ack: (res: Ack<{ action: "removed" | "restored"; entry: WaitlistEntrySnapshot; entries?: WaitlistEntrySnapshot[] }>) => void) => void;
 }
 
 /** Lo que el servidor le avisa a todos los de una room. */

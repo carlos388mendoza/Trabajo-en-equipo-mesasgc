@@ -129,17 +129,24 @@ clientes.
 China Wok y KFC **siguen en el sistema** (mapa, estadísticas y datos), pero
 no entran en el piloto.
 
-**Quién:** **un solo usuario de restaurante** con los 4 locales asignados,
-«Denny's y Pizza Hut» (`dennys-pizzahut@grupocomidas.test`). Al entrar ve
-una tarjeta por restaurante, con cuántos clientes esperan, y cambia de uno a
-otro con el selector de la cabecera. En cada uno tiene el modo sencillo (la
-lista de espera) y el completo (el plano). Cómo crearlo: ver 3.1.
+**Quién:** **dos usuarios de restaurante, uno por marca**, cada uno con sus
+2 locales:
 
-> **Ojo:** un usuario compartido entre 4 locales significa una contraseña que
-> conocen varias personas. Para el piloto se acepta a propósito, por
-> sencillez. Cuando termine, conviene un usuario por host (el administrador
-> puede asignar a cada uno solo su restaurante) y cambiar la contraseña del
-> compartido desde `/admin` (botón «Contraseña»).
+| Usuario | Nombre | Restaurantes |
+|---|---|---|
+| `dennys@grupocomidas.test` | Denny's | Denny's Las Lomas y Denny's Los Andes |
+| `pizzahut@grupocomidas.test` | Pizza Hut | Pizza Hut Norte y Pizza Hut Los Próceres |
+
+Al entrar, cada uno ve una tarjeta por restaurante, con cuántos clientes
+esperan, y cambia de uno a otro con el selector de la cabecera. En cada uno
+tiene el modo sencillo (la lista de espera) y el completo (el plano). No ve
+los locales de la otra marca. Cómo crearlos: ver 3.1.
+
+> **Ojo:** cada usuario lo comparten los hosts de los 2 locales de su marca:
+> una contraseña que conocen varias personas. Para el piloto se acepta a
+> propósito, por sencillez. Cuando termine, conviene un usuario por host (el
+> administrador puede asignar a cada uno solo su restaurante) y cambiar la
+> contraseña de los compartidos desde `/admin` (botón «Contraseña»).
 
 **Cuánto:** una semana completa, de lunes a domingo, incluido un fin de
 semana con hora pico.
@@ -174,20 +181,39 @@ cumple: corregir lo que falló y repetir una semana con los mismos 4.
 
 ### 3.1 Preparar el piloto en /admin
 
-**Crear el usuario del piloto** (lo hace el administrador, entrando con su
-usuario):
+**Crear los dos usuarios del piloto.** Hay dos formas; las dos usan las
+mismas reglas.
+
+*Desde la terminal* (recomendado: cada contraseña la escribe quien corre el
+comando, oculta, y no pasa por ninguna pantalla compartida). En PowerShell,
+dentro de la carpeta del proyecto y con la CLI de Railway enlazada:
+
+```powershell
+& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo dennys@grupocomidas.test --nombre "Denny's" --rol restaurante --marca "Denny's"
+& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo pizzahut@grupocomidas.test --nombre "Pizza Hut" --rol restaurante --marca "Pizza Hut"
+```
+
+Cada uno muestra la base (solo el host), el resumen con sus 2 restaurantes,
+pide la contraseña dos veces y confirmar con «si». Si el usuario ya existe,
+solo le pone el nombre, el rol y los restaurantes, sin tocar su contraseña.
+
+*Desde `/admin`* (entrando con el administrador):
 
 1. Abre **Administración** (`/admin`) y pulsa **Nuevo usuario**.
-2. **Nombre:** «Denny's y Pizza Hut». **Correo:**
-   `dennys-pizzahut@grupocomidas.test`.
+2. **Nombre:** «Denny's». **Correo:** `dennys@grupocomidas.test`.
 3. **Contraseña temporal:** escribe una o pulsa el botón de generar, y
    compártela con el encargado por un canal seguro (no por el chat del grupo).
 4. **Roles:** deja solo **Restaurante**.
-5. **Restaurantes:** en el grupo **Denny's** pulsa **Marcar todos**, y lo
-   mismo en **Pizza Hut**. Arriba tiene que decir «4 de 8».
+5. **Restaurantes:** en el grupo **Denny's** pulsa **Marcar todos**. Arriba
+   tiene que decir «2 de 8».
 6. Pulsa **Crear usuario**. Sale en verde «Usuario … creado».
-7. Para comprobarlo, entra con ese usuario en otra ventana privada: tiene que
-   ver sus 4 tarjetas en **Inicio**.
+7. Repite con «Pizza Hut» (`pizzahut@grupocomidas.test`) y **Marcar todos**
+   en **Pizza Hut**.
+8. Para comprobarlo, entra con cada usuario en otra ventana privada: tiene
+   que ver sus 2 tarjetas en **Inicio**, y ninguna de la otra marca.
+
+Si antes se creó el usuario único `dennys-pizzahut@grupocomidas.test`,
+desactívalo en `/admin` (botón «Desactivar»): ya no se usa.
 
 **Dibujar el plano de cada local:** en cada tarjeta, **Modo completo** abre
 el editor sobre la zona vacía «Comedor principal»: arrastra mesas, baños,
@@ -229,22 +255,73 @@ alguien**, para no anotarlo en otro local.
 
 **Agregar un cliente**
 
-1. En **Agregar cliente**, escribe el **nombre**.
-2. Elige **cuántas personas** son.
-3. Si hace falta, escribe una **nota** (por ejemplo, «silla para bebé»).
-4. Pulsa **Agregar a la fila**. El cliente entra al final de la fila.
+1. **Toca la carta grande** (un toque en el centro, sin deslizar) o el botón
+   azul **+ Agregar cliente** de abajo a la derecha. Se abre el formulario
+   (en la tablet y el celular sube desde abajo).
+2. En la pestaña **Uno**, escribe el **nombre** y elige **cuántas personas**
+   son. Si hace falta, escribe una **nota** (por ejemplo, «silla para bebé»).
+3. Pulsa **Agregar a la fila**. El cliente entra al final de la fila y el
+   aviso dice en qué número quedó.
+4. Para salir sin guardar: **Cancelar**, la tecla **Esc** o tocar fuera.
+
+**Agregar varios clientes a la vez** (por ejemplo, cuando llega un grupo de
+familias o pasas la lista de papel a la tablet)
+
+1. Abre el formulario y elige la pestaña **Varios**. Salen 3 filas vacías.
+2. En cada fila escribe nombre, personas y nota. **Enter** en la nota pasa a
+   la fila siguiente (y la crea si era la última). **+ Agregar fila** añade
+   otra; el bote de basura quita esa fila. Las filas vacías no se guardan.
+3. Si una fila sale **en rojo** (por ejemplo, tiene nota pero no nombre),
+   corrígela o quítala: **no se guarda nada** hasta que no quede ninguna en
+   rojo.
+4. Pulsa **Agregar N clientes**. Se guardan **todos juntos** (máximo 30 por
+   vez), en el orden de las filas, y salen en todas las tablets del local.
+5. Abajo sale **«Se agregaron N clientes · Deshacer»**: Deshacer (o
+   **Ctrl+Z**) los quita **a todos** de una vez.
+
+**Pegar lista:** en **Varios**, pulsa **Pegar lista** y pega una lista con
+una persona por línea, así:
+
+```
+Ana Torres, 4
+Luis Ríos, 2, silla para bebé
+```
+
+Primero el nombre, luego una coma y cuántas personas; si quieres, otra coma y
+una nota (también vale punto y coma, o copiar dos columnas de Excel). Al
+pegar, las filas se llenan solas. Las líneas que no se entienden se quedan en
+el cuadro, **en rojo**, con el motivo: corrígelas y pulsa **Pasar a las
+filas**, o bórralas.
 
 **Cuando hay mesa (o el cliente se fue)**
 
-La tarjeta grande de arriba es el **siguiente en la fila**.
+La carta grande de arriba es el **siguiente en la fila**.
 
 - **Desliza a la derecha** (o pulsa ✓) → **Listo**: ya lo avisaste.
 - **Desliza a la izquierda** (o pulsa ✕) → **Ausente**: no estaba o se fue.
 
-**Si te equivocaste:** pulsa **Deshacer** (la flecha curva). Deshace solo la
-**última** acción del restaurante, en cualquier tablet, y hay que hacerlo
-enseguida. Si pasó mucho rato o alguien hizo otra cosa después, ya no se
-puede: corrígelo a mano.
+**Ver la fila en abanico:** toca **una esquina** de la carta de arriba (están
+marcadas con un doblez) o el botón **Abanico**. Las cartas de todos los que
+esperan se abren como una mano de naipes, con el número, las personas y los
+minutos de cada uno. **Toca una** para pasarla al frente del montón (solo en
+esa tablet: el orden de la fila no cambia). Para cerrar: toca fuera o Esc. Si
+esperan más de 7, el botón **+N · Ver todas las cartas** abre la lista
+completa.
+
+**Ver todas las cartas:** el botón de arriba abre todas las cartas del
+restaurante: en espera, listas y ausentes. Por defecto muestra las de **hoy**;
+**Últimos 7 días** muestra la semana. Filtra por estado o busca por nombre
+(sin importar tildes). Cada carta dice a qué hora llegó, cuánto esperó y
+quién la resolvió. Desde ahí:
+
+- una carta **en espera** se marca **Listo** o **Ausente**;
+- una **lista o ausente** que fue un error vuelve con **Volver a la espera**
+  (recupera su lugar en la fila).
+
+**Si te equivocaste:** pulsa **Deshacer** (la flecha curva) o **Ctrl+Z**.
+Deshace solo la **última** acción del restaurante, en cualquier tablet, y
+hay que hacerlo enseguida. Si pasó mucho rato o alguien hizo otra cosa
+después, ya no se puede: búscala en **Ver todas las cartas** y corrígela ahí.
 
 **Si arriba dice «Sin conexión» o «Reconectando»**
 

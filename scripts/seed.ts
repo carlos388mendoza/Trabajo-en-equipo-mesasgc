@@ -482,13 +482,17 @@ async function seedHistory() {
         if (random() < absentRate) {
           // Unos se fueron antes del aviso; otros no volvieron cuando se les avisó.
           const leftEarly = random() < 0.4;
+          const markedAbsent = new Date(leftEarly
+            ? arrivedAt.getTime() + Math.round(waitMinutes * 0.7) * 60_000
+            : calledAt.getTime() + (8 + Math.floor(random() * 5)) * 60_000);
           rows.push({
             ...base,
             status: "ausente",
             calledAt: leftEarly ? null : calledAt,
-            updatedAt: new Date(leftEarly
-              ? arrivedAt.getTime() + Math.round(waitMinutes * 0.7) * 60_000
-              : calledAt.getTime() + (8 + Math.floor(random() * 5)) * 60_000),
+            // Para «Ver todas las cartas» («esperó X min»). Sin quién: el
+            // historial es anterior a los usuarios de prueba.
+            resolvedAt: markedAbsent,
+            updatedAt: markedAbsent,
           });
           return;
         }
@@ -557,12 +561,18 @@ const TEST_USERS: { email: string; name: string; roles: Role[]; restaurantIds: s
   { email: "chinawok-circunvalacion@grupocomidas.test", name: "Host China Wok Circunvalación", roles: ["restaurante"], restaurantIds: ["rest_sps_chinawok"] },
   { email: "kfc-riopiedras@grupocomidas.test", name: "Host KFC Río Piedras", roles: ["restaurante"], restaurantIds: ["rest_sps_kfc"] },
   { email: "dennys-andes@grupocomidas.test", name: "Host Denny's Los Andes", roles: ["restaurante"], restaurantIds: ["rest_sps_dennys"] },
-  // El del piloto: un solo usuario para los 4 locales de Denny's y Pizza Hut.
+  // Los del piloto: un usuario por marca, cada uno con sus 2 locales.
   {
-    email: "dennys-pizzahut@grupocomidas.test",
-    name: "Denny's y Pizza Hut",
+    email: "dennys@grupocomidas.test",
+    name: "Denny's",
     roles: ["restaurante"],
-    restaurantIds: ["rest_tgu_dennys", "rest_sps_dennys", "rest_norte", "rest_tgu_pizza"],
+    restaurantIds: ["rest_tgu_dennys", "rest_sps_dennys"],
+  },
+  {
+    email: "pizzahut@grupocomidas.test",
+    name: "Pizza Hut",
+    roles: ["restaurante"],
+    restaurantIds: ["rest_norte", "rest_tgu_pizza"],
   },
 ];
 

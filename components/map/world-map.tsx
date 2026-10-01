@@ -8,12 +8,30 @@
 // tema bueno y no hay destello al hidratar.
 //
 // El dibujo (silueta, 18 departamentos, vecinos y ciudades) sale de
-// `lib/map/world.ts`, en las unidades de `lib/map/projection.ts`. El
-// `viewBox` es la cámara: la rueda y el pellizco lo acercan sobre el punto
-// que se señala, arrastrar lo mueve, y los botones lo animan a todo el país o
-// a una ciudad. Los rótulos y los marcadores se escalan con la cámara para
-// verse siempre del mismo tamaño en pantalla, y las líneas no engordan
-// (`vector-effect: non-scaling-stroke`).
+// `lib/map/world.ts`, en las unidades de `lib/map/projection.ts`. La rueda y
+// el pellizco acercan sobre el punto que se señala, arrastrar mueve, y los
+// botones animan a todo el país o a una ciudad. Los rótulos y los marcadores
+// se escalan con la cámara para verse siempre del mismo tamaño en pantalla, y
+// las líneas no engordan (`vector-effect: non-scaling-stroke`).
+//
+// Rendimiento (perf/mapa, medido con Chrome: el arrastre iba a 24 fps y la
+// rueda a 15 en computadora, 11 y 13 en tablet):
+//  - La cámara tiene dos valores. `viewBox` (estado de React) es la
+//    «confirmada»: con ella se dibuja el SVG. `viewRef` es la «en vivo»: la
+//    mueven el arrastre, la rueda, el pellizco y las animaciones en cada
+//    cuadro, y solo cambia el `transform` CSS de la capa (`stageRef`), que el
+//    navegador mueve en la GPU sin volver a pintar ni a renderizar React. Al
+//    soltar (o 150 ms después de la última rueda) se confirma: un render y
+//    un repintado, con los rótulos a su tamaño y los grupos recalculados.
+//  - La capa mide el doble que la ventana del mapa (media ventana de margen
+//    por lado), para que al arrastrar no aparezcan bordes vacíos.
+//  - El mapa base (`MapBase`) está memoizado: los contadores en vivo solo
+//    redibujan los marcadores.
+//  - El barrido del radar es un `div` con `conic-gradient` que gira por CSS:
+//    lo anima el compositor, sin repintar el SVG en cada cuadro como cuando
+//    era un `<path>` dentro de él.
+//  - Los controles encima del mapa no usan `backdrop-blur`: obligaba a
+//    desenfocar de nuevo lo de detrás en cada cuadro.
 //
 // Cada marcador lleva:
 //  - el color de su marca y, dentro, los clientes en espera;
@@ -29,7 +47,7 @@
 // vivo del restaurante; "Volver al mapa general" vuelve a donde estaba. Los
 // datos en vivo llegan por la sala `overview` (solo contadores).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeft,
@@ -165,6 +183,43 @@ function screenToMap(el: Element, view: ViewBox, clientX: number, clientY: numbe
   return { x: view[0] + (clientX - left) / scale, y: view[1] + (clientY - top) / scale };
 }
 
+type Size = { width: number; height: number };
+
+/** Hasta que se mide la ventana del mapa (en el servidor), un tamaño con su proporción. */
+const DEFAULT_SIZE: Size = { width: 1000, height: (1000 * FULL_VIEW[3]) / FULL_VIEW[2] };
+
+/** Tras la última rueda, cuánto se espera para confirmar la cámara. */
+const WHEEL_COMMIT_MS = 150;
+
+/** Píxeles por unidad del mapa con esta cámara en una ventana de este tamaño. */
+function pxPerUnit([, , w, h]: ViewBox, { width, height }: Size): number {
+  return Math.min(width / w, height / h) || 1;
+}
+
+/**
+ * Lo que dibuja la capa: el doble de ancho y de alto que la ventana, centrado
+ * en la cámara confirmada. Con `meet` y la misma proporción, cae exacto.
+ */
+function stageRegion(view: ViewBox, size: Size): ViewBox {
+  const s = pxPerUnit(view, size);
+  const cx = view[0] + view[2] / 2;
+  const cy = view[1] + view[3] / 2;
+  return [cx - size.width / s, cy - size.height / s, (2 * size.width) / s, (2 * size.height) / s];
+}
+
+/**
+ * `transform` CSS que lleva lo dibujado con la cámara confirmada a la cámara
+ * en vivo. Con origen en el centro de la capa (= centro de la ventana): un
+ * punto del mapa en pantalla es centro + (punto − centro de cámara) · escala.
+ */
+function stageTransform(committed: ViewBox, live: ViewBox, size: Size): string {
+  const sc = pxPerUnit(committed, size);
+  const sl = pxPerUnit(live, size);
+  const tx = (committed[0] + committed[2] / 2 - (live[0] + live[2] / 2)) * sl;
+  const ty = (committed[1] + committed[3] / 2 - (live[1] + live[3] / 2)) * sl;
+  return `translate(${tx}px, ${ty}px) scale(${sl / sc})`;
+}
+
 type Props = {
   restaurants: MapRestaurant[];
   brands: BrandInfo[];
@@ -178,16 +233,83 @@ export function WorldMap({ restaurants, brands, initialCounters }: Props) {
   const [city, setCity] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("mapa");
+  /** Cámara confirmada: con ella se dibuja el SVG (ver arriba). */
   const [viewBox, setViewBox] = useState<ViewBox>(FULL_VIEW);
+  const [size, setSize] = useState<Size>(DEFAULT_SIZE);
   const frame = useRef<number | null>(null);
+  /** Cámara en vivo: la que se ve en pantalla en este cuadro. */
   const viewRef = useRef<ViewBox>(FULL_VIEW);
+  const committedRef = useRef<ViewBox>(FULL_VIEW);
+  const sizeRef = useRef<Size>(DEFAULT_SIZE);
   /** Dónde estaba la cámara antes de abrir un restaurante, para volver ahí. */
   const beforeOpen = useRef<ViewBox>(FULL_VIEW);
-  const svgRef = useRef<SVGSVGElement>(null);
+  /** Ventana del mapa: recibe los gestos y da el tamaño. */
+  const svgRef = useRef<HTMLDivElement>(null);
+  /** Capa que se mueve con `transform` mientras dura un gesto. */
+  const stageRef = useRef<HTMLDivElement>(null);
+  /** Rectángulo del minimapa: se mueve en vivo, sin React. */
+  const minimapRectRef = useRef<SVGRectElement>(null);
+  const paintFrame = useRef<number | null>(null);
+  const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const phaseRef = useRef<Phase>("mapa");
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
+
+  // Tamaño de la ventana del mapa (cambia al girar la tablet o al redimensionar).
+  useLayoutEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const next = { width: rect.width, height: rect.height };
+      sizeRef.current = next;
+      setSize((prev) => (prev.width === next.width && prev.height === next.height ? prev : next));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  /** Pinta la cámara en vivo: solo el `transform` de la capa y el minimapa. */
+  const paintLive = useCallback(() => {
+    paintFrame.current = null;
+    const live = viewRef.current;
+    if (stageRef.current) {
+      stageRef.current.style.transform = stageTransform(committedRef.current, live, sizeRef.current);
+    }
+    const rect = minimapRectRef.current;
+    if (rect) {
+      rect.setAttribute("x", String(live[0]));
+      rect.setAttribute("y", String(live[1]));
+      rect.setAttribute("width", String(live[2]));
+      rect.setAttribute("height", String(live[3]));
+    }
+  }, []);
+
+  /** Confirma la cámara en vivo: un render con los rótulos y grupos a su escala. */
+  const commitView = useCallback(() => {
+    if (commitTimer.current !== null) {
+      clearTimeout(commitTimer.current);
+      commitTimer.current = null;
+    }
+    setViewBox(viewRef.current);
+  }, []);
+
+  // Tras confirmar (o cambiar de tamaño), la capa ya está dibujada con la cámara
+  // nueva: se recoloca antes de pintar, para que no dé un salto. Si el gesto
+  // siguió moviéndose mientras React renderizaba, queda el resto del camino.
+  useLayoutEffect(() => {
+    committedRef.current = viewBox;
+    paintLive();
+  }, [viewBox, size, paintLive]);
+
+  useEffect(() => () => {
+    if (paintFrame.current !== null) window.cancelAnimationFrame(paintFrame.current);
+    if (commitTimer.current !== null) clearTimeout(commitTimer.current);
+  }, []);
 
   // La espera media avanza sola: basta con mover el reloj.
   useEffect(() => {
@@ -234,20 +356,23 @@ export function WorldMap({ restaurants, brands, initialCounters }: Props) {
     return clusterRows(placed, CLUSTER_DISTANCE * scale);
   }, [rows, scale]);
 
-  /** Mueve la cámara sin animar (rueda, arrastre, pellizco). */
+  /**
+   * Mueve la cámara en vivo sin animar (rueda, arrastre, pellizco). Se pinta
+   * en el siguiente cuadro, una vez aunque lleguen varios eventos.
+   */
   const setView = useCallback((next: ViewBox) => {
     if (frame.current !== null) {
       window.cancelAnimationFrame(frame.current);
       frame.current = null;
     }
-    const clamped = clampView(next);
-    viewRef.current = clamped;
-    setViewBox(clamped);
-  }, []);
+    viewRef.current = clampView(next);
+    if (paintFrame.current === null) paintFrame.current = window.requestAnimationFrame(paintLive);
+  }, [paintLive]);
 
-  /** Anima el `viewBox` hasta `to` y luego llama a `done`. */
+  /** Anima la cámara hasta `to`, la confirma y luego llama a `done`. */
   const animateTo = useCallback((to: ViewBox, done: () => void = () => {}) => {
     if (frame.current !== null) window.cancelAnimationFrame(frame.current);
+    if (commitTimer.current !== null) clearTimeout(commitTimer.current);
     const from = viewRef.current;
     const target = clampView(to);
     const duration = prefersReducedMotion() ? 0 : ZOOM_MS;
@@ -255,17 +380,17 @@ export function WorldMap({ restaurants, brands, initialCounters }: Props) {
     const step = (time: number) => {
       const t = duration === 0 ? 1 : Math.min(1, (time - start) / duration);
       const k = easeInOut(t);
-      const next = from.map((v, i) => v + (target[i] - v) * k) as ViewBox;
-      viewRef.current = next;
-      setViewBox(next);
+      viewRef.current = from.map((v, i) => v + (target[i] - v) * k) as ViewBox;
+      paintLive();
       if (t < 1) frame.current = window.requestAnimationFrame(step);
       else {
         frame.current = null;
+        commitView();
         done();
       }
     };
     frame.current = window.requestAnimationFrame(step);
-  }, []);
+  }, [commitView, paintLive]);
 
   /** Acerca (factor < 1) o aleja (> 1) dejando quieto el punto (px, py) del mapa. */
   const zoomAt = useCallback(
@@ -293,10 +418,13 @@ export function WorldMap({ restaurants, brands, initialCounters }: Props) {
       e.preventDefault();
       const p = toMap(e.clientX, e.clientY);
       zoomAt(Math.exp(e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)), p.x, p.y);
+      // La rueda no avisa cuando termina: se confirma al dejar de girar.
+      if (commitTimer.current !== null) clearTimeout(commitTimer.current);
+      commitTimer.current = setTimeout(commitView, WHEEL_COMMIT_MS);
     };
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => svg.removeEventListener("wheel", onWheel);
-  }, [toMap, zoomAt]);
+  }, [commitView, toMap, zoomAt]);
 
   // Arrastre con un dedo o el ratón, pellizco con dos dedos.
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -332,14 +460,14 @@ export function WorldMap({ restaurants, brands, initialCounters }: Props) {
     }
   }, [toMap]);
 
-  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (phase !== "mapa" || (e.pointerType === "mouse" && e.button !== 0)) return;
     if (pointers.current.size === 0) moved.current = false;
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     startGesture();
   };
 
-  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!pointers.current.has(e.pointerId)) return;
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const g = gesture.current;
@@ -361,10 +489,12 @@ export function WorldMap({ restaurants, brands, initialCounters }: Props) {
     }
   };
 
-  const onPointerEnd = (e: React.PointerEvent<SVGSVGElement>) => {
+  const onPointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!pointers.current.delete(e.pointerId)) return;
     // Al soltar un dedo del pellizco, el otro sigue arrastrando desde donde está.
     startGesture();
+    // Al soltar del todo se confirma la cámara (un render, no uno por cuadro).
+    if (pointers.current.size === 0 && moved.current) commitView();
     // El clic de este mismo gesto llega antes que cualquier temporizador: así
     // se descarta ese clic, pero el Enter de después sobre un marcador vale.
     if (pointers.current.size === 0) window.setTimeout(() => (moved.current = false), 0);
@@ -424,7 +554,7 @@ export function WorldMap({ restaurants, brands, initialCounters }: Props) {
   const selectedRow = selected ? rows.find((r) => r.restaurant.id === selected.id) : undefined;
   const planVisible = phase === "plano";
   const zoomedIn = viewBox[2] < FULL_VIEW[2] * 0.85;
-  const sweepCenter = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
+  const region = useMemo(() => stageRegion(viewBox, size), [viewBox, size]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -492,11 +622,9 @@ export function WorldMap({ restaurants, brands, initialCounters }: Props) {
 
       {/* Mapa: todo el ancho disponible */}
       <div className="relative h-[68vh] min-h-[24rem] overflow-hidden rounded-2xl bg-map-bg ring-1 ring-app-border sm:min-h-[28rem] lg:h-[calc(100vh-13rem)]">
-        <svg
+        <div
           ref={svgRef}
-          viewBox={viewBox.join(" ")}
-          preserveAspectRatio="xMidYMid meet"
-          className={`h-full w-full touch-none select-none ${phase === "mapa" ? "cursor-grab active:cursor-grabbing" : ""}`}
+          className={`absolute inset-0 touch-none select-none ${phase === "mapa" ? "cursor-grab active:cursor-grabbing" : ""}`}
           role="group"
           aria-label="Mapa de Honduras con los restaurantes. Rueda o pellizco para acercar, arrastrar para moverse."
           onPointerDown={onPointerDown}
@@ -504,136 +632,55 @@ export function WorldMap({ restaurants, brands, initialCounters }: Props) {
           onPointerUp={onPointerEnd}
           onPointerCancel={onPointerEnd}
         >
-          <defs>
-            <pattern id="map-grid" width="25" height="25" patternUnits="userSpaceOnUse">
-              <path d="M 25 0 L 0 0 0 25" fill="none" className="stroke-map-grid" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-            </pattern>
-            <linearGradient id="map-sweep" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stopOpacity="0" className="[stop-color:rgb(var(--c-line))]" />
-              <stop offset="1" stopOpacity="0.1" className="[stop-color:rgb(var(--c-line))]" />
-            </linearGradient>
-          </defs>
-
-          {/* Mar con cuadrícula */}
-          <rect x={-MAP_WIDTH} y={-MAP_HEIGHT} width={MAP_WIDTH * 3} height={MAP_HEIGHT * 3} fill="url(#map-grid)" />
-
-          {/* Anillos y cruz del radar */}
-          <g className="stroke-map-line/15" fill="none" strokeWidth="1.5" strokeDasharray="4 8" vectorEffect="non-scaling-stroke">
-            {[150, 300, 450, 600].map((r) => (
-              <circle key={r} cx={sweepCenter.x} cy={sweepCenter.y} r={r} vectorEffect="non-scaling-stroke" />
-            ))}
-            <line x1={sweepCenter.x} y1={-400} x2={sweepCenter.x} y2={MAP_HEIGHT + 400} vectorEffect="non-scaling-stroke" />
-            <line x1={-400} y1={sweepCenter.y} x2={MAP_WIDTH + 400} y2={sweepCenter.y} vectorEffect="non-scaling-stroke" />
-          </g>
-          <path
-            d={`M ${sweepCenter.x} ${sweepCenter.y} L ${sweepCenter.x + 700} ${sweepCenter.y} A 700 700 0 0 0 ${sweepCenter.x + 606} ${sweepCenter.y - 350} Z`}
-            fill="url(#map-sweep)"
-            className="map-sweep"
-            style={{ transformOrigin: `${sweepCenter.x}px ${sweepCenter.y}px` }}
-          />
-
-          {/* Países vecinos */}
-          {NEIGHBORS.map((n) => (
-            <g key={n.id}>
-              <path d={n.path} className="fill-map-line/[0.04] stroke-map-line/30" strokeWidth={1} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
-              <text
-                x={n.label[0]}
-                y={n.label[1]}
-                textAnchor="middle"
-                className="fill-map-line/45"
-                fontSize={15 * scale}
-                fontWeight={700}
-                letterSpacing={3 * scale}
-              >
-                {n.name.toUpperCase()}
-              </text>
-            </g>
-          ))}
-
-          {/* Honduras: tierra, departamentos y frontera */}
-          <path d={HONDURAS_PATH} className="fill-map-line/[0.09]" />
-          {DEPARTMENTS.map((d) => (
-            <path key={d.id} d={d.path} fill="none" className="stroke-map-line/40" strokeWidth={1} vectorEffect="non-scaling-stroke" strokeLinejoin="round">
-              <title>{d.name}</title>
-            </path>
-          ))}
-          <path d={HONDURAS_PATH} fill="none" className="stroke-map-line/90" strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
-          {DEPARTMENTS.map((d) => (
-            <text
-              key={`${d.id}-rotulo`}
-              x={d.label[0]}
-              y={d.label[1]}
-              textAnchor="middle"
-              className="pointer-events-none fill-map-line/60"
-              fontSize={10 * scale}
-              fontWeight={600}
-              letterSpacing={1.2 * scale}
+          {/* La capa mide el doble que la ventana y se centra en ella: media
+              ventana de margen por lado, ya dibujada, para arrastrar. */}
+          <div
+            ref={stageRef}
+            className="absolute"
+            style={{
+              left: -size.width / 2,
+              top: -size.height / 2,
+              width: size.width * 2,
+              height: size.height * 2,
+              transformOrigin: "50% 50%",
+              willChange: "transform",
+            }}
+          >
+            <MapBase region={region} scale={scale} />
+            <RadarSweep region={region} size={size} />
+            <PulseLayer clusters={clusters} region={region} size={size} scale={scale} />
+            <svg
+              viewBox={region.join(" ")}
+              preserveAspectRatio="xMidYMid meet"
+              className="absolute inset-0 h-full w-full"
+              // Capa propia: los halos que pulsan solo repintan los marcadores.
+              style={{ willChange: "transform" }}
+              aria-label="Restaurantes"
+              role="group"
             >
-              {d.name.toUpperCase()}
-            </text>
-          ))}
-
-          {WATERS.map((w) => (
-            <text key={w.name} x={w.x} y={w.y} textAnchor="middle" className="pointer-events-none fill-map-line/40 italic" fontSize={13 * scale} letterSpacing={2 * scale}>
-              {w.name}
-            </text>
-          ))}
-
-          {/* Ciudades principales */}
-          {CITIES.map((c) => {
-            const r = (c.rank === 1 ? 5 : c.rank === 2 ? 4 : 3) * scale;
-            const size = (c.rank === 1 ? 16 : c.rank === 2 ? 13.5 : 11.5) * scale;
-            const gap = r + 4 * scale;
-            const at =
-              c.labelSide === "right"
-                ? { x: c.x + gap, y: c.y + size / 3, anchor: "start" as const }
-                : c.labelSide === "left"
-                  ? { x: c.x - gap, y: c.y + size / 3, anchor: "end" as const }
-                  : c.labelSide === "above"
-                    ? { x: c.x, y: c.y - gap, anchor: "middle" as const }
-                    : { x: c.x, y: c.y + gap + size * 0.8, anchor: "middle" as const };
-            return (
-              <g key={c.name} className="pointer-events-none">
-                {c.rank === 1 ? <circle cx={c.x} cy={c.y} r={r * 1.9} fill="none" className="stroke-map-line" strokeWidth={1.5} vectorEffect="non-scaling-stroke" /> : null}
-                <circle cx={c.x} cy={c.y} r={r} className="fill-map-line stroke-map-bg" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
-                <text
-                  x={at.x}
-                  y={at.y}
-                  textAnchor={at.anchor}
-                  className="fill-map-line stroke-map-bg"
-                  strokeWidth={4 * scale}
-                  paintOrder="stroke"
-                  fontSize={size}
-                  fontWeight={c.rank === 3 ? 600 : 800}
-                  letterSpacing={0.5 * scale}
-                >
-                  {c.name}
-                </text>
-              </g>
-            );
-          })}
-
-          {/* Marcadores: sueltos o agrupados si se pisan */}
-          {clusters.map((c) =>
-            c.members.length === 1 ? (
-              <Marker
-                key={c.members[0].restaurant.id}
-                row={c.members[0]}
-                scale={scale}
-                onOpen={() => unlessDragged(() => open(c.members[0].restaurant))}
-                disabled={phase !== "mapa"}
-              />
-            ) : (
-              <ClusterMarker
-                key={c.members.map((m) => m.restaurant.id).join("+")}
-                cluster={c}
-                scale={scale}
-                disabled={phase !== "mapa"}
-                onOpen={() => unlessDragged(() => animateTo(viewAroundPoints(c.members, 3)))}
-              />
-            ),
-          )}
-        </svg>
+              {/* Marcadores: sueltos o agrupados si se pisan */}
+              {clusters.map((c) =>
+                c.members.length === 1 ? (
+                  <Marker
+                    key={c.members[0].restaurant.id}
+                    row={c.members[0]}
+                    scale={scale}
+                    onOpen={() => unlessDragged(() => open(c.members[0].restaurant))}
+                    disabled={phase !== "mapa"}
+                  />
+                ) : (
+                  <ClusterMarker
+                    key={c.members.map((m) => m.restaurant.id).join("+")}
+                    cluster={c}
+                    scale={scale}
+                    disabled={phase !== "mapa"}
+                    onOpen={() => unlessDragged(() => animateTo(viewAroundPoints(c.members, 3)))}
+                  />
+                ),
+              )}
+            </svg>
+          </div>
+        </div>
 
         {/* Controles de la cámara */}
         <div className="absolute right-3 top-3 flex flex-col items-end gap-2">
@@ -650,7 +697,7 @@ export function WorldMap({ restaurants, brands, initialCounters }: Props) {
               />
             ))}
           </div>
-          <div className="flex flex-col overflow-hidden rounded-xl bg-panel/90 shadow-lg ring-1 ring-app-border backdrop-blur-md">
+          <div className="flex flex-col overflow-hidden rounded-xl bg-panel/95 shadow-lg ring-1 ring-app-border">
             <button
               type="button"
               aria-label="Acercar"
@@ -674,7 +721,7 @@ export function WorldMap({ restaurants, brands, initialCounters }: Props) {
         </div>
 
         {zoomedIn && phase === "mapa" ? (
-          <Minimap view={viewBox} onJump={(x, y) => {
+          <Minimap view={viewBox} rectRef={minimapRectRef} onJump={(x, y) => {
             const [, , w, h] = viewRef.current;
             animateTo([x - w / 2, y - h / 2, w, h]);
           }} />
@@ -734,6 +781,162 @@ export function WorldMap({ restaurants, brands, initialCounters }: Props) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Mapa base: todo lo que no cambia con los datos en vivo
+// ---------------------------------------------------------------------------
+
+const SWEEP_CENTER = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
+/** Radio del barrido del radar, en unidades del mapa. */
+const SWEEP_RADIUS = 700;
+/**
+ * Por encima de este diámetro en píxeles el barrido no se pinta: de cerca no
+ * aporta, y un `div` de miles de píxeles es una textura enorme para la GPU.
+ */
+const SWEEP_MAX_PX = 4000;
+
+/**
+ * Silueta, departamentos, vecinos, mares, ciudades, cuadrícula y anillos.
+ * Memoizado: solo se vuelve a dibujar al confirmar la cámara (cambian el
+ * encuadre y el tamaño de los rótulos), nunca por los contadores en vivo.
+ */
+const MapBase = memo(function MapBase({ region, scale }: { region: ViewBox; scale: number }) {
+  const sweepCenter = SWEEP_CENTER;
+  return (
+    // Capa propia (`willChange`): lo que se repinta encima (los halos que
+    // pulsan) no obliga a volver a grabar el pintado de todo el mapa.
+    <svg viewBox={region.join(" ")} preserveAspectRatio="xMidYMid meet" className="absolute inset-0 h-full w-full" style={{ willChange: "transform" }} aria-hidden>
+      <defs>
+        <pattern id="map-grid" width="25" height="25" patternUnits="userSpaceOnUse">
+          <path d="M 25 0 L 0 0 0 25" fill="none" className="stroke-map-grid" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        </pattern>
+      </defs>
+
+      {/* Mar con cuadrícula */}
+      <rect x={-MAP_WIDTH} y={-MAP_HEIGHT} width={MAP_WIDTH * 3} height={MAP_HEIGHT * 3} fill="url(#map-grid)" />
+
+      {/* Anillos y cruz del radar */}
+      <g className="stroke-map-line/15" fill="none" strokeWidth="1.5" strokeDasharray="4 8" vectorEffect="non-scaling-stroke">
+        {[150, 300, 450, 600].map((r) => (
+          <circle key={r} cx={sweepCenter.x} cy={sweepCenter.y} r={r} vectorEffect="non-scaling-stroke" />
+        ))}
+        <line x1={sweepCenter.x} y1={-400} x2={sweepCenter.x} y2={MAP_HEIGHT + 400} vectorEffect="non-scaling-stroke" />
+        <line x1={-400} y1={sweepCenter.y} x2={MAP_WIDTH + 400} y2={sweepCenter.y} vectorEffect="non-scaling-stroke" />
+      </g>
+
+      {/* Países vecinos */}
+      {NEIGHBORS.map((n) => (
+        <g key={n.id}>
+          <path d={n.path} className="fill-map-line/[0.04] stroke-map-line/30" strokeWidth={1} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+          <text
+            x={n.label[0]}
+            y={n.label[1]}
+            textAnchor="middle"
+            className="fill-map-line/45"
+            fontSize={15 * scale}
+            fontWeight={700}
+            letterSpacing={3 * scale}
+          >
+            {n.name.toUpperCase()}
+          </text>
+        </g>
+      ))}
+
+      {/* Honduras: tierra, departamentos y frontera */}
+      <path d={HONDURAS_PATH} className="fill-map-line/[0.09]" />
+      {DEPARTMENTS.map((d) => (
+        <path key={d.id} d={d.path} fill="none" className="stroke-map-line/40" strokeWidth={1} vectorEffect="non-scaling-stroke" strokeLinejoin="round">
+          <title>{d.name}</title>
+        </path>
+      ))}
+      <path d={HONDURAS_PATH} fill="none" className="stroke-map-line/90" strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+      {DEPARTMENTS.map((d) => (
+        <text
+          key={`${d.id}-rotulo`}
+          x={d.label[0]}
+          y={d.label[1]}
+          textAnchor="middle"
+          className="pointer-events-none fill-map-line/60"
+          fontSize={10 * scale}
+          fontWeight={600}
+          letterSpacing={1.2 * scale}
+        >
+          {d.name.toUpperCase()}
+        </text>
+      ))}
+
+      {WATERS.map((w) => (
+        <text key={w.name} x={w.x} y={w.y} textAnchor="middle" className="pointer-events-none fill-map-line/40 italic" fontSize={13 * scale} letterSpacing={2 * scale}>
+          {w.name}
+        </text>
+      ))}
+
+      {/* Ciudades principales */}
+      {CITIES.map((c) => {
+        const r = (c.rank === 1 ? 5 : c.rank === 2 ? 4 : 3) * scale;
+        const fontSize = (c.rank === 1 ? 16 : c.rank === 2 ? 13.5 : 11.5) * scale;
+        const gap = r + 4 * scale;
+        const at =
+          c.labelSide === "right"
+            ? { x: c.x + gap, y: c.y + fontSize / 3, anchor: "start" as const }
+            : c.labelSide === "left"
+              ? { x: c.x - gap, y: c.y + fontSize / 3, anchor: "end" as const }
+              : c.labelSide === "above"
+                ? { x: c.x, y: c.y - gap, anchor: "middle" as const }
+                : { x: c.x, y: c.y + gap + fontSize * 0.8, anchor: "middle" as const };
+        return (
+          <g key={c.name} className="pointer-events-none">
+            {c.rank === 1 ? <circle cx={c.x} cy={c.y} r={r * 1.9} fill="none" className="stroke-map-line" strokeWidth={1.5} vectorEffect="non-scaling-stroke" /> : null}
+            <circle cx={c.x} cy={c.y} r={r} className="fill-map-line stroke-map-bg" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+            <text
+              x={at.x}
+              y={at.y}
+              textAnchor={at.anchor}
+              className="fill-map-line stroke-map-bg"
+              strokeWidth={4 * scale}
+              paintOrder="stroke"
+              fontSize={fontSize}
+              fontWeight={c.rank === 3 ? 600 : 800}
+              letterSpacing={0.5 * scale}
+            >
+              {c.name}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}, (a, b) => a.scale === b.scale && a.region.every((v, i) => v === b.region[i]));
+
+/**
+ * Barrido del radar: una cuña de `conic-gradient` que gira con una animación
+ * CSS de `transform`. Al ser un `div` con su propia capa, la gira el
+ * compositor sin tocar el hilo principal ni repintar el SVG. Con «reducir
+ * movimiento» queda quieta (`.map-sweep` en `globals.css`).
+ */
+function RadarSweep({ region, size }: { region: ViewBox; size: Size }) {
+  // La capa mide 2× la ventana: estos son sus píxeles por unidad.
+  const s = pxPerUnit(region, { width: size.width * 2, height: size.height * 2 });
+  const diameter = SWEEP_RADIUS * 2 * s;
+  if (diameter > SWEEP_MAX_PX) return null;
+  const left = size.width - (region[0] + region[2] / 2 - SWEEP_CENTER.x) * s - diameter / 2;
+  const top = size.height - (region[1] + region[3] / 2 - SWEEP_CENTER.y) * s - diameter / 2;
+  return (
+    <div
+      aria-hidden
+      className="map-sweep pointer-events-none absolute rounded-full"
+      style={{
+        left,
+        top,
+        width: diameter,
+        height: diameter,
+        // Cuña de 30°, de las 2 a las 3 en punto, más intensa hacia el borde que avanza.
+        background: "conic-gradient(from 60deg, rgb(var(--c-line) / 0) 0deg, rgb(var(--c-line) / 0.1) 30deg, transparent 30deg)",
+        willChange: "transform",
+      }}
+    />
+  );
+}
+
 /** Rótulo corto de los botones de ciudad en pantallas pequeñas. */
 const CITY_SHORT: Record<(typeof ZOOM_CITIES)[number], string> = { Tegucigalpa: "TGU", "San Pedro Sula": "SPS" };
 
@@ -757,7 +960,7 @@ function MapButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      className="flex h-10 items-center gap-1.5 rounded-full bg-panel/90 px-3 text-xs font-semibold text-panel-text shadow-lg ring-1 ring-app-border backdrop-blur-md hover:ring-accent/60 disabled:opacity-40 sm:text-sm"
+      className="flex h-10 items-center gap-1.5 rounded-full bg-panel/95 px-3 text-xs font-semibold text-panel-text shadow-lg ring-1 ring-app-border hover:ring-accent/60 disabled:opacity-40 sm:text-sm"
     >
       <Icon aria-hidden size={16} />
       <span className="sm:hidden">{short}</span>
@@ -770,12 +973,17 @@ function MapButton({
 // Minimapa: dónde está la cámara dentro del país
 // ---------------------------------------------------------------------------
 
-function Minimap({ view, onJump }: { view: ViewBox; onJump: (x: number, y: number) => void }) {
+function Minimap({ view, rectRef, onJump }: {
+  view: ViewBox;
+  /** `paintLive` lo mueve durante los gestos, sin renderizar. */
+  rectRef: React.Ref<SVGRectElement>;
+  onJump: (x: number, y: number) => void;
+}) {
   const [x, y, w, h] = view;
   return (
     <svg
       viewBox={FULL_VIEW.join(" ")}
-      className="absolute bottom-3 right-3 hidden w-44 cursor-pointer rounded-xl bg-map-bg/90 shadow-lg ring-1 ring-app-border backdrop-blur-md sm:block"
+      className="absolute bottom-3 right-3 hidden w-44 cursor-pointer rounded-xl bg-map-bg/95 shadow-lg ring-1 ring-app-border sm:block"
       role="img"
       aria-label="Minimapa: toca para mover la vista"
       onClick={(e) => {
@@ -785,6 +993,7 @@ function Minimap({ view, onJump }: { view: ViewBox; onJump: (x: number, y: numbe
     >
       <path d={HONDURAS_PATH} className="fill-map-line/20 stroke-map-line/70" strokeWidth={1} vectorEffect="non-scaling-stroke" />
       <rect
+        ref={rectRef}
         x={x}
         y={y}
         width={w}
@@ -797,11 +1006,57 @@ function Minimap({ view, onJump }: { view: ViewBox; onJump: (x: number, y: numbe
   );
 }
 
+/**
+ * Halos que pulsan (espera de más de 20 o de 40 min), uno por marcador o
+ * grupo en alerta. Son `span` y no círculos del SVG a propósito: un elemento
+ * SVG animado obliga a repintar en cada cuadro (en tablet bajaba el mapa
+ * quieto a menos de 45 fps); un `span` que anima `transform` y `opacity` lo
+ * mueve el compositor. Van debajo de los marcadores, como antes.
+ */
+function PulseLayer({ clusters, region, size, scale }: { clusters: Cluster[]; region: ViewBox; size: Size; scale: number }) {
+  // Píxeles por unidad de la capa (que mide 2× la ventana) y su origen.
+  const s = pxPerUnit(region, { width: size.width * 2, height: size.height * 2 });
+  const cx = region[0] + region[2] / 2;
+  const cy = region[1] + region[3] / 2;
+  // Los marcadores se dibujan a `scale * 0.75` unidades del mapa por unidad propia.
+  const unit = scale * 0.75 * s;
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0">
+      {clusters.map((c) => {
+        const level = c.members.reduce<WaitLevel>((worst, m) => (LEVEL_ORDER[m.level] > LEVEL_ORDER[worst] ? m.level : worst), "normal");
+        if (level === "normal") return null;
+        const ring = c.members.length === 1 ? RING_R : CLUSTER_R;
+        const critical = level === "critica";
+        // Mismo tamaño y grosor que tenían en el SVG.
+        const radius = (ring + (critical ? 12 : 9)) * unit;
+        const stroke = (critical ? 8 : 4) * unit;
+        const diameter = 2 * radius + stroke;
+        return (
+          <span
+            key={c.members.map((m) => m.restaurant.id).join("+")}
+            className={`map-pulse absolute rounded-full ${critical ? "map-pulse-fast border-critica" : "border-alerta"}`}
+            style={{
+              left: size.width + (c.x - cx) * s - diameter / 2,
+              top: size.height + (c.y - cy) * s - diameter / 2,
+              width: diameter,
+              height: diameter,
+              borderWidth: stroke,
+              willChange: "transform, opacity",
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Marcador
 // ---------------------------------------------------------------------------
 
 const RING_R = 30;
+/** Radio del anillo de un grupo. */
+const CLUSTER_R = 36;
 const RING_C = 2 * Math.PI * RING_R;
 
 function Marker({ row, scale, onOpen, disabled }: { row: Placed; scale: number; onOpen: () => void; disabled: boolean }) {
@@ -834,15 +1089,8 @@ function Marker({ row, scale, onOpen, disabled }: { row: Placed; scale: number; 
       {/* Foco con teclado */}
       <circle r={RING_R + 10} fill="none" className="stroke-accent opacity-0 group-focus-visible:opacity-100" strokeWidth={3} />
 
-      {level === "alerta" ? (
-        <circle r={RING_R + 9} fill="none" className="map-pulse stroke-alerta" strokeWidth={4} />
-      ) : null}
-      {level === "critica" ? (
-        <>
-          <circle r={RING_R + 8} fill="none" className="stroke-critica" strokeWidth={3} />
-          <circle r={RING_R + 12} fill="none" className="map-pulse map-pulse-fast stroke-critica" strokeWidth={8} />
-        </>
-      ) : null}
+      {/* El halo que pulsa lo pinta `PulseLayer` (HTML), fuera del SVG. */}
+      {level === "critica" ? <circle r={RING_R + 8} fill="none" className="stroke-critica" strokeWidth={3} /> : null}
 
       {/* Anillo de ocupación: pista + parte ocupada */}
       <circle r={RING_R} fill="none" className="stroke-map-line/20" strokeWidth={6} />
@@ -909,7 +1157,7 @@ function ClusterMarker({ cluster, scale, onOpen, disabled }: { cluster: Cluster;
   const cities = [...new Set(members.map((m) => m.restaurant.city).filter(Boolean))];
   const title = cities.length === 1 ? cities[0] : `${members.length} restaurantes`;
   const Icon = level === "normal" ? null : ALERT_ICON[level];
-  const R = 36;
+  const R = CLUSTER_R;
   const C = 2 * Math.PI * R;
   const label = `${title}: ${members.length} restaurantes, ${waiting} en espera, espera máxima ${maxMinutes} min, ${Math.round(pct * 100)} % de mesas ocupadas. ${LEVEL_LABEL[level]}. Toca para acercar.`;
 
@@ -931,13 +1179,7 @@ function ClusterMarker({ cluster, scale, onOpen, disabled }: { cluster: Cluster;
       <title>{label}</title>
       <circle r={60} fill="transparent" />
       <circle r={R + 10} fill="none" className="stroke-accent opacity-0 group-focus-visible:opacity-100" strokeWidth={3} />
-      {level === "alerta" ? <circle r={R + 9} fill="none" className="map-pulse stroke-alerta" strokeWidth={4} /> : null}
-      {level === "critica" ? (
-        <>
-          <circle r={R + 8} fill="none" className="stroke-critica" strokeWidth={3} />
-          <circle r={R + 12} fill="none" className="map-pulse map-pulse-fast stroke-critica" strokeWidth={8} />
-        </>
-      ) : null}
+      {level === "critica" ? <circle r={R + 8} fill="none" className="stroke-critica" strokeWidth={3} /> : null}
       <circle r={R} fill="none" className="stroke-map-line/20" strokeWidth={6} />
       <circle r={R} fill="none" className="stroke-map-line" strokeWidth={6} strokeLinecap="round" strokeDasharray={`${pct * C} ${C}`} transform="rotate(-90)" />
       {/* Un gajo por restaurante, con el color de su marca */}
@@ -1035,7 +1277,7 @@ function ListRow({ row, active, onOpen }: { row: Row; active: boolean; onOpen: (
 
 function Legend({ brands }: { brands: BrandInfo[] }) {
   return (
-    <div className="pointer-events-none absolute bottom-3 left-3 hidden max-w-[16rem] flex-col gap-2 rounded-2xl bg-panel/85 p-3 text-xs text-panel-text shadow-lg ring-1 ring-app-border backdrop-blur-md sm:flex">
+    <div className="pointer-events-none absolute bottom-3 left-3 hidden max-w-[16rem] flex-col gap-2 rounded-2xl bg-panel/95 p-3 text-xs text-panel-text shadow-lg ring-1 ring-app-border sm:flex">
       <p className="font-semibold">Leyenda</p>
       <div className="flex flex-wrap gap-x-3 gap-y-1">
         {brands.map((b) => (
