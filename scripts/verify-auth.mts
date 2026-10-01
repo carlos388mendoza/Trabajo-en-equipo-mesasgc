@@ -1195,6 +1195,119 @@ section("Modo rápido: todas las cartas y agregar varios");
 }
 
 // ---------------------------------------------------------------------------
+// Datos de demostración: aviso, pantalla y borrado desde la web
+//
+// Va al final a propósito: carga el lote (`loadDemoData`) para comprobar el
+// aviso y el borrado por HTTP, y lo borra al terminar para dejar la base como
+// estaba. La parte de datos (idempotencia, claves foráneas, aborto) la lleva
+// `verify:demo`.
+// ---------------------------------------------------------------------------
+
+section("Datos de demostración");
+
+{
+  const { loadDemoData, demoSummary } = await import("@/lib/demo/load");
+  const { tableLayouts } = await import("@/lib/db/schema");
+
+  // Lo que el seed dejó, para comprobar al final que el borrado del demo no se
+  // llevó nada de eso por delante.
+  const realesAntes = {
+    zonas: (await db.select({ id: tableLayouts.id }).from(tableLayouts).where(eq(tableLayouts.isDemo, false))).length,
+    clientes: (await db.select({ id: waitlistEntries.id }).from(waitlistEntries).where(eq(waitlistEntries.isDemo, false))).length,
+  };
+
+  // Antes de cargar, no hay nada demo: el aviso no aparece.
+  check("sin datos demo no sale el aviso", !(await http("GET", "/inicio", { cookie: cookies.admin })).text.includes("datos de demostración cargados"));
+
+  const carga = await loadDemoData();
+  check("el lote se carga para la prueba", carga.zonas > 0, JSON.stringify(carga));
+  const resumen = await demoSummary();
+  check(`  y el resumen ve ${resumen.total} filas demo`, resumen.activo && resumen.total > 0, JSON.stringify(resumen));
+
+  // El aviso global, por rol. No es un modal: es una franja dentro del HTML.
+  const aviso = (who: Who | null) => http("GET", "/inicio", { cookie: who ? cookies[who] : undefined });
+  check("admin ve el aviso de datos de demostración", (await aviso("admin")).text.includes("datos de demostración cargados"));
+  check("  con el enlace para administrarlos", (await aviso("admin")).text.includes("Administrar datos demo"));
+  check("analitica ve el aviso", (await aviso("analitica")).text.includes("datos de demostración cargados"));
+  check("  pero con el enlace de solo ver", (await aviso("analitica")).text.includes("Ver datos de demostración") && !(await aviso("analitica")).text.includes("Administrar datos demo"));
+  check("el host ve el aviso", (await aviso("centro")).text.includes("datos de demostración cargados"));
+  check("sin sesión, la página sigue yendo a /login", landing(await aviso(null)) === "/login");
+
+  // El aviso no bloquea el Modo rápido: la página abre y trae el aviso.
+  const rapido = await http("GET", "/restaurante/rest_centro/rapido", { cookie: cookies.centro });
+  check("el modo rápido sigue abriendo con el aviso encima", landing(rapido) === "200" && rapido.text.includes("datos de demostración cargados"));
+
+  // La pantalla /admin/datos-demo.
+  const pantalla = (who: Who | null) => http("GET", "/admin/datos-demo", { cookie: who ? cookies[who] : undefined });
+  check("admin entra a /admin/datos-demo", landing(await pantalla("admin")) === "200");
+  check("  y ve el botón de borrar", (await pantalla("admin")).text.includes("Borrar datos demo"));
+  check("analitica también la ve (los conteos son información)", landing(await pantalla("analitica")) === "200");
+  check("  pero sin botón de borrar", !(await pantalla("analitica")).text.includes("Borrar datos demo"));
+  check("un host también, pero sin borrar", landing(await pantalla("centro")) === "200" && !(await pantalla("centro")).text.includes("Borrar datos demo"));
+  check("sin sesión, va a /login", landing(await pantalla(null)) === "/login");
+
+  // La server action: aquí es donde de verdad se comprueba el permiso, porque
+  // un POST a mano no pasa por la página.
+  const deleteId = findActionId("deleteDemoDataAction", "admin");
+  check("se localiza la server action deleteDemoDataAction", deleteId !== null);
+  const callDelete = async (who: Who | null, confirmacion: string) =>
+    (
+      await http("POST", "/admin/datos-demo", {
+        cookie: who ? cookies[who] : undefined,
+        body: JSON.stringify([{ confirmacion }]),
+        headers: { "Next-Action": deleteId ?? "", "Content-Type": "text/plain;charset=UTF-8", Accept: "text/x-component" },
+      })
+    ).text;
+
+  if (deleteId) {
+    const porAnalitica = await callDelete("analitica", "BORRAR");
+    check("analitica no puede borrar aunque mande la palabra", porAnalitica.includes("No tienes permiso"), porAnalitica.slice(0, 120));
+    const porCentro = await callDelete("centro", "BORRAR");
+    check("un host tampoco", porCentro.includes("No tienes permiso"), porCentro.slice(0, 120));
+    // Sin sesión el proxy manda a /login antes de llegar a la action: está igual
+    // de protegido, solo que por delante. Cuenta como "no borra" en los dos casos.
+    const sinSesionRes = await http("POST", "/admin/datos-demo", {
+      body: JSON.stringify([{ confirmacion: "BORRAR" }]),
+      headers: { "Next-Action": deleteId, "Content-Type": "text/plain;charset=UTF-8", Accept: "text/x-component" },
+    });
+    const sinSesion = sinSesionRes.text;
+    check(
+      "sin sesión tampoco (el proxy lo manda a /login)",
+      sinSesion.includes("Tu sesión terminó") || landing(sinSesionRes).startsWith("/login"),
+      sinSesion.slice(0, 120),
+    );
+    check("  y no se borró nada", (await demoSummary()).total === resumen.total);
+    const sinPalabra = await callDelete("admin", "borrar");
+    check("admin sin la palabra exacta no borra", sinPalabra.includes("BORRAR") && (await demoSummary()).total === resumen.total, sinPalabra.slice(0, 120));
+    const enMinusculas = await callDelete("admin", "borra");
+    check("  ni escribiéndola en minúsculas", enMinusculas.includes("No se borró nada") && (await demoSummary()).total === resumen.total);
+
+    const borrado = await callDelete("admin", "BORRAR");
+    check("admin sí borra escribiendo BORRAR", borrado.includes('"ok":true'), borrado.slice(0, 160));
+
+    const resumenFinal = await demoSummary();
+    check("  y ya no queda nada demo", !resumenFinal.activo && resumenFinal.total === 0, JSON.stringify(resumenFinal));
+    check("el aviso desaparece solo", !(await aviso("admin")).text.includes("datos de demostración cargados"));
+    check("  también para analitica", !(await aviso("analitica")).text.includes("datos de demostración cargados"));
+    check("la pantalla dice que no hay datos demo", (await pantalla("admin")).text.includes("No hay datos de demostración"));
+
+    const realesDespues = {
+      zonas: (await db.select({ id: tableLayouts.id }).from(tableLayouts).where(eq(tableLayouts.isDemo, false))).length,
+      clientes: (await db.select({ id: waitlistEntries.id }).from(waitlistEntries).where(eq(waitlistEntries.isDemo, false))).length,
+    };
+    check("lo que había antes (el seed) sigue intacto", JSON.stringify(realesAntes) === JSON.stringify(realesDespues), `${JSON.stringify(realesAntes)} vs ${JSON.stringify(realesDespues)}`);
+
+    // Repetido desde la web: no falla ni rompe nada.
+    const repetido = await callDelete("admin", "BORRAR");
+    check("borrar otra vez no falla", repetido.includes('"ok":true') || repetido.includes("No había datos"), repetido.slice(0, 160));
+  }
+
+  // Se deja la base como estaba: sin datos demo.
+  const { borrarDemoData } = await import("@/lib/demo/delete");
+  await borrarDemoData();
+}
+
+// ---------------------------------------------------------------------------
 // Usuario desactivado
 // ---------------------------------------------------------------------------
 

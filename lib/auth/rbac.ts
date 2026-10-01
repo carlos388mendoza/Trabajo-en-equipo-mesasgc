@@ -39,7 +39,18 @@ export type Action =
   /** Plano en vivo de un restaurante, en solo lectura: estados y ocupación. */
   | "plano:ver"
   /** Nombre del cliente sentado en cada mesa, dentro del plano en vivo. */
-  | "plano:clientes";
+  | "plano:clientes"
+  /**
+   * Ver que hay datos de demostración cargados y cuántos son (/admin/datos-demo
+   * y el aviso global). Lo tienen los tres roles.
+   */
+  | "demo:ver"
+  /**
+   * BORRAR los datos de demostración. Solo admin, a propósito: el borrado es
+   * global (no es de un restaurante) y es la única operación de la app que
+   * elimina filas, así que no se delega a nadie más.
+   */
+  | "demo:borrar";
 
 export const ALL_ACTIONS: readonly Action[] = [
   "usuarios:gestionar",
@@ -54,6 +65,8 @@ export const ALL_ACTIONS: readonly Action[] = [
   "mapa:ver",
   "plano:ver",
   "plano:clientes",
+  "demo:ver",
+  "demo:borrar",
 ];
 
 /**
@@ -78,7 +91,8 @@ export function isRestaurantAction(action: Action): boolean {
 export const ROLE_PERMISSIONS: Record<Role, readonly Action[]> = {
   // Todo, en todos los restaurantes.
   [ROLES.ADMIN]: ALL_ACTIONS,
-  // Modo sencillo y completo, solo en SUS restaurantes.
+  // Modo sencillo y completo, solo en SUS restaurantes. `demo:ver` para que vea
+  // el aviso de que lo que tiene delante es de demostración; `demo:borrar` no.
   [ROLES.RESTAURANTE]: [
     "editor:ver",
     "editor:guardar",
@@ -87,11 +101,15 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Action[]> = {
     "mesas:asignar",
     "plano:ver",
     "plano:clientes",
+    "demo:ver",
   ],
   // Solo lectura: estadísticas de todos, el asistente y el mapa general. En
   // el plano en vivo ve estados y ocupación, pero NO los nombres de los
   // clientes (`plano:clientes`): son datos personales que no necesita.
-  [ROLES.ANALITICA]: ["analiticas:ver", "asistente:usar", "mapa:ver", "plano:ver"],
+  //
+  // `demo:ver` sí lo tiene, para que sepa que los números que está mirando son
+  // de demostración; `demo:borrar` NO: borrar datos es cosa del admin.
+  [ROLES.ANALITICA]: ["analiticas:ver", "asistente:usar", "mapa:ver", "plano:ver", "demo:ver"],
 };
 
 /**
