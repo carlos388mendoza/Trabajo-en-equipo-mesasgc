@@ -125,6 +125,7 @@ mismo árbol) el 30 de septiembre, y en `feat/cartas-baraja` el 1 de octubre:
 | #39 | `testing` → `main` (tercera publicación: marcas y restaurantes desde `/admin` y el piloto) | Fusionado con revisión propia; desplegado. |
 | #40 | `feat/cartas-baraja` (formulario al tocar, abanico, «Ver todas las cartas» y agregar varios; migración `0006`) | Fusionado con revisión propia. |
 | #41 | `perf/mapa` (mapa general a 60 fps) | Fusionado con revisión propia. |
+| #42 | `feat/create-user` (`npm run create-user` y el piloto con un usuario por marca) | Fusionado con revisión propia. |
 
 ### Protección de `main` y `testing`
 
