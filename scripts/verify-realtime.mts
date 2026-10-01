@@ -36,7 +36,7 @@ process.env.BETTER_AUTH_SECRET = "verify-realtime-secret-solo-para-esta-prueba";
 process.env.BETTER_AUTH_URL = "http://localhost:3000";
 
 const { applyAllMigrations } = await import("./migrations.mts");
-const { eq } = await import("drizzle-orm");
+const { eq, inArray } = await import("drizzle-orm");
 const { io: ioClient } = await import("socket.io-client");
 const { db } = await import("@/lib/db");
 const { elementTypes, restaurants, tableLayouts, tables, waitlistEntries } = await import(
@@ -476,6 +476,239 @@ check(
 
   const staleUndo = await ask(hostA, "waitlist:undo", { actionId: added.actionId });
   check("la misma acción no se puede deshacer dos veces", !staleUndo.ok);
+}
+
+// ---------------------------------------------------------------------------
+// «Ver todas las cartas»: quién resolvió, volver a la espera y deshacerlo
+// ---------------------------------------------------------------------------
+
+section("Ver todas las cartas: volver a la espera");
+
+{
+  // Filas propias de esta sección, en REST; se borran al final para no mover
+  // los contadores que se miden después.
+  await db.insert(waitlistEntries).values([
+    cliente("cartas-listo"),
+    cliente("cartas-espera"),
+    { ...cliente("cartas-sentado"), status: "sentado" },
+  ]);
+  const changesA = counter(hostA, "waitlist:changed");
+  const changesB = counter(hostB, "waitlist:changed");
+  const changesOtro = counter(otro, "waitlist:changed");
+  const undoStates = counter(hostA, "waitlist:undo-state");
+
+  type EntryAck = AnyAck & {
+    entry?: { status: string; calledAt: number | null; resolvedAt: number | null; resolvedByName: string | null };
+    actionId?: string;
+    action?: string;
+  };
+  const resolved = (await ask(hostB, "waitlist:resolve", { entryId: "cartas-listo", status: "listo" })) as EntryAck;
+  const resolvedRow = await entryRow("cartas-listo");
+  const sessionB = await getAuth().api.getSession({ headers: new Headers({ cookie: cookieB }) });
+  check(
+    "waitlist:resolve guarda quién y cuándo lo resolvió",
+    resolved.ok && resolvedRow?.resolvedByUserId === sessionB?.user.id && resolvedRow?.resolvedAt instanceof Date,
+    JSON.stringify(resolvedRow?.resolvedByUserId),
+  );
+  check(
+    "  y el aviso trae el nombre de quien lo resolvió",
+    resolved.entry?.resolvedByName === "rest1@verify.test" && resolved.entry?.resolvedAt !== null,
+    JSON.stringify(resolved.entry),
+  );
+  await settle();
+  const before = { a: changesA.length, b: changesB.length, otro: changesOtro.length };
+
+  const fromOther = await ask(otro, "waitlist:reopen", { entryId: "cartas-listo" });
+  check("waitlist:reopen no toca un cliente de otro restaurante", !fromOther.ok && (await entryRow("cartas-listo"))?.status === "listo", fromOther.error);
+  const fromAnalitica = await ask(analitica, "waitlist:reopen", { entryId: "cartas-listo" });
+  check("analítica no puede volver a la espera a nadie", !fromAnalitica.ok && (await entryRow("cartas-listo"))?.status === "listo");
+  const invalid = await ask(hostA, "waitlist:reopen", { entryId: "" });
+  check("waitlist:reopen rechaza un payload inválido con Zod", !invalid.ok && /no válidos/.test(invalid.error ?? ""), invalid.error);
+  const waitingAlready = await ask(hostA, "waitlist:reopen", { entryId: "cartas-espera" });
+  check("un cliente que ya espera no se reabre", !waitingAlready.ok && /ya está en la espera/.test(waitingAlready.error ?? ""), waitingAlready.error);
+  const seated = await ask(hostA, "waitlist:reopen", { entryId: "cartas-sentado" });
+  check("un sentado no vuelve a la espera (tiene mesa)", !seated.ok && (await entryRow("cartas-sentado"))?.status === "sentado", seated.error);
+
+  const reopened = (await ask(hostA, "waitlist:reopen", { entryId: "cartas-listo" })) as EntryAck;
+  await settle();
+  const reopenedRow = await entryRow("cartas-listo");
+  check(
+    "waitlist:reopen lo devuelve a la espera y devuelve actionId",
+    reopened.ok && reopened.entry?.status === "esperando" && Boolean(reopened.actionId),
+    reopened.error,
+  );
+  check(
+    "  y borra el aviso, la hora y quién lo resolvió",
+    reopenedRow?.status === "esperando" && reopenedRow.calledAt === null && reopenedRow.resolvedAt === null && reopenedRow.resolvedByUserId === null,
+  );
+  check(
+    "  lo avisa a las dos tablets del restaurante como «reopened»",
+    changesA.length === before.a + 1 && changesB.length === before.b + 1 && (changesB.at(-1) as { action?: string })?.action === "reopened",
+  );
+  check("  y no a otra room", changesOtro.length === before.otro);
+  check(
+    "  y se puede deshacer",
+    /Volver a la espera/.test((undoStates.at(-1) as { label?: string } | null)?.label ?? ""),
+    JSON.stringify(undoStates.at(-1)),
+  );
+
+  const undone = (await ask(hostB, "waitlist:undo", { actionId: reopened.actionId })) as EntryAck;
+  await settle();
+  const undoneRow = await entryRow("cartas-listo");
+  check(
+    "deshacer «volver a la espera» lo deja listo otra vez",
+    undone.ok && undone.action === "restored" && undone.entry?.status === "listo" && undoneRow?.status === "listo",
+    undone.error,
+  );
+  check(
+    "  con su aviso y quién lo resolvió",
+    undoneRow?.calledAt?.getTime() === resolvedRow?.calledAt?.getTime() && undoneRow?.resolvedByUserId === sessionB?.user.id && undone.entry?.resolvedByName === "rest1@verify.test",
+  );
+  check("  y llega a toda la room", changesA.length === before.a + 2 && changesOtro.length === before.otro);
+
+  // El permiso se vuelve a mirar en cada evento, también en este.
+  await setUserAccess(sessionB!.user.id, ["analitica"], []);
+  const revoked = await ask(hostB, "waitlist:reopen", { entryId: "cartas-listo" });
+  check("waitlist:reopen exige permiso actualizado", !revoked.ok && /permiso/.test(revoked.error ?? ""), revoked.error);
+  await setUserAccess(sessionB!.user.id, ["restaurante"], [REST]);
+
+  await db.delete(waitlistEntries).where(inArray(waitlistEntries.id, ["cartas-listo", "cartas-espera", "cartas-sentado"]));
+}
+
+{
+  // La lectura de la vista: rangos en hora de Honduras y nombre del que resolvió.
+  const { listWaitlistCards, rangeStart } = await import("@/lib/waitlist/cards");
+  const { hondurasMidnightUtc, hondurasToday, addCalendarDays } = await import("@/lib/time/honduras");
+  const now = new Date();
+  const today = hondurasToday(now);
+  const at = (daysAgo: number) => new Date(hondurasMidnightUtc(addCalendarDays(today, -daysAgo)).getTime() + 10 * 3_600_000);
+  const sessionA = await getAuth().api.getSession({ headers: new Headers({ cookie: cookieA }) });
+  await db.insert(waitlistEntries).values([
+    { ...cliente("rango-hoy", REST, "listo"), arrivedAt: at(0), resolvedAt: at(0), resolvedByUserId: sessionA!.user.id },
+    { ...cliente("rango-3dias", REST, "ausente"), arrivedAt: at(3) },
+    { ...cliente("rango-6dias", REST, "ausente"), arrivedAt: at(6) },
+    { ...cliente("rango-10dias", REST, "ausente"), arrivedAt: at(10) },
+    { ...cliente("rango-espera-vieja", REST, "esperando"), arrivedAt: at(10) },
+    { ...cliente("rango-ajeno", REST_2, "listo"), arrivedAt: at(0) },
+  ]);
+  const ids = (rows: { id: string }[]) => rows.map((r) => r.id).filter((id) => id.startsWith("rango-"));
+  const hoy = await listWaitlistCards(REST, "hoy", now);
+  const semana = await listWaitlistCards(REST, "7dias", now);
+  check("«hoy» empieza a la medianoche de Honduras", rangeStart("hoy", now).getTime() === hondurasMidnightUtc(today).getTime());
+  check(
+    "«hoy» trae las de hoy y las que siguen esperando, aunque sean de antes",
+    JSON.stringify(ids(hoy).sort()) === JSON.stringify(["rango-espera-vieja", "rango-hoy"]),
+    JSON.stringify(ids(hoy)),
+  );
+  check(
+    "«7dias» trae hoy y los 6 días anteriores, no más",
+    JSON.stringify(ids(semana).sort()) === JSON.stringify(["rango-3dias", "rango-6dias", "rango-espera-vieja", "rango-hoy"]),
+    JSON.stringify(ids(semana)),
+  );
+  check("  ninguna de otro restaurante", !ids(semana).includes("rango-ajeno"));
+  check("  la más reciente primero", ids(semana)[0] === "rango-hoy", JSON.stringify(ids(semana)));
+  check(
+    "  con el nombre de quien la resolvió",
+    hoy.find((e) => e.id === "rango-hoy")?.resolvedByName === "admin@verify.test",
+    JSON.stringify(hoy.find((e) => e.id === "rango-hoy")),
+  );
+  await db.delete(waitlistEntries).where(inArray(waitlistEntries.id, [
+    "rango-hoy", "rango-3dias", "rango-6dias", "rango-10dias", "rango-espera-vieja", "rango-ajeno",
+  ]));
+}
+
+// ---------------------------------------------------------------------------
+// Agregar varios clientes de una vez
+// ---------------------------------------------------------------------------
+
+section("Agregar varios clientes de una vez");
+
+{
+  const { parseGuestList } = await import("@/lib/waitlist/guest-list");
+  const parsed = parseGuestList("Ana Torres, 4\n\nLuis Ríos; 2; silla para bebé\nsin número\nGrupo grande, 12\nMarta\t3");
+  check(
+    "«Pegar lista» entiende «Nombre, personas», con nota, punto y coma o tabulador",
+    JSON.stringify(parsed.rows) === JSON.stringify([
+      { name: "Ana Torres", party: 4, note: "" },
+      { name: "Luis Ríos", party: 2, note: "silla para bebé" },
+      { name: "Marta", party: 3, note: "" },
+    ]),
+    JSON.stringify(parsed.rows),
+  );
+  check(
+    "  y marca las líneas que no entiende, con su número",
+    JSON.stringify(parsed.errors.map((e) => e.line)) === JSON.stringify([4, 5]),
+    JSON.stringify(parsed.errors),
+  );
+}
+
+{
+  type ManyAck = AnyAck & { entries?: { id: string; customerName: string; arrivedAt: number; status: string }[]; actionId?: string };
+  const changesA = counter(hostA, "waitlist:changed");
+  const changesB = counter(hostB, "waitlist:changed");
+  const changesOtro = counter(otro, "waitlist:changed");
+  const names = ["Lote 1", "Lote 2", "Lote 3", "Lote 4"];
+  const restRows = async () => (await db.query.waitlistEntries.findMany({ where: eq(waitlistEntries.restaurantId, REST) }))
+    .filter((row) => row.customerName.startsWith("Lote") || row.customerName.startsWith("Mal"));
+
+  const added = (await ask(hostB, "waitlist:add-many", {
+    entries: names.map((customerName, i) => ({ customerName, partySize: i + 1, notes: i === 0 ? "Ventana" : "" })),
+  })) as ManyAck;
+  await settle();
+  const rows = (await restRows()).sort((a, b) => a.arrivedAt.getTime() - b.arrivedAt.getTime());
+  check("waitlist:add-many crea a todos, esperando, y devuelve actionId", added.ok && added.entries?.length === 4 && Boolean(added.actionId) && rows.length === 4, added.error);
+  check(
+    "  en el orden de las filas (hora de llegada creciente)",
+    JSON.stringify(rows.map((r) => r.customerName)) === JSON.stringify(names) && new Set(rows.map((r) => r.arrivedAt.getTime())).size === 4,
+  );
+  check("  con sus personas y notas", rows[0]?.partySize === 1 && rows[0]?.notes === "Ventana" && rows[3]?.partySize === 4 && rows[3]?.notes === null);
+  check(
+    "  llegan los 4 avisos «added» a las dos tablets, en orden",
+    changesA.length === 4 && changesB.length === 4
+      && JSON.stringify(changesB.map((c) => (c as { entry: { customerName: string } }).entry.customerName)) === JSON.stringify(names),
+    `A=${changesA.length} B=${changesB.length}`,
+  );
+  check("  y ninguno a otra room", changesOtro.length === 0);
+
+  const undone = (await ask(hostA, "waitlist:undo", { actionId: added.actionId })) as AnyAck & { action?: string; entries?: unknown[] };
+  await settle();
+  check("deshacer «agregar varios» los quita a todos de una vez", undone.ok && undone.action === "removed" && undone.entries?.length === 4 && (await restRows()).length === 0, undone.error);
+  check("  y avisa la baja de cada uno a la room", changesB.length === 8 && changesOtro.length === 0, `${changesB.length}`);
+
+  // Si otro host ya resolvió a uno, deshacer no quita a ninguno.
+  const again = (await ask(hostB, "waitlist:add-many", {
+    entries: [{ customerName: "Lote A", partySize: 2 }, { customerName: "Lote B", partySize: 2 }],
+  })) as ManyAck;
+  const [firstOfBatch] = again.entries ?? [];
+  await resolveViaDb(firstOfBatch?.id ?? "");
+  const blocked = await ask(hostA, "waitlist:undo", { actionId: again.actionId });
+  check("  pero si uno ya cambió, no quita a ninguno", !blocked.ok && (await restRows()).length === 2, blocked.error);
+  await db.delete(waitlistEntries).where(inArray(waitlistEntries.id, (again.entries ?? []).map((e) => e.id)));
+
+  // Todo o nada: una fila mala tumba el lote entero.
+  const bad = await ask(hostB, "waitlist:add-many", {
+    entries: [{ customerName: "Mal 1", partySize: 2 }, { customerName: "", partySize: 2 }],
+  });
+  check("una fila inválida rechaza el lote y no guarda ninguna", !bad.ok && (await restRows()).length === 0, bad.error);
+  const tooMany = await ask(hostB, "waitlist:add-many", {
+    entries: Array.from({ length: 31 }, (_, i) => ({ customerName: `Mal ${i}`, partySize: 2 })),
+  });
+  check("más de 30 de una vez se rechaza", !tooMany.ok && /hasta 30/.test(tooMany.error ?? "") && (await restRows()).length === 0, tooMany.error);
+  const empty = await ask(hostB, "waitlist:add-many", { entries: [] });
+  check("un lote vacío se rechaza", !empty.ok);
+  const fromAnalitica = await ask(analitica, "waitlist:add-many", { entries: [{ customerName: "Mal analitica", partySize: 2 }] });
+  check("analítica no puede agregar varios", !fromAnalitica.ok && (await restRows()).length === 0);
+
+  const session = await getAuth().api.getSession({ headers: new Headers({ cookie: cookieB }) });
+  await setUserAccess(session!.user.id, ["analitica"], []);
+  const revoked = await ask(hostB, "waitlist:add-many", { entries: [{ customerName: "Mal revocado", partySize: 2 }] });
+  check("waitlist:add-many exige permiso actualizado", !revoked.ok && /permiso/.test(revoked.error ?? ""), revoked.error);
+  await setUserAccess(session!.user.id, ["restaurante"], [REST]);
+}
+
+/** Simula que otro host marcó listo a un cliente, sin pasar por el deshacer. */
+async function resolveViaDb(id: string) {
+  await db.update(waitlistEntries).set({ status: "listo", updatedAt: new Date(Date.now() + 1000) }).where(eq(waitlistEntries.id, id));
 }
 
 {

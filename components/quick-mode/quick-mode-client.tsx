@@ -1,14 +1,35 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { AnimatePresence, motion } from "motion/react";
-import { Check, CircleCheck, Plus, Undo2, UserRoundPlus, UsersRound, X } from "lucide-react";
+// Modo rápido (modo sencillo): el montón de cartas de los que esperan.
+//
+// - Deslizar a la derecha = listo; a la izquierda = ausente (botones, flechas
+//   y Ctrl+Z para deshacer, como siempre).
+// - Un toque en el centro de la carta (o el botón flotante) abre el
+//   formulario de agregar cliente; un toque en una esquina abre la fila en
+//   abanico. `SwipeCard` distingue el toque del arrastre.
+// - «Ver todas las cartas» abre las de hoy o de los últimos 7 días.
+//
+// Todo cambio pasa por el socket de la room del restaurante, y el servidor lo
+// avisa a todas las tablets del local.
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, MotionConfig, motion } from "motion/react";
+import { Check, CircleCheck, GalleryHorizontalEnd, LayoutGrid, Plus, Undo2, UsersRound, X } from "lucide-react";
 
 import { createRealtimeClient, type RealtimeClient } from "@/lib/realtime/client";
 import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
-import type { WaitlistUndoState } from "@/lib/realtime/events";
+import type { WaitlistChange, WaitlistUndoState } from "@/lib/realtime/events";
 import { hondurasDateKey, hondurasToday } from "@/lib/time/honduras";
-import { SwipeCard, type SwipeCardHandle, type SwipeDecision } from "@/components/quick-mode/swipe-card";
+import { AddGuestSheet, type NewGuest } from "@/components/quick-mode/add-guest-sheet";
+import { AllCardsView, type StatusFilter } from "@/components/quick-mode/all-cards-view";
+import { CardFan } from "@/components/quick-mode/card-fan";
+import { plural } from "@/components/quick-mode/format";
+import {
+  SwipeCard,
+  type CardTapZone,
+  type SwipeCardHandle,
+  type SwipeDecision,
+} from "@/components/quick-mode/swipe-card";
 
 type Guest = {
   id: string;
@@ -28,14 +49,32 @@ type ApiEntry = {
   status: string;
 };
 
+function statusOf(status: string): Guest["status"] {
+  return status === "esperando"
+    ? "waiting"
+    : status === "listo"
+      ? "ready"
+      : status === "sentado"
+        ? "seated"
+        : "absent";
+}
+
+function fromSnapshot(entry: WaitlistEntrySnapshot | ApiEntry): Guest {
+  return {
+    id: entry.id,
+    name: entry.customerName,
+    party: entry.partySize,
+    arrived: entry.arrivedAt,
+    note: entry.notes ?? "",
+    status: statusOf(entry.status),
+  };
+}
+
+type Overlay = null | "form" | "fan" | "all";
+
 export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
   const [guests, setGuests] = useState<Guest[]>([]);
-  const [name, setName] = useState("");
-  const [party, setParty] = useState("2");
-  const [note, setNote] = useState("");
-  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [undoing, setUndoing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -46,6 +85,14 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
   const [connected, setConnected] = useState(false);
   const [undoState, setUndoState] = useState<WaitlistUndoState>(null);
   const [error, setError] = useState("");
+  const [overlay, setOverlay] = useState<Overlay>(null);
+  const [allFilter, setAllFilter] = useState<StatusFilter>("todas");
+  // Carta que el host pasó al frente desde el abanico. Solo cambia lo que se
+  // ve arriba del montón en ESTA tablet; el orden de la fila no se toca.
+  const [frontId, setFrontId] = useState<string | null>(null);
+  // «Se agregaron N clientes · Deshacer», tras agregar varios de una vez.
+  const [batchNotice, setBatchNotice] = useState<number | null>(null);
+  const batchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const socketRef = useRef<RealtimeClient | null>(null);
   const cardRef = useRef<SwipeCardHandle>(null);
   const localResolving = useRef(new Set<string>());
@@ -55,34 +102,19 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoActionRef = useRef<() => Promise<void>>(async () => {});
+  const overlayRef = useRef<Overlay>(null);
+  const changeListeners = useRef(new Set<(change: WaitlistChange) => void>());
   const loadVersion = useRef(0);
-  const waiting = useMemo(
-    () => guests.filter((guest) => guest.status === "waiting"),
-    [guests],
-  );
+  const waiting = useMemo(() => {
+    const queue = guests.filter((guest) => guest.status === "waiting");
+    const front = frontId ? queue.find((guest) => guest.id === frontId) : undefined;
+    return front ? [front, ...queue.filter((guest) => guest !== front)] : queue;
+  }, [guests, frontId]);
   const current = waiting[0];
   const today = hondurasToday();
   const todayEntries = guests.filter((guest) => hondurasDateKey(guest.arrived) === today);
   const readyCount = todayEntries.filter((guest) => guest.status === "ready").length;
   const absentCount = todayEntries.filter((guest) => guest.status === "absent").length;
-
-  function fromSnapshot(entry: WaitlistEntrySnapshot): Guest {
-    return {
-      id: entry.id,
-      name: entry.customerName,
-      party: entry.partySize,
-      arrived: entry.arrivedAt,
-      note: entry.notes ?? "",
-      status:
-        entry.status === "esperando"
-          ? "waiting"
-          : entry.status === "listo"
-            ? "ready"
-            : entry.status === "sentado"
-              ? "seated"
-              : "absent",
-    };
-  }
 
   function mergeEntry(entry: WaitlistEntrySnapshot) {
     const guest = fromSnapshot(entry);
@@ -96,9 +128,20 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
     noticeTimer.current = setTimeout(() => setNotice(""), duration);
   }, []);
 
+  const subscribe = useCallback((listener: (change: WaitlistChange) => void) => {
+    changeListeners.current.add(listener);
+    return () => {
+      changeListeners.current.delete(listener);
+    };
+  }, []);
+
   useEffect(() => {
     undoStateRef.current = undoState;
   }, [undoState]);
+
+  useEffect(() => {
+    overlayRef.current = overlay;
+  }, [overlay]);
 
   function offerUndoForFiveSeconds() {
     if (undoTimer.current) clearTimeout(undoTimer.current);
@@ -114,6 +157,7 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
   useEffect(() => () => {
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
     if (undoTimer.current) clearTimeout(undoTimer.current);
+    if (batchTimer.current) clearTimeout(batchTimer.current);
   }, []);
 
   useEffect(() => {
@@ -123,6 +167,9 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
         void undoActionRef.current();
+        // Con una ventana abierta, las flechas no deslizan la carta de detrás.
+      } else if (overlayRef.current) {
+        return;
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
         void cardRef.current?.swipe("listo");
@@ -143,23 +190,7 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudo leer la lista.");
-      if (requestVersion === loadVersion.current) setGuests(
-        (data.entries as ApiEntry[]).map((entry) => ({
-          id: entry.id,
-          name: entry.customerName,
-          party: entry.partySize,
-          arrived: entry.arrivedAt,
-          note: entry.notes ?? "",
-          status:
-            entry.status === "esperando"
-              ? "waiting"
-              : entry.status === "listo"
-                ? "ready"
-                : entry.status === "sentado"
-                  ? "seated"
-                  : "absent",
-        })),
-      );
+      if (requestVersion === loadVersion.current) setGuests((data.entries as ApiEntry[]).map(fromSnapshot));
       if (requestVersion === loadVersion.current) setError("");
     } catch (cause) {
       if (requestVersion === loadVersion.current) {
@@ -193,7 +224,8 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
       setError("No se pudo conectar al servidor en tiempo real.");
     });
     socket.on("waitlist:undo-state", setUndoState);
-    socket.on("waitlist:changed", ({ action, entry, undo }) => {
+    socket.on("waitlist:changed", (change) => {
+      const { action, entry, undo } = change;
       loadVersion.current += 1;
       if (action === "removed") {
         setGuests((items) => items.filter((guest) => guest.id !== entry.id));
@@ -212,10 +244,14 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
           ?? (undoStateRef.current?.label.includes("Marcar ausente") ? -1 : 1);
         setEnterDirections((items) => ({ ...items, [entry.id]: direction }));
         mergeEntry(entry);
+      } else if (action === "reopened") {
+        resolvedElsewhere.current.delete(entry.id);
+        mergeEntry(entry);
       } else {
         mergeEntry(entry);
       }
       setUndoState(undo);
+      for (const listener of changeListeners.current) listener(change);
     });
     socket.connect();
 
@@ -226,32 +262,41 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurantId, showNotice]);
 
-  async function addGuest(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!name.trim() || saving) return;
-    setSaving(true);
-    setError("");
+  async function addGuest(input: NewGuest): Promise<string | null> {
     try {
       const socket = socketRef.current;
       if (!socket?.connected) throw new Error("Esperando la conexión en tiempo real.");
-      const result = await socket.timeout(5000).emitWithAck("waitlist:add", {
-          customerName: name.trim(),
-          partySize: Number(party),
-          notes: note.trim(),
-      });
+      const result = await socket.timeout(5000).emitWithAck("waitlist:add", input);
       if (!result.ok) throw new Error(result.error);
       mergeEntry(result.entry);
-      setName("");
-      setParty("2");
-      setNote("");
-      setMessage("Cliente agregado a la fila");
+      // Llega al final de la fila: si el montón no la muestra, se dice dónde quedó.
+      const position = guests.filter((guest) => guest.status === "waiting" && guest.id !== result.entry.id).length + 1;
+      showNotice(`${result.entry.customerName} se agregó a la fila (n.º ${position}).`, 3000);
       offerUndoForFiveSeconds();
-      window.setTimeout(() => setMessage(""), 2500);
+      return null;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Error al guardar en Turso.");
-    } finally {
-      setSaving(false);
+      return cause instanceof Error ? cause.message : "Error al guardar en Turso.";
     }
+  }
+
+  async function addGuests(input: NewGuest[]): Promise<string | null> {
+    try {
+      const socket = socketRef.current;
+      if (!socket?.connected) throw new Error("Esperando la conexión en tiempo real.");
+      const result = await socket.timeout(8000).emitWithAck("waitlist:add-many", { entries: input });
+      if (!result.ok) throw new Error(result.error);
+      result.entries.forEach(mergeEntry);
+      showBatchNotice(result.entries.length);
+      return null;
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : "Error al guardar en Turso.";
+    }
+  }
+
+  function showBatchNotice(count: number) {
+    if (batchTimer.current) clearTimeout(batchTimer.current);
+    setBatchNotice(count);
+    batchTimer.current = setTimeout(() => setBatchNotice(null), 8000);
   }
 
   async function markGuest(entryId: string, status: SwipeDecision, direction: number): Promise<boolean> {
@@ -290,6 +335,30 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
     }
   }
 
+  async function reopenGuest(entryId: string): Promise<boolean> {
+    const socket = socketRef.current;
+    if (!socket?.connected) {
+      setError("Esperando la conexión en tiempo real.");
+      return false;
+    }
+    setError("");
+    try {
+      const result = await socket.timeout(5000).emitWithAck("waitlist:reopen", { entryId });
+      if (!result.ok) {
+        showNotice(result.error, 3500);
+        return false;
+      }
+      resolvedElsewhere.current.delete(entryId);
+      mergeEntry(result.entry);
+      offerUndoForFiveSeconds();
+      showNotice(`${result.entry.customerName} volvió a la espera.`, 2500);
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se pudo volver a la espera.");
+      return false;
+    }
+  }
+
   async function undoLastAction() {
     if (!undoState || undoing) return;
     const socket = socketRef.current;
@@ -305,9 +374,13 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
       });
       if (!result.ok) throw new Error(result.error);
       setUndoPrompt(false);
+      setBatchNotice(null);
       if (undoTimer.current) clearTimeout(undoTimer.current);
       if (result.action === "removed") {
-        setGuests((items) => items.filter((guest) => guest.id !== result.entry.id));
+        // Deshacer «agregar varios» trae a todos los que se quitaron.
+        const removed = new Set((result.entries ?? [result.entry]).map((entry: WaitlistEntrySnapshot) => entry.id));
+        setGuests((items) => items.filter((guest) => !removed.has(guest.id)));
+        if (result.entries) showNotice(`Se quitaron los ${result.entries.length} clientes que se agregaron.`, 3000);
       } else {
         mergeEntry(result.entry);
       }
@@ -322,49 +395,90 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
     undoActionRef.current = undoLastAction;
   });
 
+  function onCardTap(zone: CardTapZone) {
+    if (zone === "esquina") openFan();
+    else setOverlay("form");
+  }
+
+  // El reloj avanza cada 30 s: al abrir, los minutos de espera se ponen al día.
+  function openFan() {
+    setNow(Date.now());
+    setOverlay("fan");
+  }
+
+  function openAll(filter: StatusFilter) {
+    setNow(Date.now());
+    setAllFilter(filter);
+    setOverlay("all");
+  }
+
+  const closeOverlay = useCallback(() => setOverlay(null), []);
+
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[.18em] text-accent">
-            Servicio en vivo · Local {restaurantId}
+    <MotionConfig reducedMotion="user">
+      <div className="mx-auto max-w-6xl px-4 pb-32 pt-6 sm:px-6 sm:pt-8">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[.18em] text-accent">
+              Servicio en vivo · Local {restaurantId}
+            </p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-app-text">
+              Modo sencillo
+            </h1>
+            <p className="mt-1 text-app-muted">Gestiona la fila en unos pocos toques.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="rounded-2xl border border-app-border bg-panel px-5 py-3 shadow-sm">
+              <span className="text-2xl font-bold text-panel-text">{waiting.length}</span>
+              <span className="ml-2 text-sm text-panel-muted">{waiting.length === 1 ? "grupo esperando" : "grupos esperando"}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => openAll("todas")}
+              className="inline-flex min-h-[52px] items-center gap-2 rounded-2xl border border-app-border bg-panel px-4 font-semibold text-panel-text shadow-sm transition hover:bg-app-border/50"
+            >
+              <LayoutGrid aria-hidden size={19} />
+              Ver todas las cartas
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <p role="alert" className="mt-4 rounded-xl border border-estado-ocupada/40 bg-panel px-4 py-3 text-sm text-panel-text">
+            {error}
           </p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-app-text">
-            Modo sencillo
-          </h1>
-          <p className="mt-1 text-app-muted">Gestiona la fila en unos pocos toques.</p>
-        </div>
-        <div className="rounded-2xl border border-app-border bg-panel px-5 py-3 shadow-sm">
-          <span className="text-2xl font-bold text-panel-text">{waiting.length}</span>
-          <span className="ml-2 text-sm text-panel-muted">grupos esperando</span>
-        </div>
-      </div>
+        )}
 
-      {error && (
-        <p role="alert" className="mt-4 rounded-xl border border-estado-ocupada/40 bg-panel px-4 py-3 text-sm text-panel-text">
-          {error}
-        </p>
-      )}
-
-      <div className="mt-8 grid gap-6 lg:grid-cols-[1.15fr_.85fr]">
-        <section className="rounded-3xl border border-app-border bg-panel p-5 text-panel-text shadow-xl sm:p-7">
-          <div className="flex items-center justify-between gap-3">
+        <section className="mt-6 rounded-3xl border border-app-border bg-panel p-5 text-panel-text shadow-xl sm:p-7">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="rounded-full bg-app-border/60 px-3 py-1.5 text-xs font-semibold tracking-wide text-panel-text">
               SIGUIENTE EN LA FILA
             </span>
-            <span className="inline-flex items-center gap-2 text-sm text-panel-muted">
-              <span className={`h-2.5 w-2.5 rounded-full ${connected ? "bg-estado-libre" : "bg-estado-reservada"}`} />
-              {connected ? "En vivo" : "Reconectando"}
-              <span aria-hidden>·</span>
-              {waiting.length} esperando
-            </span>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="inline-flex items-center gap-2 text-sm text-panel-muted">
+                <span className={`h-2.5 w-2.5 rounded-full ${connected ? "bg-estado-libre" : "bg-estado-reservada"}`} />
+                {connected ? "En vivo" : "Reconectando"}
+                <span aria-hidden>·</span>
+                {waiting.length} esperando
+              </span>
+              <button
+                type="button"
+                disabled={!waiting.length}
+                onClick={openFan}
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-app-border px-3 text-sm font-semibold text-panel-muted transition hover:bg-app-border/50 hover:text-panel-text disabled:opacity-40"
+                title="También tocando una esquina de la carta"
+              >
+                <GalleryHorizontalEnd aria-hidden size={17} />
+                Abanico
+              </button>
+            </div>
           </div>
 
           {loading ? (
-            <div className="grid h-[390px] place-items-center text-panel-muted" role="status">Cargando lista…</div>
+            <div className="grid h-[420px] place-items-center text-panel-muted sm:h-[460px]" role="status">Cargando lista…</div>
           ) : waiting.length ? (
             <>
-              <div className="relative mx-auto mt-6 h-[390px] w-full max-w-[430px] touch-pan-y">
+              <div className="relative mx-auto mt-6 h-[400px] w-full max-w-[560px] touch-pan-y sm:h-[440px]">
                 <AnimatePresence custom={exitDirections} initial={false}>
                   {waiting.slice(0, 3).map((guest, depth) => (
                     <SwipeCard
@@ -376,11 +490,12 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
                       now={now}
                       enterFrom={enterDirections[guest.id]}
                       onResolve={markGuest}
+                      onTap={depth === 0 ? onCardTap : undefined}
                     />
                   ))}
                 </AnimatePresence>
               </div>
-              <div className="mx-auto mt-5 grid max-w-[430px] grid-cols-[1fr_auto_1fr] items-center gap-3">
+              <div className="mx-auto mt-2 grid max-w-[560px] grid-cols-[1fr_auto_1fr] items-center gap-3">
                 <button
                   type="button"
                   disabled={!current || resolving || !connected}
@@ -426,16 +541,23 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
                   </motion.p>
                 )}
               </AnimatePresence>
-              <p className="mt-3 text-center text-xs text-panel-muted">Desliza la tarjeta o usa las flechas izquierda y derecha.</p>
+              <p className="mx-auto mt-3 max-w-[560px] text-center text-xs text-panel-muted">
+                Desliza la carta (o usa las flechas) para marcarla lista o ausente. Tócala para agregar un cliente; toca una esquina para ver la fila en abanico.
+                {waiting.length > 3 && ` Detrás hay ${plural(waiting.length - 3, "carta más", "cartas más")}.`}
+              </p>
             </>
           ) : (
-            <div className="grid min-h-[390px] place-items-center text-center">
-              <div>
+            <button
+              type="button"
+              onClick={() => setOverlay("form")}
+              className="mt-6 grid min-h-[420px] w-full place-items-center rounded-[2rem] border-2 border-dashed border-app-border text-center transition hover:bg-app-border/20 sm:min-h-[460px]"
+            >
+              <span>
                 <UsersRound aria-hidden size={46} strokeWidth={1.5} className="mx-auto text-panel-muted" />
-                <h2 className="mt-4 text-xl font-semibold">No hay clientes en espera</h2>
-                <p className="mt-2 text-sm text-panel-muted">Cuando llegue alguien, su tarjeta aparecerá aquí.</p>
-              </div>
-            </div>
+                <span className="mt-4 block text-xl font-semibold">No hay clientes en espera</span>
+                <span className="mt-2 block text-sm text-panel-muted">Toca aquí para agregar al primero.</span>
+              </span>
+            </button>
           )}
           <AnimatePresence>
             {notice && (
@@ -444,90 +566,93 @@ export function QuickModeClient({ restaurantId }: { restaurantId: string }) {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 8 }}
                 role="status"
-                className="mt-4 rounded-xl border border-app-border bg-app-bg px-4 py-3 text-center text-sm text-panel-text"
+                className="mx-auto mt-4 max-w-[560px] rounded-xl border border-app-border bg-app-bg px-4 py-3 text-center text-sm text-panel-text"
               >
                 {notice}
               </motion.p>
             )}
           </AnimatePresence>
-        </section>
 
-        <section className="rounded-3xl border border-app-border bg-panel p-6 text-panel-text shadow-sm sm:p-8">
-          <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-2xl bg-accent/10 text-accent">
-              <UserRoundPlus aria-hidden size={20} />
-            </span>
-            <div>
-              <h2 className="font-bold text-panel-text">Agregar cliente</h2>
-              <p className="text-sm text-panel-muted">Registro rápido, sin pasos extra</p>
-            </div>
-          </div>
-          <form className="mt-6 space-y-4" onSubmit={addGuest}>
-            <label className="block text-sm font-medium text-panel-text">
-              Nombre
-              <input
-                required
-                maxLength={100}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Ej. Ana García"
-                className="mt-1.5 w-full rounded-xl border border-app-border bg-panel px-4 py-3 text-panel-text outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
-              />
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block text-sm font-medium text-panel-text">
-                Personas
-                <select
-                  value={party}
-                  onChange={(event) => setParty(event.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-app-border bg-panel px-4 py-3 text-panel-text outline-none focus:border-accent"
-                >
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((count) => (
-                    <option key={count} value={count}>{count} {count === 1 ? "persona" : "personas"}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-sm font-medium text-panel-text">
-                Nota (opcional)
-                <input
-                  maxLength={500}
-                  value={note}
-                  onChange={(event) => setNote(event.target.value)}
-                  placeholder="Silla para bebé"
-                  className="mt-1.5 w-full rounded-xl border border-app-border bg-panel px-4 py-3 text-panel-text outline-none focus:border-accent"
-                />
-              </label>
-            </div>
-            <button
-              disabled={saving || !connected}
-              className="w-full rounded-xl bg-accent px-4 py-3.5 font-semibold text-accent-text transition hover:bg-accent/85 disabled:opacity-60"
-            >
-              <span className="inline-flex items-center justify-center gap-2">
-                <Plus aria-hidden size={18} />
-                {saving ? "Guardando…" : "Agregar a la fila"}
-              </span>
-            </button>
-            {message && <p role="status" className="text-center text-sm font-medium text-accent">{message}</p>}
-          </form>
-          <div className="mt-7 border-t border-app-border pt-5">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-panel-text">Actividad de hoy</h3>
-              <button type="button" onClick={() => void loadGuests()} className="text-xs font-medium text-accent hover:underline">
-                Actualizar
-              </button>
-            </div>
-            <div className="mt-3 flex gap-3 text-sm text-panel-muted">
-              <CircleCheck aria-hidden size={17} className="mt-0.5 shrink-0 text-accent" />
-              <p>
-                {readyCount} {readyCount === 1 ? "grupo listo" : "grupos listos"}
+          <div className="mx-auto mt-6 flex max-w-[560px] flex-wrap items-center justify-between gap-3 border-t border-app-border pt-4 text-sm text-panel-muted">
+            <p className="inline-flex items-center gap-2">
+              <CircleCheck aria-hidden size={17} className="shrink-0 text-accent" />
+              <span>
+                Hoy: {readyCount} {readyCount === 1 ? "grupo listo" : "grupos listos"}
                 <span className="mx-1">·</span>
                 {absentCount} {absentCount === 1 ? "ausente" : "ausentes"}
-              </p>
-            </div>
+              </span>
+            </p>
+            <button type="button" onClick={() => void loadGuests()} className="text-xs font-medium text-accent hover:underline">
+              Actualizar
+            </button>
           </div>
         </section>
+        <p className="mt-5 text-center text-xs text-app-muted">La lista se guarda en Turso para este restaurante.</p>
       </div>
-      <p className="mt-5 text-center text-xs text-app-muted">La lista se guarda en Turso para este restaurante.</p>
-    </div>
+
+      <button
+        type="button"
+        onClick={() => setOverlay("form")}
+        className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-40 inline-flex min-h-14 items-center gap-2 rounded-full bg-accent px-5 font-semibold text-accent-text shadow-[0_12px_30px_rgba(0,0,0,0.25)] transition hover:bg-accent/85 sm:right-8"
+      >
+        <Plus aria-hidden size={22} />
+        Agregar cliente
+      </button>
+
+      <AddGuestSheet
+        open={overlay === "form"}
+        connected={connected}
+        onClose={closeOverlay}
+        onSubmit={addGuest}
+        onSubmitMany={addGuests}
+      />
+      <AnimatePresence>
+        {batchNotice !== null && overlay === null && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            role="status"
+            className="fixed bottom-[calc(max(1.25rem,env(safe-area-inset-bottom))+4.5rem)] left-1/2 z-40 flex w-[min(92vw,26rem)] -translate-x-1/2 items-center justify-between gap-3 rounded-2xl border border-app-border bg-panel px-4 py-3 text-sm text-panel-text shadow-xl"
+          >
+            <span>Se agregaron {plural(batchNotice, "cliente", "clientes")}</span>
+            <button
+              type="button"
+              disabled={!undoState || undoing || !connected}
+              onClick={() => void undoLastAction()}
+              title="Deshacer · Ctrl+Z"
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-accent px-3 font-semibold text-accent-text transition hover:bg-accent/85 disabled:opacity-50"
+            >
+              <Undo2 aria-hidden size={16} />
+              Deshacer
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <CardFan
+        open={overlay === "fan"}
+        guests={waiting}
+        now={now}
+        onClose={closeOverlay}
+        onPick={(id) => {
+          setFrontId(id);
+          setOverlay(null);
+        }}
+        onShowAll={() => openAll("esperando")}
+      />
+      <AllCardsView
+        open={overlay === "all"}
+        restaurantId={restaurantId}
+        initialFilter={allFilter}
+        now={now}
+        connected={connected}
+        undoState={undoState}
+        onClose={closeOverlay}
+        subscribe={subscribe}
+        onResolve={(entryId, status) => markGuest(entryId, status, status === "listo" ? 1 : -1)}
+        onReopen={reopenGuest}
+        onUndo={undoLastAction}
+      />
+    </MotionConfig>
   );
 }
