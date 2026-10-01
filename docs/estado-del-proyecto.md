@@ -63,6 +63,7 @@ Todo esto está en `testing` y en `main`.
 | Usuarios desde la terminal | `npm run create-user`: crea o actualiza un usuario por argumentos (correo, nombre, roles, restaurantes por slug o por marca), con la contraseña dos veces oculta en la terminal y confirmación «si»; si existe, no toca la contraseña. Mismas validaciones que `/admin`. Piloto con 2 usuarios (`dennys@` y `pizzahut@`). | `scripts/create-user.mts`, `lib/auth/user-upsert.ts`, README §15 | #42 |
 | Un usuario para varios restaurantes | Selector de restaurante en la cabecera (color e inicial de la marca) que lleva al mismo modo, y `/inicio` con una tarjeta por restaurante (cuántos esperan y espera media, se refresca sola). Al cambiar, el socket sale de la room anterior y entra en la nueva. En `/admin`, restaurantes agrupados por marca, con «Marcar todos» y buscador. | `components/layout/restaurant-switcher.tsx`, `app/inicio/page.tsx`, `components/admin/admin-users.tsx` | #36, #37 |
 | Cartas del modo rápido | Montón a todo el ancho. Tocar la carta (o «+ Agregar cliente») abre el formulario en un panel que sube desde abajo o en ventana; tocar una esquina abre la fila en abanico (hasta 7 y «+N»). Pestaña **Varios** para agregar hasta 30 de una vez (filas o «Pegar lista»), todos o ninguno, con deshacer en grupo. «Ver todas las cartas» (hoy o 7 días, filtros y buscador) con volver a la espera. Migración `0006` (`resolved_at`, `resolved_by_user_id`). | `components/quick-mode/`, `lib/waitlist/`, `app/api/restaurante/[id]/cartas`, README §11, `docs/salida-a-produccion.md` §4 | #40 |
+| Mapa más rápido | Cámara por `transform` CSS durante el gesto (sin React) y confirmada al soltar; base memoizada; radar y halos animados por el compositor; controles sin `backdrop-blur`. Arrastre 24 → 60 fps y rueda 15 → 60 en computadora; 11 → 54 y 13 → 47 en tablet (CPU 4×). | `components/map/world-map.tsx`, `docs/mapa-honduras.md` | #41 |
 | Aspecto | Estilo de mapa «radar», minimapa, íconos de lucide y temas Claro, Oscuro, Sistema y Personalizado, sin parpadeo. | `lib/theme/`, `/ajustes`, README §13 | #7 |
 | CI | GitHub Actions en cada PR y cada push a `testing` y `main`: typecheck, lint, build y los tres `verify`, con Node 22 y `npm ci`. | `.github/workflows/ci.yml` | #10 |
 | Despliegue | Comandos de Railway (build, Pre-deploy `db:migrate && db:catalog`, start y healthcheck), `/api/health` público y guía paso a paso. `railway.json` queda como referencia. | `docs/despliegue.md`, `railway.json` | #13, #21 |
@@ -123,6 +124,7 @@ mismo árbol) el 30 de septiembre, y en `feat/cartas-baraja` el 1 de octubre:
 | #38 | `docs/piloto-dennys-pizzahut` (piloto con Denny's y Pizza Hut) | Fusionado con revisión propia. |
 | #39 | `testing` → `main` (tercera publicación: marcas y restaurantes desde `/admin` y el piloto) | Fusionado con revisión propia; desplegado. |
 | #40 | `feat/cartas-baraja` (formulario al tocar, abanico, «Ver todas las cartas» y agregar varios; migración `0006`) | Fusionado con revisión propia. |
+| #41 | `perf/mapa` (mapa general a 60 fps) | Fusionado con revisión propia. |
 
 ### Protección de `main` y `testing`
 
