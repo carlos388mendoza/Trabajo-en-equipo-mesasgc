@@ -229,22 +229,73 @@ alguien**, para no anotarlo en otro local.
 
 **Agregar un cliente**
 
-1. En **Agregar cliente**, escribe el **nombre**.
-2. Elige **cuántas personas** son.
-3. Si hace falta, escribe una **nota** (por ejemplo, «silla para bebé»).
-4. Pulsa **Agregar a la fila**. El cliente entra al final de la fila.
+1. **Toca la carta grande** (un toque en el centro, sin deslizar) o el botón
+   azul **+ Agregar cliente** de abajo a la derecha. Se abre el formulario
+   (en la tablet y el celular sube desde abajo).
+2. En la pestaña **Uno**, escribe el **nombre** y elige **cuántas personas**
+   son. Si hace falta, escribe una **nota** (por ejemplo, «silla para bebé»).
+3. Pulsa **Agregar a la fila**. El cliente entra al final de la fila y el
+   aviso dice en qué número quedó.
+4. Para salir sin guardar: **Cancelar**, la tecla **Esc** o tocar fuera.
+
+**Agregar varios clientes a la vez** (por ejemplo, cuando llega un grupo de
+familias o pasas la lista de papel a la tablet)
+
+1. Abre el formulario y elige la pestaña **Varios**. Salen 3 filas vacías.
+2. En cada fila escribe nombre, personas y nota. **Enter** en la nota pasa a
+   la fila siguiente (y la crea si era la última). **+ Agregar fila** añade
+   otra; el bote de basura quita esa fila. Las filas vacías no se guardan.
+3. Si una fila sale **en rojo** (por ejemplo, tiene nota pero no nombre),
+   corrígela o quítala: **no se guarda nada** hasta que no quede ninguna en
+   rojo.
+4. Pulsa **Agregar N clientes**. Se guardan **todos juntos** (máximo 30 por
+   vez), en el orden de las filas, y salen en todas las tablets del local.
+5. Abajo sale **«Se agregaron N clientes · Deshacer»**: Deshacer (o
+   **Ctrl+Z**) los quita **a todos** de una vez.
+
+**Pegar lista:** en **Varios**, pulsa **Pegar lista** y pega una lista con
+una persona por línea, así:
+
+```
+Ana Torres, 4
+Luis Ríos, 2, silla para bebé
+```
+
+Primero el nombre, luego una coma y cuántas personas; si quieres, otra coma y
+una nota (también vale punto y coma, o copiar dos columnas de Excel). Al
+pegar, las filas se llenan solas. Las líneas que no se entienden se quedan en
+el cuadro, **en rojo**, con el motivo: corrígelas y pulsa **Pasar a las
+filas**, o bórralas.
 
 **Cuando hay mesa (o el cliente se fue)**
 
-La tarjeta grande de arriba es el **siguiente en la fila**.
+La carta grande de arriba es el **siguiente en la fila**.
 
 - **Desliza a la derecha** (o pulsa ✓) → **Listo**: ya lo avisaste.
 - **Desliza a la izquierda** (o pulsa ✕) → **Ausente**: no estaba o se fue.
 
-**Si te equivocaste:** pulsa **Deshacer** (la flecha curva). Deshace solo la
-**última** acción del restaurante, en cualquier tablet, y hay que hacerlo
-enseguida. Si pasó mucho rato o alguien hizo otra cosa después, ya no se
-puede: corrígelo a mano.
+**Ver la fila en abanico:** toca **una esquina** de la carta de arriba (están
+marcadas con un doblez) o el botón **Abanico**. Las cartas de todos los que
+esperan se abren como una mano de naipes, con el número, las personas y los
+minutos de cada uno. **Toca una** para pasarla al frente del montón (solo en
+esa tablet: el orden de la fila no cambia). Para cerrar: toca fuera o Esc. Si
+esperan más de 7, el botón **+N · Ver todas las cartas** abre la lista
+completa.
+
+**Ver todas las cartas:** el botón de arriba abre todas las cartas del
+restaurante: en espera, listas y ausentes. Por defecto muestra las de **hoy**;
+**Últimos 7 días** muestra la semana. Filtra por estado o busca por nombre
+(sin importar tildes). Cada carta dice a qué hora llegó, cuánto esperó y
+quién la resolvió. Desde ahí:
+
+- una carta **en espera** se marca **Listo** o **Ausente**;
+- una **lista o ausente** que fue un error vuelve con **Volver a la espera**
+  (recupera su lugar en la fila).
+
+**Si te equivocaste:** pulsa **Deshacer** (la flecha curva) o **Ctrl+Z**.
+Deshace solo la **última** acción del restaurante, en cualquier tablet, y
+hay que hacerlo enseguida. Si pasó mucho rato o alguien hizo otra cosa
+después, ya no se puede: búscala en **Ver todas las cartas** y corrígela ahí.
 
 **Si arriba dice «Sin conexión» o «Reconectando»**
 
