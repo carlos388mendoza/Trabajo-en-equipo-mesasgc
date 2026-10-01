@@ -60,6 +60,7 @@ Todo esto está en `testing` y en `main`.
 | Marcas en estadísticas y privacidad del asistente (Miembro B) | Filtros por marca real (`restaurants.brand_id`) y por ciudad. El top de clientes viaja a OpenRouter con alias («Cliente 1»…) y sin teléfonos ni notas; los nombres se restauran solo en pantalla. La anonimización busca los datos sensibles sobre el texto original y solo como palabra entera: conserva fechas, días, cantidades, restaurantes y marcas. | `lib/analytics/`, README | #17, #19 |
 | Mapa general y marcas | Tabla `brands` (4 marcas). `/mapa`, en estilo radar, con **todo Honduras**: silueta real, 18 departamentos, vecinos, Islas de la Bahía, Golfo de Fonseca y 11 ciudades principales (Natural Earth, dominio público, dentro del repo). Restaurantes en su ubicación real (`latitude`/`longitude`, migración `0004`). Rueda, pellizco, arrastre, botones «Ver todo Honduras» / Tegucigalpa / San Pedro Sula, minimapa y grupos por ciudad vistos de lejos. En vivo (solo contadores), con filtros, lista por espera y zoom al plano. `/restaurante/[id]/mapa` para el host. Analitica no ve nombres. | `lib/map/`, `components/map/`, README §16, `docs/mapa-honduras.md`, `docs/rbac.md` | #11, #28 |
 | Marcas y restaurantes desde /admin | Crear, editar y desactivar marcas (nombre y color) y restaurantes (nombre, marca, ciudad, latitud y longitud, o una ciudad del mapa). Un restaurante nuevo nace con una zona vacía y sale de inmediato en el mapa, las estadísticas y los accesos. Desactivar no borra nada (migración `0005`, `active`): sale de la operación, pero conserva su historial y sus asignaciones. Permiso `catalogo:gestionar` (solo admin). | `lib/layout/catalog-admin.ts`, `app/admin/catalog-actions.ts`, `components/admin/admin-catalog.tsx`, README §16 | #35 |
+| Usuarios desde la terminal | `npm run create-user`: crea o actualiza un usuario por argumentos (correo, nombre, roles, restaurantes por slug o por marca), con la contraseña dos veces oculta en la terminal y confirmación «si»; si existe, no toca la contraseña. Mismas validaciones que `/admin`. Piloto con 2 usuarios (`dennys@` y `pizzahut@`). | `scripts/create-user.mts`, `lib/auth/user-upsert.ts`, README §15 | #42 |
 | Un usuario para varios restaurantes | Selector de restaurante en la cabecera (color e inicial de la marca) que lleva al mismo modo, y `/inicio` con una tarjeta por restaurante (cuántos esperan y espera media, se refresca sola). Al cambiar, el socket sale de la room anterior y entra en la nueva. En `/admin`, restaurantes agrupados por marca, con «Marcar todos» y buscador. | `components/layout/restaurant-switcher.tsx`, `app/inicio/page.tsx`, `components/admin/admin-users.tsx` | #36, #37 |
 | Cartas del modo rápido | Montón a todo el ancho. Tocar la carta (o «+ Agregar cliente») abre el formulario en un panel que sube desde abajo o en ventana; tocar una esquina abre la fila en abanico (hasta 7 y «+N»). Pestaña **Varios** para agregar hasta 30 de una vez (filas o «Pegar lista»), todos o ninguno, con deshacer en grupo. «Ver todas las cartas» (hoy o 7 días, filtros y buscador) con volver a la espera. Migración `0006` (`resolved_at`, `resolved_by_user_id`). | `components/quick-mode/`, `lib/waitlist/`, `app/api/restaurante/[id]/cartas`, README §11, `docs/salida-a-produccion.md` §4 | #40 |
 | Aspecto | Estilo de mapa «radar», minimapa, íconos de lucide y temas Claro, Oscuro, Sistema y Personalizado, sin parpadeo. | `lib/theme/`, `/ajustes`, README §13 | #7 |
@@ -278,12 +279,14 @@ Pendiente:
 
 La empresa decidió que el piloto sea con los **4 restaurantes de Denny's y
 Pizza Hut** (Denny's Las Lomas, Denny's Los Andes, Pizza Hut Los Próceres y
-Pizza Hut Norte), con **un solo usuario** para los 4. China Wok y KFC siguen
-en el sistema (mapa, estadísticas y datos) y entran después.
+Pizza Hut Norte), con **dos usuarios, uno por marca** (desde el 1 de octubre;
+antes era uno solo para los 4). China Wok y KFC siguen en el sistema (mapa,
+estadísticas y datos) y entran después.
 
-- [ ] El admin crea en `/admin` el usuario **«Denny's y Pizza Hut»**
-      (`dennys-pizzahut@grupocomidas.test`, rol restaurante, los 4
-      restaurantes con «Marcar todos» en Denny's y en Pizza Hut). Pasos en
+- [ ] Crear en producción **«Denny's»** (`dennys@grupocomidas.test`, sus 2
+      locales) y **«Pizza Hut»** (`pizzahut@grupocomidas.test`, sus 2
+      locales) con `railway run npm run create-user` (lo corre Carlos: la
+      contraseña se escribe en su terminal) o desde `/admin`. Comandos en
       `docs/salida-a-produccion.md`, sección 3.1.
 - [ ] Dibujar en el editor (modo completo) el plano real de cada uno de los
       4 locales, sobre su zona vacía.
@@ -291,8 +294,8 @@ en el sistema (mapa, estadísticas y datos) y entran después.
       Ctrl+Z (#29). El navegador de las pruebas automáticas no pintaba.
 - [ ] Una semana completa, de lunes a domingo, con los encargados dando
       comentarios. Se miden la espera promedio y el uso frente al papel.
-- [ ] Al terminar: un usuario por host y cambiar la contraseña del usuario
-      compartido.
+- [ ] Al terminar: un usuario por host y cambiar la contraseña de los
+      usuarios compartidos.
 
 **Antes de presentar**
 

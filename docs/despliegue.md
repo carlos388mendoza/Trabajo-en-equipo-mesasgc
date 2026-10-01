@@ -93,6 +93,16 @@ Después del primer despliegue, con las variables de Railway ya guardadas:
 
 El comando crea solo al administrador inicial; no ejecutes el seed en producción.
 
+### Otros usuarios desde la terminal
+
+Para crear (o actualizar) cualquier otro usuario sin entrar a `/admin`, por ejemplo los del piloto:
+
+```powershell
+railway run npm run create-user -- --correo dennys@grupocomidas.test --nombre "Denny's" --rol restaurante --marca "Denny's"
+```
+
+Muestra la base (solo el host) y un resumen, pide la contraseña dos veces sin mostrarla y confirmar con «si». Si el correo ya existe, solo cambia nombre, roles y restaurantes, sin tocar la contraseña. Detalles en el README («`npm run create-user`»).
+
 ### Si nadie puede entrar (contraseña olvidada)
 
 `create-admin` **no cambia la contraseña** de un correo que ya existe: solo le asegura el rol admin y lo activa. Para cambiarla sin entrar en `/admin`:
