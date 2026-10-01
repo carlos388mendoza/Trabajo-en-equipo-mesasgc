@@ -33,6 +33,7 @@ Qué significa cada marca:
 | `/analiticas` (vista global y por restaurante) | Sí | — | Sí |
 | `/mapa` (mapa general, todas las marcas) | Sí | — | Sí (solo lectura) |
 | `/restaurante/[id]/mapa` (plano en vivo, solo lectura) | Sí | Suyos | Sí, sin nombres |
+| `/admin/datos-demo` (datos de demostración) | Sí, y borra | Sí, sin borrar | Sí, sin borrar |
 
 ## Acciones
 
@@ -50,8 +51,16 @@ Qué significa cada marca:
 | `mapa:ver` | `/mapa`, la action `loadOverviewCounters` y la sala `overview` de Socket.IO | Sí | — | Sí |
 | `plano:ver` | `/restaurante/[id]/mapa` y la action `loadLivePlan` (estados y ocupación) | Sí | Suyos | Sí |
 | `plano:clientes` | Nombre del cliente de cada mesa en el plano en vivo | Sí | Suyos | — |
+| `demo:ver` | Ver que hay datos de demostración y cuántos son: el aviso global y `/admin/datos-demo` | Sí | Sí | Sí |
+| `demo:borrar` | **Borrarlos**: la action `deleteDemoDataAction` (`app/admin/demo-actions.ts`) | Sí | — | — |
 
-Cuatro casos que vale la pena tener presentes:
+Las dos últimas son globales, no de un restaurante: el lote de demostración
+afecta a los 8 locales a la vez. `demo:ver` la tienen los tres roles a propósito:
+quien está mirando el mapa o las estadísticas tiene derecho a saber si los
+números son reales. `demo:borrar` es solo del admin, porque es la **única
+operación de la app que elimina filas**.
+
+Cinco casos que vale la pena tener presentes:
 
 - **Varios restaurantes, un usuario** (el piloto: `dennys@` con los 2 de
   Denny's y `pizzahut@` con los 2 de Pizza Hut). Con el rol restaurante y
@@ -73,6 +82,33 @@ Cuatro casos que vale la pena tener presentes:
 - **Entrar en la room de Socket.IO de un restaurante** exige `editor:ver` o
   `rapido:ver` en él. Por eso analitica no entra en ninguna: no edita nada en
   vivo, y en esas rooms viajan los ids de los clientes.
+- **Borrar los datos de demostración es global**, así que `demo:borrar` no es
+  «de un restaurante» y un host con varios locales no puede: aunque tuviera dos,
+  el borrado no es suyo. Lo que puede un host es **ver** que los hay
+  (`demo:ver`).
+
+## Datos de demostración
+
+Si hay un lote de demostración cargado (`npm run db:demo`), una franja discreta
+lo avisa en todas las pantallas. Verlo no necesita más que `demo:ver`.
+
+| Quién | Ve el aviso | Ve `/admin/datos-demo` | Ve el botón de borrar |
+|---|:---:|:---:|:---:|
+| Administrador | Sí | Sí | **Sí** |
+| Restaurante | Sí | Sí (solo lectura) | — |
+| Analítica | Sí | Sí (solo lectura) | — |
+| Sin sesión | No (va a `/login`) | No (va a `/login`) | — |
+
+- El aviso **no bloquea nada**, y en particular **no bloquea el Modo rápido**.
+- Para borrar hay que escribir `BORRAR`: el botón no se habilita hasta
+  entonces, y la server action lo vuelve a comprobar en el servidor, porque un
+  POST a mano no pasa por la página.
+- El botón escondido **no protege**: quien no tiene `demo:borrar` recibe
+  «No tienes permiso» aunque mande la palabra. Sin sesión, el proxy lo manda a
+  `/login`.
+- Las pruebas están repartidas: `verify:demo` (85) comprueba la matriz de
+  `can()` y la lógica de datos, y `verify:auth` (329) lo hace por HTTP contra la
+  app real.
 
 ## Mapa general y plano en vivo
 
@@ -141,8 +177,8 @@ El enlace «Mapa» del encabezado lleva a `/mapa` a quien tiene `mapa:ver`, y a
 > completo. Estadísticas: usuario especializado en las estadísticas de todos
 > los restaurantes/marcas, vista completa y opción de ver por restaurante.»
 
-Revisado el 30 de septiembre de 2026 contra la app real en local, con los
-usuarios del seed. Todas las pruebas están en `npm run verify:auth` (174/174):
+Revisado el 1 de octubre de 2026 contra la app real en local, con los
+usuarios del seed. Todas las pruebas están en `npm run verify:auth` (329/329):
 levanta la app y hace peticiones HTTP y de Socket.IO de verdad con la cookie
 de cada usuario.
 

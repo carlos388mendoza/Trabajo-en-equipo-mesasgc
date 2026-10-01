@@ -18,6 +18,7 @@ GitHub Actions ejecuta estas comprobaciones en cada pull request dirigido a `tes
 - `npm run verify:editor`
 - `npm run verify:realtime`
 - `npm run verify:auth`
+- `npm run verify:demo`
 
 El workflow usa Node.js 22 y `npm ci`. Las verificaciones usan bases SQLite temporales y aplican las migraciones del repositorio; no necesitan credenciales de Turso ni de OpenRouter. Para ver el resultado, abre la pestaña **Actions** del repositorio y selecciona la ejecución del workflow **CI**. Una marca verde indica que terminó bien; una roja señala que falló un paso y permite abrir sus logs.
 
@@ -202,8 +203,10 @@ con `npm run create-admin` (sección 15).
 
 Otros scripts: `db:generate` (genera SQL en `drizzle/`), `db:studio`,
 `seed:reset` (borra los datos de layout y vuelve a sembrar; **no** toca las
-cuentas de usuario), `verify:editor` (44 comprobaciones del editor contra una
-base de datos temporal), `lint`, `typecheck`.
+cuentas de usuario), `db:demo` y `db:demo:borrar` (datos de demostración,
+sección 17), `verify:editor` (144 comprobaciones del editor contra una base de
+datos temporal), `verify:realtime` (158), `verify:auth` (329) y `verify:demo`
+(85), `lint`, `typecheck`.
 
 ---
 
@@ -790,9 +793,10 @@ npm run verify:auth
 
 - Levanta la app real en un puerto libre, con una base temporal
   (`.verify-auth.db`) y los usuarios de prueba.
-- Comprueba 92 cosas: login correcto e incorrecto; cada rol solo en lo suyo,
-  por página, API, server action y socket; sin sesión, 401 o `/login`; y que
-  un usuario desactivado ya no entra.
+- Comprueba 329 cosas: login correcto e incorrecto; cada rol solo en lo suyo,
+  por página, API, server action y socket; sin sesión, 401 o `/login`; que un
+  usuario desactivado ya no entra; y el bloque de datos de demostración (aviso,
+  pantalla y borrado por web, sección 17).
 - Compila en `.next-verify/`, así que puede correr mientras `npm run dev`
   sigue abierto: Next 16 no deja dos servidores sobre la misma carpeta.
 
@@ -1017,3 +1021,107 @@ Desde `/admin` → **Marcas y restaurantes**, sin scripts (solo admin, permiso
 | `app/admin/catalog-actions.ts` | Server actions (`catalogo:gestionar`). |
 | `components/admin/admin-catalog.tsx` | La pantalla de marcas y restaurantes. |
 | `components/layout/restaurant-switcher.tsx` | El selector de restaurante de la cabecera. |
+
+---
+
+## 17. Datos de demostración
+
+Para probar el mapa, las estadísticas y el asistente sin esperar al piloto, hay
+un lote de datos **falsos** que se carga con un comando y se borra desde la web:
+
+```bash
+npm run db:demo          # carga el lote (pide escribir «si»)
+npm run db:demo:borrar   # lo borra (pide escribir «BORRAR»)
+```
+
+En producción se corre con `railway run npm run db:demo`; los pasos exactos
+están en `docs/despliegue.md`.
+
+### Qué carga
+
+- **Una zona de demostración por restaurante** (los 8 reales), con la sala
+  completa: mesas con sillas, una bancada, baños, caja y zona de juegos.
+- **Clientes esperando ahora**, con sus minutos de espera y **teléfonos de
+  mentira** (`0000-0000-0000`), y una nota que lo dice en cada ficha.
+- **Mesas de demostración ocupadas y reservadas**, puestas con `assignTable`, el
+  mismo camino que usa un host.
+- **Ocho semanas de historial** para que `/analiticas` y el asistente tengan
+  algo que contar desde el primer día.
+
+Cargado sobre los 8 restaurantes reales (contado el 1 de octubre de 2026, sin
+nada real en la base): **8 zonas de demostración, 86 mesas, 29 clientes esperando,
+29 sentados y 6 mesas reservadas, más 12 251 clientes de historial**; 12 403
+filas en total. `/analiticas` y el asistente los leen como leen cualquier otra
+cosa: no hay atajo para el demo.
+
+Lo que **no** hace nunca: crear ni tocar marcas, restaurantes, el catálogo de
+tipos, usuarios o contraseñas, y no toca la zona real ni los planos que alguien
+haya dibujado a mano. Los planos del demo son zonas **propias** de cada
+restaurante.
+
+Es **idempotente**: correrlo dos veces deja lo mismo que correrlo una, porque
+los ids son deterministas y el insert es `ON CONFLICT DO NOTHING`.
+
+### Cómo se distinguen de los reales
+
+Cada fila que crea lleva `is_demo` y `demo_batch_id` (migración `0007`, solo
+aditiva, en `table_layouts`, `tables` y `waitlist_entries`). El borrado usa esas
+columnas, **nunca el nombre**: renombrar una zona de demostración no la salva del
+borrado, ni renombrar una real la mete en el lote.
+
+### El aviso global
+
+Mientras haya datos de demostración, una franja discreta lo dice en todas las
+pantallas («Hay datos de demostración cargados»). No es un modal: no tapa nada y
+**no bloquea el Modo rápido**. Desaparece sola en cuanto no queda nada marcado
+como demo.
+
+### Borrado desde la web
+
+`/admin/datos-demo` muestra los conteos (zonas, mesas, clientes) y, **solo si
+eres admin**, el botón de borrado:
+
+| Quién | Ve los conteos | Puede borrar |
+| --- | --- | --- |
+| Administrador | Sí | **Sí** |
+| Restaurante | Sí (con el aviso) | No |
+| Analítica | Sí (con el aviso) | No |
+
+Hace falta escribir `BORRAR`: el botón no se habilita hasta que se escribe, y la
+server action lo vuelve a pedir en el servidor, porque un POST a mano no pasa por
+la página. El borrado es transaccional y aborta, sin escribir nada, si algún
+dato **real** dependiera de algo de demostración.
+
+Del lado del servidor, `borrarDemoData()` (`lib/demo/delete.ts`) es el único
+sitio que borra datos de demostración, y lo usan **los dos caminos**: la web y
+`npm run db:demo:borrar`. Por eso el script es el plan B y no una segunda
+implementación.
+
+### Archivos
+
+| Fichero | Para qué |
+| --- | --- |
+| `lib/demo/fixtures.ts` | Los datos en sí (planos, nombres, ritmo del historial). Sin base de datos. |
+| `lib/demo/load.ts` | `loadDemoData()` (idempotente) y `demoSummary()`. |
+| `lib/demo/history.ts` | Las ocho semanas de historial. |
+| `lib/demo/delete.ts` | `borrarDemoData()`: solo `is_demo`, en una transacción, y aborta si un dato real depende. |
+| `scripts/db-demo.mts`, `scripts/db-demo-borrar.mts` | Los dos scripts de terminal. |
+| `app/admin/datos-demo/page.tsx`, `app/admin/demo-actions.ts` | La pantalla y la server action del borrado. |
+| `components/admin/admin-demo.tsx` | Los conteos y el diálogo con la palabra. |
+| `components/layout/demo-banner.tsx` | El aviso global. |
+| `scripts/verify-demo.mts` | `npm run verify:demo`. |
+
+### Qué lo comprueba
+
+`npm run verify:demo` (**85 comprobaciones**, en CI): migración aplicada, que
+cargar dos veces es lo mismo que cargar una, cobertura de los 8 restaurantes,
+teléfonos de mentira en los 12 309 clientes, estados variados, las 56 semanas
+(8) de historial, que `/analiticas` los lee como cualquier otro dato, que **no
+toca nada real**, que **aborta** si un cliente real dependiera de una mesa de
+demostración, el borrado, que lo real sobrevive y que se puede recargar.
+
+`npm run verify:auth` (**329 comprobaciones**) levanta la app de verdad y lo
+prueba por HTTP: el aviso aparece para admin, analitica y host, la pantalla
+`/admin/datos-demo` muestra o esconde el botón según el rol, analitica, un host
+y quien no tiene sesión **no borran** ni con la palabra puesta, admin sí borra
+escribiendo `BORRAR`, y el aviso desaparece solo después.

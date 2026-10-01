@@ -50,14 +50,17 @@ npm run dev            # Next en :3000
 npm run typecheck      # tsc --noEmit
 npm run lint           # eslint (flat config)
 npm run verify:editor  # comprobaciones del editor y de la copia contra una SQLite temporal
+npm run verify:demo     # datos de demostración: carga, idempotencia, borrado y permisos
 npm run db:generate    # genera SQL en drizzle/
 npm run db:push        # aplica el esquema a TURSO_DATABASE_URL (¡base real!)
 npm run db:seed        # tipos de elemento + 2 restaurantes de ejemplo
 npm run seed:reset     # borra los layouts y vuelve a sembrar (no toca usuarios)
+npm run db:demo        # carga el lote de datos de demostración (pide «si»)
+npm run db:demo:borrar # lo borra (pide «BORRAR»)
 ```
 
-No hay runner de tests. `scripts/verify-editor.mts` hace ese papel: sale con
-código 1 si algo falla. Si cambias `lib/layout/*`, córrelo y añade
+No hay runner de tests. Los `scripts/verify-*.mts` hacen ese papel: salen con
+código 1 si algo falla. Si cambias `lib/layout/*`, corre `verify:editor` y añade
 comprobaciones ahí. Nunca le añadas `drizzle-kit push`, porque leería el
 `TURSO_DATABASE_URL` del entorno y podría vaciar una base de verdad.
 
@@ -141,7 +144,8 @@ rompas.
   1. **No** pongas a `vbgjptt89g-beep` como revisor.
   2. Haz tú la revisión de código (bugs, seguridad, secretos y cumplimiento
      del enunciado) y déjala como **comentario en el PR**.
-  3. Corre `typecheck`, `lint`, `build` y los tres `verify`.
+  3. Corre `typecheck`, `lint`, `build` y los cuatro `verify` (editor, tiempo
+     real, auth y demo).
   4. Fusiona (merge normal) solo con el CI en verde y sin problemas abiertos
      en tu revisión.
   5. **PR hacia `main`:** avisa a Carlos y espera su «sí» antes de fusionar.

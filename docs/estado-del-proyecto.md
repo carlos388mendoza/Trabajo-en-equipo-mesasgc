@@ -23,7 +23,9 @@ Desde el 30 de septiembre de 2026 hay una versión publicada en Railway. La
   (`aws-us-east-1`). Tiene las 7 migraciones (hasta la `0006`, con
   `resolved_at` y `resolved_by_user_id`; comprobado con una consulta de solo
   lectura), las 12 tablas y el catálogo de 8 tipos. **Sin datos de
-  ejemplo:** el seed no se corre en producción.
+  ejemplo:** el seed no se corre en producción, y el lote de datos de
+  demostración (#45) todavía no se ha cargado: entra la migración `0007`
+  (`is_demo` y `demo_batch_id`) con el próximo despliegue.
 - **Restaurantes:** cargados con `railway run npm run db:restaurantes`: las
   4 marcas, los 8 restaurantes con su latitud y longitud, y una zona vacía
   «Comedor principal» en cada uno (sin mesas ni clientes todavía).
@@ -56,7 +58,8 @@ Desde el 30 de septiembre de 2026 hay una versión publicada en Railway. La
 
 ## Lo que ya está hecho
 
-Todo esto está en `testing` y en `main` (desde el #43).
+Todo esto está en `testing`. En `main` está todo hasta el #43; la última fila
+(datos de demostración, #45) llega con el siguiente `testing` → `main`.
 
 | Área | Qué hay | Dónde está | PR |
 |---|---|---|---|
@@ -77,20 +80,29 @@ Todo esto está en `testing` y en `main` (desde el #43).
 | Cartas del modo rápido | Montón a todo el ancho. Tocar la carta (o «+ Agregar cliente») abre el formulario en un panel que sube desde abajo o en ventana; tocar una esquina abre la fila en abanico (hasta 7 y «+N»). Pestaña **Varios** para agregar hasta 30 de una vez (filas o «Pegar lista»), todos o ninguno, con deshacer en grupo. «Ver todas las cartas» (hoy o 7 días, filtros y buscador) con volver a la espera. Migración `0006` (`resolved_at`, `resolved_by_user_id`). | `components/quick-mode/`, `lib/waitlist/`, `app/api/restaurante/[id]/cartas`, README §11, `docs/salida-a-produccion.md` §4 | #40 |
 | Mapa más rápido | Cámara por `transform` CSS durante el gesto (sin React) y confirmada al soltar; base memoizada; radar y halos animados por el compositor; controles sin `backdrop-blur`. Arrastre 24 → 60 fps y rueda 15 → 60 en computadora; 11 → 54 y 13 → 47 en tablet (CPU 4×). | `components/map/world-map.tsx`, `docs/mapa-honduras.md` | #41 |
 | Aspecto | Estilo de mapa «radar», minimapa, íconos de lucide y temas Claro, Oscuro, Sistema y Personalizado, sin parpadeo. | `lib/theme/`, `/ajustes`, README §13 | #7 |
-| CI | GitHub Actions en cada PR y cada push a `testing` y `main`: typecheck, lint, build y los tres `verify`, con Node 22 y `npm ci`. | `.github/workflows/ci.yml` | #10 |
+| CI | GitHub Actions en cada PR y cada push a `testing` y `main`: typecheck, lint, build y los cuatro `verify`, con Node 22 y `npm ci`. | `.github/workflows/ci.yml` | #10 |
+| Datos de demostración | Lote de datos falsos para probar el mapa, las estadísticas y el asistente: `npm run db:demo` (idempotente) en los 8 restaurantes reales, con una zona demo propia por restaurante, clientes esperando con teléfonos de mentira, mesas demo ocupadas y reservadas y 8 semanas de historial. Marcado estructural con `is_demo` y `demo_batch_id` (migración `0007`, solo aditiva), nunca por nombre. Aviso global discreto que no bloquea el Modo rápido, y borrado desde `/admin/datos-demo` (`BORRAR`), solo admin, reutilizando el mismo `borrarDemoData()` que el CLI. | `lib/demo/`, `scripts/db-demo*.mts`, `app/admin/datos-demo/`, `components/layout/demo-banner.tsx`, README §17 | #45 |
 | Despliegue | Comandos de Railway (build, Pre-deploy `db:migrate && db:catalog`, start y healthcheck), `/api/health` público y guía paso a paso. `railway.json` queda como referencia. | `docs/despliegue.md`, `railway.json` | #13, #21 |
 | Documentos | Guion de la demo y plan de salida a producción para la dirección. | `docs/demo.md`, `docs/salida-a-produccion.md` | #14 |
 
 Las verificaciones automáticas no usan ningún *runner* de tests: son scripts
-contra una base temporal. Estado en `testing` y `main` (`e1471ed`/`811e754`,
-mismo árbol) el 30 de septiembre, y en `feat/cartas-baraja` el 1 de octubre:
+contra una base temporal. Ejecutadas el **1 de octubre de 2026** sobre
+`feat/datos-demo` (`8d85dc1`, local con Node 22 y SQLite temporal):
 
 | Comando | Resultado |
 |---|---|
 | `npm run verify:editor` | 144/144 (incluye el catálogo de `db:catalog`) |
 | `npm run verify:realtime` | 158/158 (incluye volver a la espera, los rangos de las cartas y agregar varios) |
-| `npm run verify:auth` | 264/264 (incluye la API de las cartas, agregar varios y volver a la espera por rol) (levanta la app real; incluye el healthcheck, la privacidad del asistente y el bloqueo del seed en producción). Falló una vez con un 404 intermitente en las rutas `/api` justo después de `build`, y pasó al repetirlo. |
-| `npm run typecheck`, `npm run lint`, `npm run build` | pasan (solo la advertencia antigua de `postcss.config.mjs`) |
+| `npm run verify:auth` | **329/329** (incluye la API de las cartas, agregar varios, volver a la espera por rol y todo el bloque de datos de demostración: aviso por rol, pantalla, borrado por HTTP y supervivencia de lo real). Levanta la app real; incluye el healthcheck, la privacidad del asistente y el bloqueo del seed en producción. |
+| `npm run verify:demo` | **85/85** (nuevo; datos, idempotencia, FK, aborto y matriz de permisos) |
+| `npm run typecheck` | pasa |
+| `npm run lint` | pasa sobre el código del repositorio. En esta máquina hay dos carpetas `.next-preview` y `.next-perf` de pruebas antiguas, ignoradas por git pero no por `eslint.config.mjs`, que meten ruido de `node_modules` compilado; CI no las tiene. |
+| `npm run build` | pasa (Next 16.3.6). En local, si hay un `next dev` corriendo, `.next` queda bloqueado en Windows: con `NEXT_DIST_DIR` aparte. |
+
+Cifras reales del lote sobre los 8 restaurantes, contadas el 1 de octubre de
+2026: **8 zonas de demostración, 86 mesas, 29 clientes esperando, 29 sentados,
+6 mesas reservadas y 12 251 de historial**; 12 403 filas en total, con 0
+omitidos. Cargarlo otra vez no añade nada (0 en todo).
 
 ## Ramas y PR
 
@@ -157,7 +169,7 @@ los administradores del repositorio:
 1. Sin revisor asignado: ya no se pide la revisión de `vbgjptt89g-beep`.
 2. Quien abre el PR hace una revisión de código (bugs, seguridad, secretos y
    cumplimiento del enunciado) y la deja como comentario en el PR.
-3. Se corren `typecheck`, `lint`, `build` y los tres `verify`.
+3. Se corren `typecheck`, `lint`, `build` y los cuatro `verify`.
 4. Se fusiona con merge normal solo con el CI en verde y sin problemas
    abiertos en la revisión.
 5. Los PR hacia `main` esperan el «sí» explícito de Carlos (Miembro A).
@@ -197,6 +209,26 @@ claves.
 - **Un solo archivo de permisos.** Todas las reglas están en
   `lib/auth/rbac.ts` (`can(usuario, acción, restaurantId)`). La tabla legible
   está en `docs/rbac.md`.
+- **El demo va en zonas propias, no en la zona real.** Cada restaurante recibe
+  una zona de demostración **nueva y marcada**, en lugar de dibujar el demo
+  encima de «Comedor principal». Así el plano real (y el que alguien haya
+  dibujado a mano) queda intacto y no se lee, y borrar el demo es reversible:
+  se va la zona demo y queda todo lo demás.
+- **El demo se marca con columnas, no con nombres.** `is_demo` y `demo_batch_id`
+  (migración `0007`, solo aditiva, con tres índices) en `table_layouts`, `tables`
+  y `waitlist_entries`. Nada en `brands`, `restaurants`, `element_types` ni en las
+  tablas de Better Auth. El borrado usa esas columnas, así que renombrar no
+  cambia nada, y **aborta** si un dato real depende de algo demo (por ejemplo
+  un cliente real asignado a una mesa demo: `assigned_table_id` es
+  `ON DELETE SET NULL` y lo desasignaría en silencio).
+- **`demo:ver` para los tres roles, `demo:borrar` solo para admin.** Quien está
+  mirando el mapa o las estadísticas tiene derecho a saber si los números son
+  reales; borrarlos es la única operación de la app que elimina filas, y es
+  global, así que no se delega. Está en `lib/auth/rbac.ts`, no en un sistema de
+  permisos aparte.
+- **Un solo servicio de borrado.** `borrarDemoData()` (`lib/demo/delete.ts`) lo
+  usan la web y `npm run db:demo:borrar`: el script es el plan B, no una segunda
+  implementación.
 - **El gerente ve las estadísticas de todos.** Los permisos de los roles se
   suman: «restaurante + analitica» edita solo `rest_centro`, pero su rol
   analítica le da las estadísticas de **todos** los restaurantes. Si se quiere
@@ -274,6 +306,11 @@ Pendiente:
       mesas, clientes ni usuarios. Es idempotente y no pisa nada que ya
       exista.
 - [ ] Probar a restaurar un respaldo de Turso en una base aparte.
+- [ ] **Cargar los datos de demostración en producción** y borrarlos, con
+      `railway run npm run db:demo` y `/admin/datos-demo` (`docs/despliegue.md`,
+      sección 3c). Solo después de comprobar que el despliegue publicado está
+      bien (log con migraciones, catálogo y healthcheck) y con consultas de solo
+      lectura antes. **No** se carga automáticamente: no está en el Pre-deploy.
 - [ ] **Migrar la configuración de Railway a Infrastructure as Code**
       (`.railway/railway.ts`). Hoy los comandos están escritos a mano en
       Railway, y `railway.json` solo sirve de referencia.
@@ -317,6 +354,10 @@ estadísticas y datos) y entran después.
 
 - [ ] Hacer la demo de `docs/demo.md` de principio a fin sobre `testing`, con
       dos pestañas para el tiempo real.
+- [ ] En la misma demo, enseñar el lote de datos de demostración: cargar con
+      `npm run db:demo` para que las estadísticas tengan historia, enseñar el
+      aviso a un host y a analitica, y borrarlo desde `/admin/datos-demo`
+      escribiendo `BORRAR` para que el aviso desaparezca solo.
 - [ ] El asistente sin `OPENROUTER_API_KEY` no entiende «¿qué semana fue más
       lenta?» (responde el mensaje genérico); con la clave sí la contesta.
       Si se quiere sin clave, hay que añadirla a `localAnswer` (Miembro B).
@@ -344,7 +385,13 @@ estadísticas y datos) y entran después.
   y restablece la de cualquiera desde `/admin` (botón «Contraseña», que
   además cierra las sesiones abiertas). Lo que falta es que un host o una
   analista la cambien sin pedírselo al admin.
-- **Que alguna pantalla ponga mesas en «reservada».**
+- **Zonas por meseros activos.** Hoy cada host ve las zonas de su restaurante y
+  elige en cuál trabajar. Falta poder decidir cuántas zonas hay según el número
+  de meseros que hay en turno (por ejemplo, una zona mientras haya uno y dos
+  cuando haya dos), para que el plano no enseñe mesas de más.
+- **Que alguna pantalla ponga mesas en «reservada».** El estado existe en el
+  esquema y el lote de demostración lo usa, pero no hay ninguna acción ni
+  pantalla que lo ponga: hoy una mesa pasa de libre a ocupada y ya.
 - **Más de un servidor.** El Deshacer del modo rápido y las salas de Socket.IO
   viven en la memoria del proceso: basta para 8 restaurantes en un solo
   servidor, pero para varios servidores haría falta, por ejemplo, Redis.
