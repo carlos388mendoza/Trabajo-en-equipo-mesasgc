@@ -306,6 +306,13 @@ export const waitlistEntries = sqliteTable(
      * alimenta las estadísticas tiene que sobrevivir. Referencia blanda.
      */
     seatedByUserId: text("seated_by_user_id"),
+    /**
+     * Cuándo y quién lo marcó listo o ausente en el modo rápido. Lo muestra
+     * «Ver todas las cartas» («esperó 12 min, lo resolvió Ana»). Se vacían al
+     * volverlo a la espera. Sin FK, por lo mismo que `seatedByUserId`.
+     */
+    resolvedAt: integer("resolved_at", { mode: "timestamp_ms" }),
+    resolvedByUserId: text("resolved_by_user_id"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
