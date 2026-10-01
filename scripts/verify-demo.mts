@@ -462,6 +462,47 @@ section("Recarga tras borrar");
 }
 
 // ---------------------------------------------------------------------------
+// Permisos: quién ve el aviso y quién puede borrar
+//
+// Se comprueba `can()` directamente, que es la única fuente de permisos de la
+// app (`lib/auth/rbac.ts`). No hay permisos paralelos para el demo: se
+// integra en los de siempre. Lo que pasa por HTTP (banner, pantalla y server
+// action) lo comprueba `verify:auth`, que sí levanta la app de verdad.
+// ---------------------------------------------------------------------------
+
+section("Permisos de los datos de demostración");
+
+{
+  const { can } = await import("@/lib/auth/rbac");
+  const { ROLES } = await import("@/lib/db/enums");
+  type Subject = Parameters<typeof can>[0];
+  const admin: Subject = { active: true, roles: [ROLES.ADMIN], restaurantIds: [] };
+  const restaurante: Subject = { active: true, roles: [ROLES.RESTAURANTE], restaurantIds: ["rest_centro"] };
+  const analitica: Subject = { active: true, roles: [ROLES.ANALITICA], restaurantIds: [] };
+  const gerente: Subject = {
+    active: true,
+    roles: [ROLES.RESTAURANTE, ROLES.ANALITICA],
+    restaurantIds: ["rest_centro"],
+  };
+  const inactivo: Subject = { active: false, roles: [ROLES.ADMIN], restaurantIds: [] };
+
+  check("admin puede ver y borrar", can(admin, "demo:ver") && can(admin, "demo:borrar"));
+  check("restaurante puede ver el aviso", can(restaurante, "demo:ver"));
+  check("  pero NO puede borrar", !can(restaurante, "demo:borrar"));
+  check("analitica puede ver el aviso", can(analitica, "demo:ver"));
+  check("  pero NO puede borrar", !can(analitica, "demo:borrar"));
+  check("con dos roles, los permisos se suman y sigue sin poder borrar", can(gerente, "demo:ver") && !can(gerente, "demo:borrar"));
+  check("un admin desactivado tampoco", !can(inactivo, "demo:ver") && !can(inactivo, "demo:borrar"));
+  check("sin usuario, tampoco", !can(null, "demo:ver") && !can(null, "demo:borrar"));
+
+  // Los permisos del demo no cambian los de antes: el admin sigue teniendo
+  // todo y el resto, lo de siempre.
+  const { ALL_ACTIONS } = await import("@/lib/auth/rbac");
+  check("los permisos del admin son los de siempre, con los dos nuevos", can(admin, "usuarios:gestionar") && can(admin, "catalogo:gestionar") && ALL_ACTIONS.length === 14, `${ALL_ACTIONS.length}`);
+  check("el demo no le da el mapa general a un host", !can(restaurante, "mapa:ver") && !can(restaurante, "analiticas:ver"));
+}
+
+// ---------------------------------------------------------------------------
 
 console.log("");
 if (failures.length === 0) {

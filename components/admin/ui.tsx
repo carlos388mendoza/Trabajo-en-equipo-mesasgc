@@ -16,6 +16,11 @@ export function ConfirmDialog({
   pending,
   onConfirm,
   onCancel,
+  // Para las confirmaciones que piden una palabra: el botón no se habilita
+  // hasta que se escribe. El servidor la vuelve a pedir igual; esto es solo para
+  // que no parezca un botón normal.
+  confirmDisabled,
+  confirmLabel,
 }: {
   title: string;
   children: React.ReactNode;
@@ -23,6 +28,8 @@ export function ConfirmDialog({
   pending: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  confirmDisabled?: boolean;
+  confirmLabel?: string;
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -62,12 +69,12 @@ export function ConfirmDialog({
           <button
             type="button"
             onClick={onConfirm}
-            disabled={pending}
+            disabled={pending || confirmDisabled}
             className={`h-11 rounded-xl px-4 text-sm font-semibold disabled:opacity-60 ${
               danger ? "bg-estado-ocupada text-white hover:bg-estado-ocupada/85" : "bg-accent text-accent-text hover:bg-accent/85"
             }`}
           >
-            Aceptar
+            {confirmLabel ?? "Aceptar"}
           </button>
         </div>
       </div>

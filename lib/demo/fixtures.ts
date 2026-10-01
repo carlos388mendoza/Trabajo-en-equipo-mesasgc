@@ -45,6 +45,16 @@ export const DEMO_PHONE_PREFIX = "0000-0000-";
 /** Nota que llevan los clientes demo: queda claro al leerlos. */
 export const DEMO_NOTE = "Cliente de demostración: no es una persona real.";
 
+/**
+ * Palabra que hay que escribir para BORRAR el lote desde la web.
+ *
+ * Vive aquí y no en `app/admin/demo-actions.ts` porque un archivo `"use server"`
+ * solo puede exportar funciones async: si la constante saliera de ahí, el build
+ * de Next la rechazaría. La usan el botón (para habilitarse) y la action (para
+ * comprobarlo), y por eso están en el mismo sitio.
+ */
+export const DEMO_DELETE_WORD = "BORRAR";
+
 export type DemoLayoutPlan = {
   /** Id determinista de la zona demo. */
   id: string;

@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { ChartColumn, LogOut, Map as MapIcon, Settings, ShieldCheck, Store } from "lucide-react";
+import { ChartColumn, FlaskConical, LogOut, Map as MapIcon, Settings, ShieldCheck, Store } from "lucide-react";
 
 import { signOutAction } from "@/app/login/actions";
 import { RestaurantSwitcher, type SwitcherRestaurant } from "@/components/layout/restaurant-switcher";
@@ -33,6 +33,12 @@ export async function AppHeader() {
   if (user) {
     if (can(user, "usuarios:gestionar")) {
       links.push({ href: "/admin", label: "Administración", icon: ShieldCheck });
+    }
+    // Los datos de demostración se administran desde su propia pantalla, que es
+    // adonde lleva el aviso global. Solo entra quien puede gestionarlos: aquí
+    // sobra `demo:ver`, que lo tienen los tres roles.
+    if (can(user, "demo:borrar")) {
+      links.push({ href: "/admin/datos-demo", label: "Datos demo", icon: FlaskConical });
     }
     if (user.roles.includes(ROLES.RESTAURANTE) && user.restaurantIds.length > 0) {
       links.push(

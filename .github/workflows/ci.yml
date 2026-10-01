@@ -66,3 +66,6 @@ jobs:
 
       - name: Verificar autenticación y permisos
         run: npm run verify:auth
+
+      - name: Verificar datos de demostración
+        run: npm run verify:demo
