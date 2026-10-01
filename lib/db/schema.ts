@@ -144,6 +144,21 @@ export const tableLayouts = sqliteTable(
      * copia a otro restaurante. Migración 0003, solo aditiva.
      */
     rotation: integer("rotation").notNull().default(0),
+    /**
+     * Zona de DEMOSTRACIÓN (migración 0007, solo aditiva).
+     *
+     * La crea `npm run db:demo` en los restaurantes reales y se borra con
+     * `npm run db:demo:borrar` o desde /admin/datos-demo. Nunca se marca la zona
+     * real de un restaurante: el demo dibuja en zonas suyas, para no tocar el
+     * plano que alguien haya dibujado a mano.
+     *
+     * Es `false` por defecto, así que toda zona que ya existía es real. El
+     * borrado se apoya en esta columna y en `demo_batch_id`, nunca en el
+     * nombre: renombrar una zona no la convierte en demo ni al revés.
+     */
+    isDemo: integer("is_demo", { mode: "boolean" }).notNull().default(false),
+    /** Lote de demo que creó la zona (`npm run db:demo`), o null si es real. */
+    demoBatchId: text("demo_batch_id"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -158,6 +173,9 @@ export const tableLayouts = sqliteTable(
     uniqueIndex("table_layouts_one_default_idx")
       .on(t.restaurantId)
       .where(sql`${t.isDefault} = 1`),
+    // El aviso global y el borrado preguntan siempre por `is_demo`; con este
+    // índice no tienen que recorrer la tabla entera.
+    index("table_layouts_demo_idx").on(t.isDemo),
   ],
 );
 
@@ -240,6 +258,16 @@ export const tables = sqliteTable(
      * cada escritura; el cliente la manda y el servidor rechaza si ya cambió.
      */
     version: integer("version").notNull().default(1),
+    /**
+     * Mesa o elemento de DEMOSTRACIÓN (migración 0007, solo aditiva).
+     *
+     * Los planos del demo viven en zonas demo, así que sus mesas también lo
+     * son. `false` (lo normal) significa mesa real: ni el editor ni el borrado
+     * tocan una.
+     */
+    isDemo: integer("is_demo", { mode: "boolean" }).notNull().default(false),
+    /** Lote de demo que creó la mesa, o null si es real. */
+    demoBatchId: text("demo_batch_id"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -250,6 +278,7 @@ export const tables = sqliteTable(
   (t) => [
     index("tables_layout_idx").on(t.layoutId),
     index("tables_restaurant_idx").on(t.restaurantId),
+    index("tables_demo_idx").on(t.isDemo),
     // Un mismo cliente no puede estar sentado en dos mesas a la vez (red de
     // seguridad por si el código de aplicación falla).
     //
@@ -313,6 +342,23 @@ export const waitlistEntries = sqliteTable(
      */
     resolvedAt: integer("resolved_at", { mode: "timestamp_ms" }),
     resolvedByUserId: text("resolved_by_user_id"),
+    /**
+     * Cliente de DEMOSTRACIÓN (migración 0007, solo aditiva).
+     *
+     * Los clientes que mete `npm run db:demo` (los que esperan ahora, los
+     * sentados en mesas demo y las ocho semanas de historial para las
+     * estadísticas y el asistente) son inventados, pero entran por la tabla
+     * normal y las consultas no los distinguen: es justo lo que hay que probar.
+     * Lo que sí lleva la marca es el teléfono `0000-0000`, que ningún cliente
+     * real va a tener.
+     *
+     * `false` (lo normal) significa cliente real. El borrado del demo solo
+     * toca filas con `is_demo`, así que el historial de un piloto nunca se ve
+     * afectado.
+     */
+    isDemo: integer("is_demo", { mode: "boolean" }).notNull().default(false),
+    /** Lote de demo que creó el cliente, o null si es real. */
+    demoBatchId: text("demo_batch_id"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -324,6 +370,8 @@ export const waitlistEntries = sqliteTable(
     index("waitlist_entries_restaurant_idx").on(t.restaurantId),
     index("waitlist_entries_status_idx").on(t.status),
     index("waitlist_entries_table_idx").on(t.assignedTableId),
+    // El banner, el conteo y el borrado filtran siempre por esto.
+    index("waitlist_entries_demo_idx").on(t.isDemo),
   ],
 );
 

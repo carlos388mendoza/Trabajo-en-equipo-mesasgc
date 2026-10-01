@@ -50,6 +50,13 @@
       "when": 1790864709463,
       "tag": "0006_cartas_resolucion",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1790876115034,
+      "tag": "0007_datos_demo",
+      "breakpoints": true
     }
   ]
 }
