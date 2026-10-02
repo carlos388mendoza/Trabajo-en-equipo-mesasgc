@@ -11,7 +11,7 @@
 // `rapido:ver`: el host solo ve las de sus restaurantes y analitica ninguna.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, Clock3, LayoutGrid, RotateCcw, Search, Trash2, Undo2, UsersRound, X } from "lucide-react";
+import { Armchair, Check, Clock3, DoorOpen, LayoutGrid, RotateCcw, Search, Trash2, Undo2, UsersRound, X } from "lucide-react";
 
 import {
   arrivalLabel,
@@ -25,6 +25,17 @@ import { Overlay, SheetHandle, useSheetDrag } from "@/components/quick-mode/over
 import type { WaitlistStatus } from "@/lib/db/enums";
 import type { WaitlistChange, WaitlistUndoState } from "@/lib/realtime/events";
 import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
+import type { SeatableTable } from "@/lib/tables/list";
+import { addCalendarDays, hondurasMidnightUtc, hondurasToday } from "@/lib/time/honduras";
+
+/**
+ * Desde cuándo cuenta un rango, en el navegador (lo mismo que `rangeStart`
+ * de `lib/waitlist/cards.ts`, que no se puede importar aquí: usa la base).
+ */
+function rangeStartMs(range: CardRange, now: number): number {
+  const today = hondurasToday(new Date(now));
+  return hondurasMidnightUtc(range === "hoy" ? today : addCalendarDays(today, -6)).getTime();
+}
 import type { CardRange } from "@/lib/waitlist/cards";
 
 export type StatusFilter = "todas" | Extract<WaitlistStatus, "esperando" | "listo" | "ausente">;
@@ -69,6 +80,17 @@ type AllCardsViewProps = {
   onReopen: (entryId: string) => Promise<boolean>;
   onDelete: (entryId: string) => Promise<boolean>;
   onUndo: () => Promise<void>;
+  /**
+   * Lo que la tablet ya sabe (con la cola aplicada): se usa si no hay red para
+   * pedir las cartas al servidor, o mientras llegan.
+   */
+  localEntries: WaitlistEntrySnapshot[];
+  /** Aplica la cola sin conexión encima de lo que vino del servidor. */
+  applyPending: (entries: WaitlistEntrySnapshot[]) => WaitlistEntrySnapshot[];
+  /** Mesas (con la cola aplicada): para saber quién tiene mesa y liberarla. */
+  tables: SeatableTable[];
+  onSeat: (entry: WaitlistEntrySnapshot) => void;
+  onRelease: (entryId: string, tableId: string) => Promise<boolean>;
 };
 
 export function AllCardsView(props: AllCardsViewProps) {
@@ -90,6 +112,11 @@ function AllCardsContent({
   onReopen,
   onDelete,
   onUndo,
+  localEntries,
+  applyPending,
+  tables,
+  onSeat,
+  onRelease,
 }: AllCardsViewProps) {
   // Arrastrar el panel desde la cabecera (null fuera de un panel arrastrable).
   const drag = useSheetDrag();
@@ -106,6 +133,12 @@ function AllCardsContent({
   // ventana propia, con el nombre del cliente escrito en grande.
   const [confirmDelete, setConfirmDelete] = useState<WaitlistEntrySnapshot | null>(null);
   const loadVersion = useRef(0);
+  /** Las cartas son la copia de la tablet (no se pudieron pedir al servidor). */
+  const [fromLocal, setFromLocal] = useState(false);
+  const connectedRef = useRef(connected);
+  useEffect(() => {
+    connectedRef.current = connected;
+  }, [connected]);
   const inFlight = useRef(false);
   const staleWhileLoading = useRef(false);
 
@@ -121,10 +154,14 @@ function AllCardsContent({
         if (!response.ok) throw new Error(data.error || "No se pudieron cargar las cartas.");
         if (cancelled || version !== loadVersion.current) return;
         setEntries(data.entries as WaitlistEntrySnapshot[]);
+        setFromLocal(false);
         setError("");
       } catch (cause) {
         if (!cancelled && version === loadVersion.current) {
-          setError(cause instanceof Error ? cause.message : "No se pudieron cargar las cartas.");
+          // Sin conexión no es un error: se enseña lo que la tablet ya tiene.
+          if (connectedRef.current) setError(cause instanceof Error ? cause.message : "No se pudieron cargar las cartas.");
+          else setError("");
+          setFromLocal(true);
         }
       } finally {
         if (!cancelled && version === loadVersion.current) {
@@ -141,7 +178,8 @@ function AllCardsContent({
       cancelled = true;
       inFlight.current = false;
     };
-  }, [restaurantId, range]);
+    // `connected`: al volver la red se piden otra vez, ya con lo sincronizado.
+  }, [restaurantId, range, connected]);
 
   // En vivo: cada cambio de la room se aplica sobre la lista que ya hay.
   useEffect(() => subscribe(({ action, entry }) => {
@@ -153,20 +191,30 @@ function AllCardsContent({
     });
   }), [subscribe]);
 
+  const shown = useMemo(() => {
+    const since = rangeStartMs(range, now);
+    const source = fromLocal
+      ? localEntries
+      : applyPending(entries);
+    return source
+      .filter((entry) => entry.arrivedAt >= since || entry.status === "esperando")
+      .sort((a, b) => b.arrivedAt - a.arrivedAt);
+  }, [applyPending, entries, fromLocal, localEntries, now, range]);
+
   const counts = useMemo(() => {
-    const result: Record<StatusFilter, number> = { todas: entries.length, esperando: 0, listo: 0, ausente: 0 };
-    for (const entry of entries) {
+    const result: Record<StatusFilter, number> = { todas: shown.length, esperando: 0, listo: 0, ausente: 0 };
+    for (const entry of shown) {
       if (entry.status === "esperando" || entry.status === "listo" || entry.status === "ausente") result[entry.status] += 1;
     }
     return result;
-  }, [entries]);
+  }, [shown]);
 
   const visible = useMemo(() => {
     const needle = normalize(query.trim());
-    return entries.filter((entry) =>
+    return shown.filter((entry) =>
       (filter === "todas" || entry.status === filter)
       && (!needle || normalize(entry.customerName).includes(needle)));
-  }, [entries, filter, query]);
+  }, [shown, filter, query]);
 
   async function act(entryId: string, run: () => Promise<boolean>): Promise<boolean> {
     if (busyId) return false;
@@ -194,7 +242,7 @@ function AllCardsContent({
           <h2 id="todas-cartas-titulo" className="font-bold text-panel-text">Todas las cartas</h2>
           <p className="text-sm text-panel-muted">
             {loading ? "Cargando…" : plural(visible.length, "carta", "cartas")}
-            {!connected && " · Reconectando"}
+            {!connected && " · Sin conexión (copia de esta tablet)"}
           </p>
         </div>
         <button
@@ -245,11 +293,11 @@ function AllCardsContent({
             {error}
           </p>
         )}
-        {loading && !entries.length ? (
+        {loading && !shown.length ? (
           <p role="status" className="py-16 text-center text-panel-muted">Cargando cartas…</p>
         ) : visible.length === 0 ? (
           <p className="py-16 text-center text-panel-muted">
-            {entries.length ? "Ninguna carta coincide con el filtro." : range === "hoy" ? "Hoy todavía no hay cartas." : "No hay cartas en los últimos 7 días."}
+            {shown.length ? "Ninguna carta coincide con el filtro." : range === "hoy" ? "Hoy todavía no hay cartas." : "No hay cartas en los últimos 7 días."}
           </p>
         ) : (
           <ul className="grid gap-3 movil-horizontal:!grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] movil-horizontal:gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -258,8 +306,11 @@ function AllCardsContent({
                 key={entry.id}
                 entry={entry}
                 now={now}
-                disabled={!connected || busyId !== null}
+                disabled={busyId !== null}
                 busy={busyId === entry.id}
+                table={tables.find((table) => table.currentEntryId === entry.id) ?? null}
+                onSeat={() => onSeat(entry)}
+                onRelease={(tableId) => void act(entry.id, () => onRelease(entry.id, tableId))}
                 onResolve={(status) => void act(entry.id, () => onResolve(entry.id, status))}
                 onReopen={() => void act(entry.id, () => onReopen(entry.id))}
                 onDelete={() => setConfirmDelete(entry)}
@@ -272,7 +323,7 @@ function AllCardsContent({
       <DeleteConfirm
         entry={confirmDelete}
         busy={busyId !== null && busyId === confirmDelete?.id}
-        disabled={!connected}
+        disabled={false}
         onCancel={() => setConfirmDelete(null)}
         onConfirm={async () => {
           const target = confirmDelete;
@@ -381,9 +432,13 @@ type CardRowProps = {
   onResolve: (status: "listo" | "ausente") => void;
   onReopen: () => void;
   onDelete: () => void;
+  /** La mesa que ocupa ahora (si está sentado y la mesa sigue con él). */
+  table: SeatableTable | null;
+  onSeat: () => void;
+  onRelease: (tableId: string) => void;
 };
 
-function CardRow({ entry, now, disabled, busy, onResolve, onReopen, onDelete }: CardRowProps) {
+function CardRow({ entry, now, disabled, busy, table, onResolve, onReopen, onDelete, onSeat, onRelease }: CardRowProps) {
   const waiting = entry.status === "esperando";
   // Hasta cuándo esperó: la marca de listo o ausente, el aviso o la mesa. Las
   // filas de antes de `resolved_at` (migración 0006) usan su último cambio.
@@ -448,9 +503,49 @@ function CardRow({ entry, now, disabled, busy, onResolve, onReopen, onDelete }: 
             >
               <Check aria-hidden size={17} /> Listo
             </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={onSeat}
+              className="col-span-2 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-accent/50 font-semibold text-accent transition hover:bg-accent/10 disabled:opacity-45"
+            >
+              <Armchair aria-hidden size={17} /> Sentar en una mesa
+            </button>
+          </div>
+        ) : entry.status === "listo" ? (
+          // Listo = ya se le avisó: lo normal ahora es sentarlo. Si fue un
+          // error, vuelve a la espera.
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={onReopen}
+              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-app-border font-semibold text-panel-text transition hover:bg-app-border/50 disabled:opacity-45"
+            >
+              <RotateCcw aria-hidden size={17} /> A la espera
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={onSeat}
+              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-accent/50 font-semibold text-accent transition hover:bg-accent/10 disabled:opacity-45"
+            >
+              <Armchair aria-hidden size={17} /> Sentar
+            </button>
           </div>
         ) : entry.status === "sentado" ? (
-          <p className="text-sm text-panel-muted">Ya tiene mesa.</p>
+          table ? (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onRelease(table.id)}
+              className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-app-border font-semibold text-panel-text transition hover:bg-app-border/50 disabled:opacity-45"
+            >
+              <DoorOpen aria-hidden size={17} /> Liberar {table.label}
+            </button>
+          ) : (
+            <p className="text-sm text-panel-muted">Ya no está en ninguna mesa.</p>
+          )
         ) : (
           <button
             type="button"

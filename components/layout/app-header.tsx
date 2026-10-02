@@ -1,10 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { ChartColumn, FlaskConical, LogOut, Map as MapIcon, Settings, ShieldCheck, Store } from "lucide-react";
+import { ChartColumn, FlaskConical, Map as MapIcon, Settings, ShieldCheck, Store } from "lucide-react";
 
-import { signOutAction } from "@/app/login/actions";
 import { RestaurantSwitcher, type SwitcherRestaurant } from "@/components/layout/restaurant-switcher";
+import { SignOutButton } from "@/components/layout/sign-out-button";
 import { ROLE_LABELS, can } from "@/lib/auth/rbac";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listRestaurants } from "@/lib/auth/users";
@@ -113,15 +113,7 @@ export async function AppHeader() {
             <Settings aria-hidden size={20} strokeWidth={2} />
             <span className="hidden md:inline">Ajustes</span>
           </Link>
-          <form action={signOutAction}>
-            <button
-              type="submit"
-              className="flex h-11 items-center gap-2 rounded-xl px-3 text-sm font-medium hover:bg-app-border/60"
-            >
-              <LogOut aria-hidden size={20} strokeWidth={2} />
-              <span className="hidden md:inline">Cerrar sesión</span>
-            </button>
-          </form>
+          <SignOutButton />
         </div>
       ) : null}
     </header>
