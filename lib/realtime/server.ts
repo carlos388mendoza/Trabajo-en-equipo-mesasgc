@@ -32,7 +32,7 @@ import {
   OVERVIEW_ROOM,
   MAX_BATCH_ENTRIES,
   addManyWaitlistEntriesSchema,
-  addWaitlistEntrySchema,
+  addOneWaitlistEntrySchema,
   assignTableSchema,
   deleteWaitlistEntrySchema,
   joinRestaurantSchema,
@@ -42,6 +42,8 @@ import {
   roomFor,
   undoWaitlistSchema,
 } from "./events";
+import { runOnce } from "@/lib/offline/operations";
+
 import { emitOverview } from "./overview";
 import { type RealtimeServer, setRealtimeServer } from "./registry";
 
@@ -127,18 +129,20 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         const parsed = assignTableSchema.safeParse(raw);
         if (!parsed.success) return fail("Datos de la asignación no válidos.");
 
-        const result = await assignTable({
-          restaurantId,
-          ...parsed.data,
-          userId: socket.data.userId,
+        const { operationId, tableId, entryId } = parsed.data;
+        const outcome = await runOnce({ operationId, restaurantId, userId: socket.data.userId, action: "table:assign" }, async () => {
+          const result = await assignTable({ restaurantId, tableId, entryId, userId: socket.data.userId });
+          if (!result.ok) return fail(result.error);
+          return { ok: true as const, table: result.table, entryId: result.entryId };
         });
-        if (!result.ok) return fail(result.error);
-
-        const change = { table: result.table, entryId: result.entryId };
-        io.to(roomFor(restaurantId)).emit("table:assigned", change);
-        // Contadores al mapa general, sin esperar: el ack no depende de eso.
-        void emitOverview(restaurantId);
-        return { ok: true, ...change };
+        // Un reenvío de la cola offline (`repetida`) devuelve la misma
+        // respuesta, pero no vuelve a avisar: la room ya lo supo la primera vez.
+        if (outcome.kind === "nueva" && outcome.result.ok) {
+          io.to(roomFor(restaurantId)).emit("table:assigned", { table: outcome.result.table, entryId: outcome.result.entryId });
+          // Contadores al mapa general, sin esperar: el ack no depende de eso.
+          void emitOverview(restaurantId);
+        }
+        return outcome.result;
       });
     });
 
@@ -154,13 +158,17 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         const parsed = releaseTableSchema.safeParse(raw);
         if (!parsed.success) return fail("Datos de la mesa no válidos.");
 
-        const result = await releaseTable({ restaurantId, ...parsed.data });
-        if (!result.ok) return fail(result.error);
-
-        const change = { table: result.table, entryId: result.entryId };
-        io.to(roomFor(restaurantId)).emit("table:released", change);
-        void emitOverview(restaurantId);
-        return { ok: true, ...change };
+        const { operationId, tableId, entryId } = parsed.data;
+        const outcome = await runOnce({ operationId, restaurantId, userId: socket.data.userId, action: "table:release" }, async () => {
+          const result = await releaseTable({ restaurantId, tableId, entryId });
+          if (!result.ok) return fail(result.error);
+          return { ok: true as const, table: result.table, entryId: result.entryId };
+        });
+        if (outcome.kind === "nueva" && outcome.result.ok) {
+          io.to(roomFor(restaurantId)).emit("table:released", { table: outcome.result.table, entryId: outcome.result.entryId });
+          void emitOverview(restaurantId);
+        }
+        return outcome.result;
       });
     });
 
@@ -171,18 +179,23 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         if (!(await canModifyWaitlist({ userId: socket.data.userId }, restaurantId))) {
           return fail("No tienes permiso para modificar la lista de espera en este restaurante.");
         }
-        const parsed = addWaitlistEntrySchema.safeParse(raw);
+        const parsed = addOneWaitlistEntrySchema.safeParse(raw);
         if (!parsed.success) return fail("Revisa el nombre y la cantidad de personas.");
 
-        const result = await addWaitlistEntry(restaurantId, parsed.data);
-        if (!result.ok) return fail(result.error);
-        const undo = getWaitlistUndoState(restaurantId);
-        const change = { action: "added" as const, entry: result.entry, undo };
-        io.to(roomFor(restaurantId)).emit("waitlist:changed", change);
-        io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
-        // Un cliente más en espera: contadores al mapa general.
-        void emitOverview(restaurantId);
-        return { ok: true, entry: result.entry, actionId: result.actionId };
+        const { operationId, ...input } = parsed.data;
+        const outcome = await runOnce({ operationId, restaurantId, userId: socket.data.userId, action: "waitlist:add" }, async () => {
+          const result = await addWaitlistEntry(restaurantId, input);
+          if (!result.ok) return fail(result.error);
+          return { ok: true as const, entry: result.entry, actionId: result.actionId };
+        });
+        if (outcome.kind === "nueva" && outcome.result.ok) {
+          const undo = getWaitlistUndoState(restaurantId);
+          io.to(roomFor(restaurantId)).emit("waitlist:changed", { action: "added", entry: outcome.result.entry, undo });
+          io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
+          // Un cliente más en espera: contadores al mapa general.
+          void emitOverview(restaurantId);
+        }
+        return outcome.result;
       });
     });
 
@@ -201,15 +214,21 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
             : "Revisa el nombre y la cantidad de personas de cada cliente.");
         }
 
-        const result = await addWaitlistEntries(restaurantId, parsed.data.entries);
-        if (!result.ok) return fail(result.error);
-        const undo = getWaitlistUndoState(restaurantId);
-        for (const entry of result.entries) {
-          io.to(roomFor(restaurantId)).emit("waitlist:changed", { action: "added", entry, undo });
+        const { operationId, entries } = parsed.data;
+        const outcome = await runOnce({ operationId, restaurantId, userId: socket.data.userId, action: "waitlist:add-many" }, async () => {
+          const result = await addWaitlistEntries(restaurantId, entries);
+          if (!result.ok) return fail(result.error);
+          return { ok: true as const, entries: result.entries, actionId: result.actionId };
+        });
+        if (outcome.kind === "nueva" && outcome.result.ok) {
+          const undo = getWaitlistUndoState(restaurantId);
+          for (const entry of outcome.result.entries) {
+            io.to(roomFor(restaurantId)).emit("waitlist:changed", { action: "added", entry, undo });
+          }
+          io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
+          void emitOverview(restaurantId);
         }
-        io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
-        void emitOverview(restaurantId);
-        return { ok: true, entries: result.entries, actionId: result.actionId };
+        return outcome.result;
       });
     });
 
@@ -223,22 +242,19 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         const parsed = resolveWaitlistEntrySchema.safeParse(raw);
         if (!parsed.success) return fail("Datos del cliente no válidos.");
 
-        const result = await resolveWaitlistEntry(
-          restaurantId,
-          parsed.data.entryId,
-          parsed.data.status,
-          socket.data.userId,
-        );
-        if (!result.ok) return fail(result.error);
-        const undo = getWaitlistUndoState(restaurantId);
-        io.to(roomFor(restaurantId)).emit("waitlist:changed", {
-          action: "resolved",
-          entry: result.entry,
-          undo,
+        const { operationId, entryId, status } = parsed.data;
+        const outcome = await runOnce({ operationId, restaurantId, userId: socket.data.userId, action: "waitlist:resolve" }, async () => {
+          const result = await resolveWaitlistEntry(restaurantId, entryId, status, socket.data.userId);
+          if (!result.ok) return fail(result.error);
+          return { ok: true as const, entry: result.entry, actionId: result.actionId };
         });
-        io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
-        void emitOverview(restaurantId);
-        return { ok: true, entry: result.entry, actionId: result.actionId };
+        if (outcome.kind === "nueva" && outcome.result.ok) {
+          const undo = getWaitlistUndoState(restaurantId);
+          io.to(roomFor(restaurantId)).emit("waitlist:changed", { action: "resolved", entry: outcome.result.entry, undo });
+          io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
+          void emitOverview(restaurantId);
+        }
+        return outcome.result;
       });
     });
 
@@ -252,17 +268,19 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         const parsed = reopenWaitlistEntrySchema.safeParse(raw);
         if (!parsed.success) return fail("Datos del cliente no válidos.");
 
-        const result = await reopenWaitlistEntry(restaurantId, parsed.data.entryId);
-        if (!result.ok) return fail(result.error);
-        const undo = getWaitlistUndoState(restaurantId);
-        io.to(roomFor(restaurantId)).emit("waitlist:changed", {
-          action: "reopened",
-          entry: result.entry,
-          undo,
+        const { operationId, entryId } = parsed.data;
+        const outcome = await runOnce({ operationId, restaurantId, userId: socket.data.userId, action: "waitlist:reopen" }, async () => {
+          const result = await reopenWaitlistEntry(restaurantId, entryId);
+          if (!result.ok) return fail(result.error);
+          return { ok: true as const, entry: result.entry, actionId: result.actionId };
         });
-        io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
-        void emitOverview(restaurantId);
-        return { ok: true, entry: result.entry, actionId: result.actionId };
+        if (outcome.kind === "nueva" && outcome.result.ok) {
+          const undo = getWaitlistUndoState(restaurantId);
+          io.to(roomFor(restaurantId)).emit("waitlist:changed", { action: "reopened", entry: outcome.result.entry, undo });
+          io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
+          void emitOverview(restaurantId);
+        }
+        return outcome.result;
       });
     });
 
@@ -276,19 +294,21 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         const parsed = deleteWaitlistEntrySchema.safeParse(raw);
         if (!parsed.success) return fail("Datos del cliente no válidos.");
 
-        const result = await deleteWaitlistEntry(restaurantId, parsed.data.entryId);
-        if (!result.ok) return fail(result.error);
-        const undo = getWaitlistUndoState(restaurantId);
-        // `removed`: es lo que los clientes ya saben quitar de la pantalla, y
-        // deshacer devuelve `restored`, la otra mitad del mismo par.
-        io.to(roomFor(restaurantId)).emit("waitlist:changed", {
-          action: "removed",
-          entry: result.entry,
-          undo,
+        const { operationId, entryId } = parsed.data;
+        const outcome = await runOnce({ operationId, restaurantId, userId: socket.data.userId, action: "waitlist:delete" }, async () => {
+          const result = await deleteWaitlistEntry(restaurantId, entryId);
+          if (!result.ok) return fail(result.error);
+          return { ok: true as const, entry: result.entry, actionId: result.actionId };
         });
-        io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
-        void emitOverview(restaurantId);
-        return { ok: true, entry: result.entry, actionId: result.actionId };
+        if (outcome.kind === "nueva" && outcome.result.ok) {
+          const undo = getWaitlistUndoState(restaurantId);
+          // `removed`: es lo que los clientes ya saben quitar de la pantalla, y
+          // deshacer devuelve `restored`, la otra mitad del mismo par.
+          io.to(roomFor(restaurantId)).emit("waitlist:changed", { action: "removed", entry: outcome.result.entry, undo });
+          io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
+          void emitOverview(restaurantId);
+        }
+        return outcome.result;
       });
     });
 

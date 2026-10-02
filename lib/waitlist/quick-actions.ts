@@ -22,6 +22,10 @@ export type WaitlistEntrySnapshot = {
   resolvedAt: number | null;
   /** Nombre de quien lo resolvió, para «Ver todas las cartas». */
   resolvedByName: string | null;
+  /** Mesa en la que se sentó (para «Liberar mesa»), o null. */
+  assignedTableId: string | null;
+  /** Cliente de los datos de demostración (etiqueta «Demo»). */
+  isDemo: boolean;
   updatedAt: number;
 };
 
@@ -74,6 +78,8 @@ export function snapshot(
     seatedAt: entry.seatedAt?.getTime() ?? null,
     resolvedAt: entry.resolvedAt?.getTime() ?? null,
     resolvedByName: entry.resolvedByUserId ? resolvedByName : null,
+    assignedTableId: entry.assignedTableId,
+    isDemo: entry.isDemo,
     updatedAt: entry.updatedAt.getTime(),
   };
 }
@@ -106,31 +112,76 @@ export function getWaitlistUndoState(restaurantId: string): UndoState | null {
     : null;
 }
 
+/** Lo que llega para agregar un grupo (de la tablet, en línea o de la cola offline). */
+export type NewEntryInput = {
+  customerName: string;
+  partySize: number;
+  notes?: string;
+  /** Id elegido por la tablet: con él, un reenvío no duplica al cliente. */
+  entryId?: string;
+  /** Hora real de llegada (ms) si se anotó sin conexión. */
+  arrivedAt?: number;
+};
+
+/** Cuánto atrás se acepta una hora de llegada que manda la tablet. */
+export const MAX_OFFLINE_ARRIVAL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * La hora de llegada que manda la tablet, dentro de lo razonable: nunca en el
+ * futuro ni más de 24 h atrás. Sin ella, ahora.
+ */
+export function clampArrival(arrivedAt: number | undefined, now: Date): Date {
+  if (!arrivedAt) return now;
+  return new Date(Math.min(now.getTime(), Math.max(now.getTime() - MAX_OFFLINE_ARRIVAL_MS, arrivedAt)));
+}
+
+/**
+ * Si el id ya existe (la cola reenvió un alta que sí había entrado), devuelve
+ * ese cliente en vez de crear otro. Si existe pero en otro restaurante, es un
+ * id robado o un choque: se rechaza.
+ */
+async function existingEntry(id: string, restaurantId: string) {
+  const [row] = await db.select().from(waitlistEntries).where(eq(waitlistEntries.id, id)).limit(1);
+  if (!row) return null;
+  return row.restaurantId === restaurantId ? row : "ajeno";
+}
+
 export async function addWaitlistEntry(
   restaurantId: string,
-  input: { customerName: string; partySize: number; notes?: string },
+  input: NewEntryInput,
 ): Promise<Result<{ entry: WaitlistEntrySnapshot; actionId: string }>> {
   const now = new Date();
+  const id = input.entryId ?? crypto.randomUUID();
+  const arrivedAt = clampArrival(input.arrivedAt, now);
   const [entry] = await db
     .insert(waitlistEntries)
     .values({
-      id: crypto.randomUUID(),
+      id,
       restaurantId,
       customerName: input.customerName,
       partySize: input.partySize,
       notes: input.notes || null,
       status: "esperando",
-      arrivedAt: now,
+      arrivedAt,
       createdAt: now,
-      updatedAt: now,
+      // Igual que la llegada: así «sin cambios desde que se agregó» se puede
+      // comprobar con `updatedAt === arrivedAt` (deshacer un alta en grupo).
+      updatedAt: arrivedAt,
     })
+    .onConflictDoNothing()
     .returning();
+
+  if (!entry) {
+    const existing = await existingEntry(id, restaurantId);
+    if (existing === "ajeno" || !existing) return { ok: false, error: "Ese cliente no se pudo agregar." };
+    return { ok: true, entry: snapshot(existing), actionId: crypto.randomUUID() };
+  }
 
   const actionId = crypto.randomUUID();
   undoByRestaurant.set(restaurantId, {
     actionId,
     entryId: entry.id,
-    entryUpdatedAt: now,
+    entryUpdatedAt: arrivedAt,
     kind: "added",
     statusAfter: "esperando",
     label: `Agregar a ${entry.customerName}`,
@@ -148,17 +199,19 @@ export async function addWaitlistEntry(
  */
 export async function addWaitlistEntries(
   restaurantId: string,
-  inputs: { customerName: string; partySize: number; notes?: string }[],
+  inputs: NewEntryInput[],
 ): Promise<Result<{ entries: WaitlistEntrySnapshot[]; actionId: string }>> {
   if (inputs.length === 0) return { ok: false, error: "No hay clientes para agregar." };
   if (inputs.length > MAX_BATCH_ENTRIES) {
     return { ok: false, error: `Se pueden agregar hasta ${MAX_BATCH_ENTRIES} clientes de una vez.` };
   }
-  const now = Date.now();
+  // La hora del primero (la real si se anotó sin conexión) y 1 ms más por
+  // cada uno: la fila respeta el orden de las filas del formulario.
+  const now = clampArrival(inputs[0]?.arrivedAt, new Date()).getTime();
   const rows = inputs.map((input, index) => {
     const at = new Date(now + index);
     return {
-      id: crypto.randomUUID(),
+      id: input.entryId ?? crypto.randomUUID(),
       restaurantId,
       customerName: input.customerName,
       partySize: input.partySize,
@@ -169,7 +222,23 @@ export async function addWaitlistEntries(
       updatedAt: at,
     };
   });
-  const inserted = await db.insert(waitlistEntries).values(rows).returning();
+  let inserted: (typeof waitlistEntries.$inferSelect)[];
+  try {
+    inserted = await db.insert(waitlistEntries).values(rows).returning();
+  } catch (error) {
+    // Un reenvío de la cola cuyo primer envío sí entró (y el registro de la
+    // operación no llegó a guardarse): si TODOS los ids ya están en este
+    // restaurante, es el mismo lote y se devuelve tal cual. Si no, es un error.
+    if (!String(error).includes("UNIQUE")) throw error;
+    const existing = await db.select().from(waitlistEntries)
+      .where(and(inArray(waitlistEntries.id, rows.map((r) => r.id)), eq(waitlistEntries.restaurantId, restaurantId)));
+    if (existing.length !== rows.length) return { ok: false, error: "Esos clientes no se pudieron agregar." };
+    return {
+      ok: true,
+      entries: existing.map((entry) => snapshot(entry)).sort((a, b) => a.arrivedAt - b.arrivedAt),
+      actionId: crypto.randomUUID(),
+    };
+  }
   const entries = inserted.map((entry) => snapshot(entry)).sort((a, b) => a.arrivedAt - b.arrivedAt);
 
   const actionId = crypto.randomUUID();
