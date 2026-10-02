@@ -1,7 +1,8 @@
 // Borrado del lote de DATOS DE DEMOSTRACIÓN.
 //
-//   npm run db:demo:borrar   (o desde /admin/datos-demo, que es el camino
-//                             principal: el CLI es el plan B)
+//   npm run db:demo:borrar   (el único camino: la pantalla /admin/datos-demo y
+//                             su aviso se retiraron de la interfaz, pero los
+//                             datos y el sistema que los administra se quedan)
 //
 // Es el ÚNICO sitio que borra datos de demostración, y lo usan tanto el script
 // como la pantalla de administración. Los dos caminos hacen exactamente lo

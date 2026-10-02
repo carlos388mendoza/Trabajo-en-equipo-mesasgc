@@ -148,7 +148,7 @@ export const tableLayouts = sqliteTable(
      * Zona de DEMOSTRACIÓN (migración 0007, solo aditiva).
      *
      * La crea `npm run db:demo` en los restaurantes reales y se borra con
-     * `npm run db:demo:borrar` o desde /admin/datos-demo. Nunca se marca la zona
+     * `npm run db:demo:borrar`. Nunca se marca la zona
      * real de un restaurante: el demo dibuja en zonas suyas, para no tocar el
      * plano que alguien haya dibujado a mano.
      *

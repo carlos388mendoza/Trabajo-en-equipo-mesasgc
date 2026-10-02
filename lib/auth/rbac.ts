@@ -116,8 +116,9 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Action[]> = {
   // el plano en vivo ve estados y ocupación, pero NO los nombres de los
   // clientes (`plano:clientes`): son datos personales que no necesita.
   //
-  // `demo:ver` sí lo tiene, para que sepa que los números que está mirando son
-  // de demostración; `demo:borrar` NO: borrar datos es cosa del admin.
+  // `demo:ver` sí lo tiene y `demo:borrar` NO: aunque ya no queda ninguna pantalla
+  // que administer la demostración, ambas acciones se conservan porque el sistema
+  // de datos demo (`lib/demo`) sigue vivo y las usa su comprobación de permisos.
   [ROLES.ANALITICA]: ["analiticas:ver", "asistente:usar", "mapa:ver", "plano:ver", "demo:ver"],
 };
 
