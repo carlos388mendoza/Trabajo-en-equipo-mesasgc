@@ -207,7 +207,9 @@ function FullFace({ guest, waited, position, maxWidth }: FaceProps & { maxWidth?
   return (
     <span className="flex flex-col" style={{ maxWidth }}>
       <span className="text-xs font-semibold uppercase tracking-wider text-panel-muted">N.º {position}</span>
-      <span className="mt-1.5 line-clamp-3 break-words text-lg font-bold leading-tight">{guest.name}</span>
+      {/* `title`: si el nombre es largo y se corta, al pasar el mouse por
+          encima sale entero. */}
+      <span title={guest.name} className="mt-1.5 line-clamp-3 break-words text-lg font-bold leading-tight">{guest.name}</span>
       <span className="mt-2 inline-flex items-center gap-1.5 text-sm text-panel-muted">
         <UsersRound aria-hidden size={15} className="shrink-0" />
         <span className="truncate">{people(guest.party)}</span>
@@ -231,7 +233,7 @@ function CompactFace({ guest, waited, position }: FaceProps) {
       </span>
       <span className={`text-xs font-bold ${waitColor(waited)}`}>{waited}′</span>
       <span className="mt-1 min-h-0 flex-1 overflow-hidden text-sm font-bold [writing-mode:vertical-rl]">
-        <span className="line-clamp-1">{guest.name}</span>
+        <span className="line-clamp-1" title={guest.name}>{guest.name}</span>
       </span>
     </span>
   );

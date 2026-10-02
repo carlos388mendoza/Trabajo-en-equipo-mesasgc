@@ -1,11 +1,11 @@
 // Escrituras del modo rápido y deshacer de una acción por restaurante.
 // La última acción vive en memoria del proceso: no requiere cambios al esquema.
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { ACTIVE_WAITLIST_STATUSES, type WaitlistStatus } from "@/lib/db/enums";
-import { user, waitlistEntries } from "@/lib/db/schema";
+import { tables, user, waitlistEntries } from "@/lib/db/schema";
 // Cuántos clientes se pueden agregar de una vez («Varios» del formulario).
 import { MAX_BATCH_ENTRIES } from "@/lib/realtime/events";
 
@@ -41,12 +41,14 @@ type UndoRecord = {
   entryId: string;
   entryUpdatedAt: Date;
   /** `added-many`: varios de una vez; deshacer los quita todos (`entryIds`). */
-  kind: "added" | "added-many" | "resolved" | "reopened";
+  kind: "added" | "added-many" | "resolved" | "reopened" | "deleted";
   entryIds?: string[];
   /** Estado en que dejó la fila la acción: deshacer solo vale si sigue así. */
   statusAfter: WaitlistStatus;
   label: string;
   previous?: Restorable;
+  /** `deleted`: la fila tal cual, para poder volver a insertarla al deshacer. */
+  previousRow?: typeof waitlistEntries.$inferSelect;
   busy: boolean;
 };
 
@@ -332,6 +334,83 @@ export async function reopenWaitlistEntry(
   return { ok: true, entry: snapshot(updated), actionId };
 }
 
+/**
+ * Elimina a un cliente de la lista («Ver todas las cartas»).
+ *
+ * Es la operación de más consecuencia de las cuatro, así que va con la misma
+ * red de seguridad que las otras: solo este restaurante, con el mismo permiso
+ * (`rapido:modificar`, comprobado en el socket), y DESHACIBLE.
+ *
+ * Un cliente que tiene mesa NO se borra: la mesa quedaría apuntando a una fila
+ * que ya no existe (`tables.currentEntryId` no tiene FK, nadie lo avisa). Se
+ * avisa y se pide liberarla primero, que es el camino que ya usa el mapa.
+ *
+ * Un cliente de DEMOSTRACIÓN se puede borrar como cualquier otro (a veces hay
+ * que limpiar una carta de mentira), pero al deshacer vuelve con su
+ * `is_demo` y su `demo_batch_id` intactos: el lote demo sigue valiendo.
+ */
+export async function deleteWaitlistEntry(
+  restaurantId: string,
+  entryId: string,
+): Promise<Result<{ entry: WaitlistEntrySnapshot; actionId: string }>> {
+  const [current] = await db
+    .select()
+    .from(waitlistEntries)
+    .where(and(eq(waitlistEntries.id, entryId), eq(waitlistEntries.restaurantId, restaurantId)))
+    .limit(1);
+
+  if (!current) return { ok: false, error: "Ese cliente no existe en este restaurante." };
+
+  // La foto que viajan a las otras tablets y queda guardada para deshacer.
+  const entry = await snapshotWithName(current);
+
+  // Una sola sentencia condicional: la fila solo se borra si sigue igual que
+  // cuando se leyó Y si ninguna mesa de este restaurante la está usando.
+  const [removed] = await db
+    .delete(waitlistEntries)
+    .where(and(
+      eq(waitlistEntries.id, entryId),
+      eq(waitlistEntries.restaurantId, restaurantId),
+      eq(waitlistEntries.updatedAt, current.updatedAt),
+      sql`not exists (select 1 from ${tables} where ${tables.restaurantId} = ${restaurantId} and ${tables.currentEntryId} = ${entryId})`,
+    ))
+    .returning();
+
+  if (!removed) {
+    // No se borró: o la mesa se ocupó en este instante, o la fila cambió en
+    // otra tablet. Se mira para poder decir cuál de las dos cosas pasó.
+    const [occupied] = await db
+      .select({ id: tables.id })
+      .from(tables)
+      .where(and(
+        eq(tables.restaurantId, restaurantId),
+        eq(tables.currentEntryId, entryId),
+      ))
+      .limit(1);
+    return {
+      ok: false,
+      error: occupied
+        ? "Este cliente tiene una mesa ocupada. Libera la mesa del mapa antes de eliminarlo."
+        : "Este cliente cambió en otro dispositivo. Vuelve a intentarlo.",
+    };
+  }
+
+  const actionId = crypto.randomUUID();
+  undoByRestaurant.set(restaurantId, {
+    actionId,
+    entryId,
+    entryUpdatedAt: current.updatedAt,
+    kind: "deleted",
+    statusAfter: current.status as WaitlistStatus,
+    label: `Eliminar a ${current.customerName}`,
+    // La fila entera, no solo su estado: al deshacer hay que devolverla tal
+    // cual estaba, incluido si era de demostración.
+    previousRow: current,
+    busy: false,
+  });
+  return { ok: true, entry, actionId };
+}
+
 export async function undoWaitlistAction(
   restaurantId: string,
   actionId: string,
@@ -374,6 +453,30 @@ export async function undoWaitlistAction(
       }
       if (undoByRestaurant.get(restaurantId) === record) undoByRestaurant.delete(restaurantId);
       return { ok: true, action: "removed", entry: snapshot(removed) };
+    }
+
+    if (record.kind === "deleted") {
+      const row = record.previousRow;
+      if (!row) {
+        record.busy = false;
+        return { ok: false, error: "No se pudo deshacer esa acción." };
+      }
+      // El id era único y la fila no está, así que esto solo pasa si alguien
+      // la reinsertó a mano. En ese caso no se pisa.
+      const [existing] = await db
+        .select({ id: waitlistEntries.id })
+        .from(waitlistEntries)
+        .where(eq(waitlistEntries.id, record.entryId))
+        .limit(1);
+      if (existing) {
+        record.busy = false;
+        return { ok: false, error: "Ese cliente ya está otra vez en la lista." };
+      }
+      // Se reinserta la fila tal cual: mismo id, misma hora de llegada, y con
+      // `is_demo` / `demo_batch_id` como estaban, para no romper el lote demo.
+      const [restored] = await db.insert(waitlistEntries).values(row).returning();
+      if (undoByRestaurant.get(restaurantId) === record) undoByRestaurant.delete(restaurantId);
+      return { ok: true, action: "restored", entry: await snapshotWithName(restored) };
     }
 
     const previous = record.previous;

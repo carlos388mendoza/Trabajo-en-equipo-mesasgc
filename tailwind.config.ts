@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import plugin from "tailwindcss/plugin";
 
 const config: Config = {
   content: [
@@ -48,7 +49,19 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // Móvil tumbado: el teléfono de lado, que es la única pantalla donde el
+    // alto manda y el ancho sobra. El corte en 1023 px deja fuera a tablet y
+    // escritorio, que también se pueden girar pero ya tienen sitio de sobra.
+    //
+    // OJO: Tailwind emite este bloque ANTES que `sm`, así que una clase `sm:`
+    // de la misma propiedad gana en horizontal. Por eso las medidas de la
+    // carta en landscape van con `!` (`movil-horizontal:!h-[252px]`): si no,
+    // el `sm:h-[400px]` de siempre se impondría y el arreglo no se vería.
+    plugin(({ addVariant }) => {
+      addVariant("movil-horizontal", "@media (orientation: landscape) and (max-width: 1023px)");
+    }),
+  ],
 };
 
 export default config;

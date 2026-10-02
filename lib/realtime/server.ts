@@ -19,6 +19,7 @@ import { assignTable, releaseTable } from "@/lib/tables/assign";
 import {
   addWaitlistEntries,
   addWaitlistEntry,
+  deleteWaitlistEntry,
   getWaitlistUndoState,
   reopenWaitlistEntry,
   resolveWaitlistEntry,
@@ -33,6 +34,7 @@ import {
   addManyWaitlistEntriesSchema,
   addWaitlistEntrySchema,
   assignTableSchema,
+  deleteWaitlistEntrySchema,
   joinRestaurantSchema,
   releaseTableSchema,
   reopenWaitlistEntrySchema,
@@ -255,6 +257,32 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         const undo = getWaitlistUndoState(restaurantId);
         io.to(roomFor(restaurantId)).emit("waitlist:changed", {
           action: "reopened",
+          entry: result.entry,
+          undo,
+        });
+        io.to(roomFor(restaurantId)).emit("waitlist:undo-state", undo);
+        void emitOverview(restaurantId);
+        return { ok: true, entry: result.entry, actionId: result.actionId };
+      });
+    });
+
+    socket.on("waitlist:delete", async (raw, ack) => {
+      await respond(ack, async () => {
+        const restaurantId = socket.data.restaurantId;
+        if (!restaurantId) return fail("Primero entra en un restaurante.");
+        if (!(await canModifyWaitlist({ userId: socket.data.userId }, restaurantId))) {
+          return fail("No tienes permiso para modificar la lista de espera en este restaurante.");
+        }
+        const parsed = deleteWaitlistEntrySchema.safeParse(raw);
+        if (!parsed.success) return fail("Datos del cliente no válidos.");
+
+        const result = await deleteWaitlistEntry(restaurantId, parsed.data.entryId);
+        if (!result.ok) return fail(result.error);
+        const undo = getWaitlistUndoState(restaurantId);
+        // `removed`: es lo que los clientes ya saben quitar de la pantalla, y
+        // deshacer devuelve `restored`, la otra mitad del mismo par.
+        io.to(roomFor(restaurantId)).emit("waitlist:changed", {
+          action: "removed",
           entry: result.entry,
           undo,
         });
