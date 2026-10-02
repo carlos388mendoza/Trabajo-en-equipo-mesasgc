@@ -344,7 +344,7 @@ function DeleteConfirm({ entry, busy, disabled, onCancel, onConfirm }: DeleteCon
             className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-estado-ocupada bg-estado-ocupada px-5 font-semibold text-app-bg transition hover:opacity-90 disabled:opacity-45"
           >
             <Trash2 aria-hidden size={18} />
-            {busy ? "Eliminando…" : "Sí, eliminar"}
+            {busy ? "Eliminando…" : "Aceptar"}
           </button>
         </div>
       </div>

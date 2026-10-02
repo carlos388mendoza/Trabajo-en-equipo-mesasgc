@@ -316,7 +316,11 @@ quién la resolvió. Desde ahí:
 
 - una carta **en espera** se marca **Listo** o **Ausente**;
 - una **lista o ausente** que fue un error vuelve con **Volver a la espera**
-  (recupera su lugar en la fila).
+  (recupera su lugar en la fila);
+- un cliente anotado por error se quita con **Eliminar**: sale una ventana con
+  su nombre y **Aceptar** / **Cancelar**. Se puede deshacer enseguida con
+  **Deshacer** o Ctrl+Z. Un cliente con una mesa ocupada no se puede eliminar:
+  primero hay que liberar la mesa.
 
 **Si te equivocaste:** pulsa **Deshacer** (la flecha curva) o **Ctrl+Z**.
 Deshace solo la **última** acción del restaurante, en cualquier tablet, y

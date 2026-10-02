@@ -662,6 +662,16 @@ section("Eliminar un cliente de la lista");
     fromOther.error,
   );
 
+  // El host de OTRO restaurante (está en la room de REST_2) manda el id de un
+  // cliente de REST: se busca en su restaurante, no lo encuentra y no borra.
+  const fromOtherHost = await ask(otro, "waitlist:delete", { entryId: "borrar-espera" });
+  check(
+    "el host de otro restaurante no puede borrar un cliente ajeno",
+    !fromOtherHost.ok && (await entryRow("borrar-espera")) !== undefined,
+    fromOtherHost.error,
+  );
+  check("  y nadie recibe un aviso de borrado", changesA.length === before.a && changesB.length === before.b && changesOtro.length === before.otro);
+
   const fromAnalitica = await ask(analitica, "waitlist:delete", { entryId: "borrar-espera" });
   check("analítica no puede eliminar a nadie", !fromAnalitica.ok && (await entryRow("borrar-espera")) !== undefined, fromAnalitica.error);
 

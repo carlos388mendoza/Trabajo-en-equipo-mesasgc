@@ -1187,6 +1187,11 @@ section("Modo rápido: todas las cartas y agregar varios");
     check("el seed tiene un cliente listo en rest_centro", Boolean(listo));
     check("analitica no puede volver a la espera a nadie", !(await emit(analitica, "waitlist:reopen", { entryId: listo?.id ?? "" })).ok);
     check("norte no puede volver a la espera a un cliente de rest_centro", !(await emit(norte, "waitlist:reopen", { entryId: listo?.id ?? "" })).ok);
+    // Borrar: norte (en su room) manda el id de un cliente de rest_centro.
+    const delOtro = await emit(norte, "waitlist:delete", { entryId: listo?.id ?? "" });
+    const [sigue] = await db.select({ id: waitlistEntries.id }).from(waitlistEntries).where(eq(waitlistEntries.id, listo?.id ?? ""));
+    check("norte no puede borrar un cliente de rest_centro", !delOtro.ok && Boolean(sigue), delOtro.error);
+    check("analitica no puede borrar a nadie", !(await emit(analitica, "waitlist:delete", { entryId: listo?.id ?? "" })).ok);
     const reopen = (await emit(centro, "waitlist:reopen", { entryId: listo?.id ?? "" })) as ManyAck;
     check("centro vuelve a la espera a un cliente listo de su restaurante", reopen.ok, reopen.error);
     check("  y lo puede deshacer", (await emit(centro, "waitlist:undo", { actionId: reopen.actionId })).ok);
