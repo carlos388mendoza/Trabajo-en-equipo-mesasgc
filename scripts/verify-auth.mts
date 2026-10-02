@@ -220,6 +220,7 @@ const WARM_UP: [string, string][] = [
   ["GET", "/api/restaurante/rest_centro/clientes"],
   ["PATCH", "/api/restaurante/rest_centro/clientes/wl_1"],
   ["GET", "/api/restaurante/rest_centro/cartas"],
+  ["GET", "/api/restaurante/rest_centro/mesas"],
 ];
 {
   const deadline = Date.now() + 120_000;
@@ -390,6 +391,7 @@ const API_NO_SESSION: [string, string, unknown?][] = [
   ["POST", "/api/restaurante/rest_centro/clientes", newGuest],
   ["PATCH", "/api/restaurante/rest_centro/clientes/wl_1", { status: "listo" }],
   ["GET", "/api/restaurante/rest_centro/cartas"],
+  ["GET", "/api/restaurante/rest_centro/mesas"],
 ];
 for (const [method, path, body] of API_NO_SESSION) {
   const res = await http(method, path, { body });
@@ -455,6 +457,12 @@ const API: [Who, string, string, unknown, number][] = [
   ["gerente", "GET", "/api/restaurante/rest_centro/cartas", undefined, 200],
   ["gerente", "GET", "/api/restaurante/rest_norte/cartas", undefined, 403],
   ["admin", "GET", "/api/restaurante/rest_norte/cartas", undefined, 200],
+  // Mesas para «Sentar» del modo sencillo (también sin conexión): rapido:ver.
+  ["analitica", "GET", "/api/restaurante/rest_centro/mesas", undefined, 403],
+  ["centro", "GET", "/api/restaurante/rest_centro/mesas", undefined, 200],
+  ["centro", "GET", "/api/restaurante/rest_norte/mesas", undefined, 403],
+  ["norte", "GET", "/api/restaurante/rest_norte/mesas", undefined, 200],
+  ["admin", "GET", "/api/restaurante/rest_norte/mesas", undefined, 200],
 ];
 for (const [who, method, path, body, expected] of API) {
   const got = await status(who, method, path, body);

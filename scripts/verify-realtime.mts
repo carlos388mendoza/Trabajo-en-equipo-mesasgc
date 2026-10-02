@@ -954,6 +954,157 @@ async function resolveViaDb(id: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Modo offline: la cola de una tablet sin conexión
+// ---------------------------------------------------------------------------
+
+section("Modo offline: cola, reenvíos y conflictos entre dispositivos");
+
+{
+  const { runOnce, findOperation, purgeOldOperations, OPERATION_TTL_MS } = await import("@/lib/offline/operations");
+  const { offlineOperations } = await import("@/lib/db/schema");
+  const { clampArrival, MAX_OFFLINE_ARRIVAL_MS } = await import("@/lib/waitlist/quick-actions");
+  const { listSeatableTables } = await import("@/lib/tables/list");
+  const uuid = () => crypto.randomUUID();
+
+  // Las dos «tablets» del mismo restaurante: A (admin) y B (host de REST).
+  check("A y B entran en REST", (await ask(hostA, "restaurant:join", { restaurantId: REST })).ok && (await ask(hostB, "restaurant:join", { restaurantId: REST })).ok);
+  await db.insert(tables).values([mesa("m-off-1"), mesa("m-off-2")]);
+  await db.insert(waitlistEntries).values([cliente("off-listo"), cliente("off-sentar-a"), cliente("off-sentar-b")]);
+  const changesB = counter(hostB, "waitlist:changed");
+  const assignedB = counter(hostB, "table:assigned");
+  const changesOtro = counter(otro, "waitlist:changed");
+  type OpAck = AnyAck & { entry?: { id: string; customerName: string; arrivedAt: number; status: string }; actionId?: string };
+
+  // 1. Un alta hecha sin conexión: id y hora de la tablet. El ack se «pierde»
+  //    y la tablet la reenvía con el MISMO operationId: no hay dos clientes.
+  const entryId = uuid();
+  const addOp = uuid();
+  const arrivedAt = Date.now() - 20 * 60_000;
+  const add = { customerName: "Cola sin red", partySize: 3, notes: "", entryId, arrivedAt, operationId: addOp };
+  const first = (await ask(hostA, "waitlist:add", add)) as OpAck;
+  const again = (await ask(hostA, "waitlist:add", add)) as OpAck;
+  await settle();
+  const rows = await db.select().from(waitlistEntries).where(eq(waitlistEntries.customerName, "Cola sin red"));
+  check("alta sin conexión: entra con el id que eligió la tablet", first.ok && first.entry?.id === entryId && rows.length === 1, first.error);
+  check("  con su hora de llegada real (no la de la sincronización)", rows[0]?.arrivedAt.getTime() === arrivedAt, String(rows[0]?.arrivedAt.getTime()));
+  check("  el reenvío del mismo operationId devuelve la misma respuesta", again.ok && JSON.stringify(again) === JSON.stringify(first));
+  check("  y no crea un segundo cliente", rows.length === 1);
+  check("  la room recibe UN aviso, no dos", changesB.filter((c) => (c as { entry: { id: string } }).entry.id === entryId).length === 1);
+  check("  queda registrada la operación", (await findOperation(addOp, REST))?.ok === true);
+  // Un alta con el mismo id de cliente pero OTRO operationId (dos pestañas): tampoco duplica.
+  const sameEntry = (await ask(hostA, "waitlist:add", { ...add, operationId: uuid() })) as OpAck;
+  check("  el mismo id de cliente con otra operación tampoco duplica", sameEntry.ok && (await db.select().from(waitlistEntries).where(eq(waitlistEntries.id, entryId))).length === 1);
+
+  // 2. Marcar listo desde la cola, reenviado: la segunda vez NO dice
+  //    «ya fue atendido» (sería un conflicto falso), devuelve lo mismo.
+  const resolveOp = uuid();
+  const r1 = (await ask(hostA, "waitlist:resolve", { entryId: "off-listo", status: "listo", operationId: resolveOp })) as OpAck;
+  const r2 = (await ask(hostA, "waitlist:resolve", { entryId: "off-listo", status: "listo", operationId: resolveOp })) as OpAck;
+  check("listo sin conexión, reenviado: las dos respuestas son el mismo éxito", r1.ok && r2.ok && JSON.stringify(r1) === JSON.stringify(r2), r2.error);
+  check("  y no un «ya fue atendido» falso", !/atendido/.test(r2.error ?? ""));
+
+  // 3. CONFLICTO entre dispositivos: A (sin conexión) cree que m-off-1 está
+  //    libre y deja en cola sentar ahí a off-sentar-a. Mientras, B (en línea)
+  //    sienta a off-sentar-b en m-off-1. A vuelve y manda su cola.
+  const byB = await ask(hostB, "table:assign", { tableId: "m-off-1", entryId: "off-sentar-b" });
+  check("B, en línea, ocupa la mesa", byB.ok, byB.error);
+  const assignOp = uuid();
+  const byA = await ask(hostA, "table:assign", { tableId: "m-off-1", entryId: "off-sentar-a", operationId: assignOp });
+  await settle();
+  check("la cola de A NO pisa lo que hizo B: «Esta mesa ya fue asignada.»", !byA.ok && byA.error === "Esta mesa ya fue asignada.", byA.error);
+  check("  la mesa sigue con el cliente de B", (await tableRow("m-off-1"))?.currentEntryId === "off-sentar-b");
+  check("  y el cliente de A sigue esperando (sin mesa)", (await entryRow("off-sentar-a"))?.status === "esperando" && (await entryRow("off-sentar-a"))?.assignedTableId === null);
+  const replayA = await ask(hostA, "table:assign", { tableId: "m-off-1", entryId: "off-sentar-a", operationId: assignOp });
+  check("  reenviar ese rechazo da el mismo rechazo (no se reintenta a ciegas)", !replayA.ok && replayA.error === byA.error);
+  check("  y la room solo vio la asignación de B", assignedB.length === 1);
+  // A puede sentarlo en la otra mesa: la que de verdad está libre.
+  const okA = await ask(hostA, "table:assign", { tableId: "m-off-2", entryId: "off-sentar-a", operationId: uuid() });
+  check("A lo sienta después en una mesa libre", okA.ok, okA.error);
+
+  // 4. Liberar desde la cola: el reenvío no da «la mesa cambió».
+  const releaseOp = uuid();
+  const rel1 = await ask(hostA, "table:release", { tableId: "m-off-2", entryId: "off-sentar-a", operationId: releaseOp });
+  const rel2 = await ask(hostA, "table:release", { tableId: "m-off-2", entryId: "off-sentar-a", operationId: releaseOp });
+  check("liberar sin conexión, reenviado: dos veces el mismo éxito", rel1.ok && rel2.ok, rel2.error);
+  // Y si mientras tanto otro dispositivo volvió a ocupar la mesa, liberar con
+  // el cliente viejo NO deja sin mesa al nuevo.
+  await ask(hostB, "table:assign", { tableId: "m-off-2", entryId: "off-listo" });
+  const stale = await ask(hostA, "table:release", { tableId: "m-off-2", entryId: "off-sentar-a", operationId: uuid() });
+  check("liberar con un cliente que ya no está ahí se rechaza («la mesa cambió»)", !stale.ok && /cambió/.test(stale.error ?? ""), stale.error);
+  check("  y la mesa sigue con el cliente nuevo", (await tableRow("m-off-2"))?.currentEntryId === "off-listo");
+
+  // 5. Un operationId de OTRO restaurante no sirve para leer su respuesta.
+  const stolen = (await ask(otro, "waitlist:add", { ...add, operationId: addOp })) as OpAck;
+  check("un operationId de otro restaurante se rechaza", !stolen.ok && !stolen.entry, stolen.error);
+  check("  y no avisa a nadie de su room", changesOtro.length === 0);
+
+  // 6. Validación: el id de operación tiene que ser un UUID.
+  const badId = await ask(hostA, "waitlist:resolve", { entryId: "off-listo", status: "ausente", operationId: "no-es-uuid" });
+  check("un operationId que no es UUID se rechaza con Zod", !badId.ok);
+
+  // 7. La hora de llegada de la tablet no sirve para colarse.
+  const t = new Date("2026-10-02T12:00:00Z");
+  check("hora de llegada: más de 24 h atrás se recorta a 24 h", clampArrival(t.getTime() - 3 * MAX_OFFLINE_ARRIVAL_MS, t).getTime() === t.getTime() - MAX_OFFLINE_ARRIVAL_MS);
+  check("  en el futuro se recorta a ahora", clampArrival(t.getTime() + 60_000, t).getTime() === t.getTime());
+  check("  sin hora, ahora", clampArrival(undefined, t).getTime() === t.getTime());
+
+  // 8. Sin operationId (en línea) todo sigue como antes: se aplica sin registrar.
+  const before = (await db.select().from(offlineOperations)).length;
+  const plain = await runOnce({ restaurantId: REST, userId: null, action: "x" }, async () => ({ ok: true as const }));
+  check("sin operationId se ejecuta y no se registra nada", plain.kind === "nueva" && (await db.select().from(offlineOperations)).length === before);
+
+  // 9. Las operaciones viejas se olvidan solas.
+  await db.update(offlineOperations).set({ createdAt: new Date(Date.now() - OPERATION_TTL_MS - 1000) }).where(eq(offlineOperations.operationId, addOp));
+  check("las operaciones de hace más de 7 días se purgan", (await purgeOldOperations()) >= 1 && (await findOperation(addOp, REST)) === null);
+
+  // 10. La lista de mesas para «Sentar»: solo las que admiten clientes, con su zona.
+  const seatable = await listSeatableTables(REST);
+  check("mesas para sentar: solo mesas (no baños), de este restaurante", seatable.length > 0 && seatable.every((x) => x.id !== "bano-1") && !seatable.some((x) => x.id === "m-ajena"));
+  check("  con su zona y su ocupación", seatable.find((x) => x.id === "m-off-1")?.layoutName === "Comedor" && seatable.find((x) => x.id === "m-off-1")?.currentEntryId === "off-sentar-b");
+
+  // Limpieza: lo de esta sección no tiene que mover los contadores de la siguiente.
+  await db.update(tables).set({ currentEntryId: null, status: "libre" }).where(inArray(tables.id, ["m-off-1", "m-off-2"]));
+  await db.delete(tables).where(inArray(tables.id, ["m-off-1", "m-off-2"]));
+  await db.delete(waitlistEntries).where(inArray(waitlistEntries.id, ["off-listo", "off-sentar-a", "off-sentar-b", entryId]));
+  await ask(hostA, "restaurant:join", { restaurantId: REST_2 });
+}
+
+{
+  // La pantalla sin conexión: «servidor + cola». Funciones puras.
+  const { applyOperations } = await import("@/lib/offline/apply");
+  const base = {
+    entries: [
+      { id: "e1", customerName: "Uno", partySize: 2, notes: null, status: "esperando" as const, arrivedAt: 1, calledAt: null, seatedAt: null, resolvedAt: null, resolvedByName: null, assignedTableId: null, isDemo: false, updatedAt: 1 },
+      { id: "e2", customerName: "Dos", partySize: 4, notes: null, status: "esperando" as const, arrivedAt: 2, calledAt: null, seatedAt: null, resolvedAt: null, resolvedByName: null, assignedTableId: null, isDemo: false, updatedAt: 2 },
+    ],
+    tables: [
+      { id: "t1", label: "Mesa 1", capacity: 4, status: "libre" as const, currentEntryId: null, version: 1, layoutId: "l", layoutName: "Comedor" },
+      { id: "t2", label: "Mesa 2", capacity: 4, status: "ocupada" as const, currentEntryId: "otro", version: 3, layoutId: "l", layoutName: "Comedor" },
+    ],
+  };
+  let seq = 0;
+  const op = (data: object) => ({ operationId: `op${++seq}`, userId: "u", restaurantId: "r", targetId: "x", label: "x", sequence: seq, createdAt: 100 + seq, state: "pendiente" as const, attempts: 0, ...data });
+  const ops = [
+    op({ action: "waitlist:add", data: { customerName: "Nuevo", partySize: 2, notes: "", entryId: "e3", arrivedAt: 3 } }),
+    op({ action: "waitlist:resolve", data: { entryId: "e1", status: "listo" } }),
+    op({ action: "table:assign", data: { tableId: "t1", entryId: "e2" } }),
+    // Esta mesa ya está ocupada por otro: NO se pinta como suya.
+    op({ action: "table:assign", data: { tableId: "t2", entryId: "e3" } }),
+    op({ action: "waitlist:delete", data: { entryId: "e3" } }),
+  ] as Parameters<typeof applyOperations>[1];
+  const v = applyOperations(base, ops, 500);
+  const byId = (id: string) => v.entries.find((e) => e.id === id);
+  check("la cola se aplica en orden: alta, listo, sentar y eliminar", byId("e1")?.status === "listo" && byId("e2")?.status === "sentado" && byId("e3") === undefined);
+  check("  sentar ocupa la mesa en pantalla", v.tables.find((x) => x.id === "t1")?.currentEntryId === "e2");
+  check("  una mesa que ya tiene a otro NO se pinta como ocupada por el de la cola (sin pantalla falsa)", v.tables.find((x) => x.id === "t2")?.currentEntryId === "otro");
+  check("  los datos base no se modifican", base.entries[0].status === "esperando" && base.tables[0].currentEntryId === null);
+  const withConflict = applyOperations(base, [{ ...ops[1], state: "conflicto" }], 500);
+  check("  una operación rechazada deja de aplicarse", withConflict.entries.find((e) => e.id === "e1")?.status === "esperando");
+  const undone = applyOperations(base, ops.slice(0, 1), 500);
+  check("  deshacer sin conexión = quitar la última de la cola", undone.entries.length === 3 && undone.entries.find((e) => e.id === "e1")?.status === "esperando");
+}
+
+// ---------------------------------------------------------------------------
 // Sala overview (mapa general)
 // ---------------------------------------------------------------------------
 
