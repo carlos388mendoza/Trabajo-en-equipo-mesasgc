@@ -1132,14 +1132,20 @@ como demo.
 
 ### Borrado desde la web
 
-`/admin/datos-demo` muestra los conteos (zonas, mesas, clientes) y, **solo si
-eres admin**, el botón de borrado:
+En **`/admin`**, la sección **«Datos de demostración»** (solo admin, con ancla
+`#datos-demo`) muestra cuántos **clientes** (los de la fila de hoy y los que
+ocupan mesa), **historial**, **mesas** y **zonas** de demostración hay, en total
+y **por restaurante** (`lib/demo/summary.ts`). Tiene dos botones:
+**«Borrar todos los datos de demostración»** y, en cada fila, **«Borrar demo de
+este restaurante»**. La confirmación dice exactamente cuánto se va a borrar y
+pide escribir `BORRAR`. `/admin/datos-demo` muestra lo mismo en solo lectura a
+analítica.
 
 | Quién | Ve los conteos | Puede borrar |
 | --- | --- | --- |
-| Administrador | Sí | **Sí** |
-| Restaurante | Sí (con el aviso) | No |
-| Analítica | Sí (con el aviso) | No |
+| Administrador | Sí | **Sí** (todo o por restaurante) |
+| Restaurante | No (ve la etiqueta «Demo» en cada carta del modo sencillo) | No |
+| Analítica | Sí, en `/admin/datos-demo` (con el aviso) | No |
 
 Hace falta escribir `BORRAR`: el botón no se habilita hasta que se escribe, y la
 server action lo vuelve a pedir en el servidor, porque un POST a mano no pasa por
@@ -1161,7 +1167,9 @@ implementación.
 | `lib/demo/delete.ts` | `borrarDemoData()`: solo `is_demo`, en una transacción, y aborta si un dato real depende. |
 | `scripts/db-demo.mts`, `scripts/db-demo-borrar.mts` | Los dos scripts de terminal. |
 | `app/admin/datos-demo/page.tsx`, `app/admin/demo-actions.ts` | La pantalla y la server action del borrado. |
-| `components/admin/admin-demo.tsx` | Los conteos y el diálogo con la palabra. |
+| `components/admin/admin-demo.tsx` | Los conteos por restaurante, los dos botones y el diálogo con la palabra. |
+| `lib/demo/summary.ts` | `demoBreakdown()`: clientes, historial, mesas y zonas demo por restaurante. |
+| `components/quick-mode/demo-tag.tsx` | La etiqueta «Demo» de las cartas. |
 | `components/layout/demo-banner.tsx` | El aviso global. |
 | `scripts/verify-demo.mts` | `npm run verify:demo`. |
 
@@ -1174,8 +1182,9 @@ teléfonos de mentira en los 12 309 clientes, estados variados, las 56 semanas
 toca nada real**, que **aborta** si un cliente real dependiera de una mesa de
 demostración, el borrado, que lo real sobrevive y que se puede recargar.
 
-`npm run verify:auth` (**329 comprobaciones**) levanta la app de verdad y lo
-prueba por HTTP: el aviso aparece para admin, analitica y host, la pantalla
-`/admin/datos-demo` muestra o esconde el botón según el rol, analitica, un host
-y quien no tiene sesión **no borran** ni con la palabra puesta, admin sí borra
-escribiendo `BORRAR`, y el aviso desaparece solo después.
+`npm run verify:auth` levanta la app de verdad y lo prueba por HTTP: el aviso
+aparece para admin y analitica (no para el host), la sección de `/admin` con sus
+conteos y botones, `/admin/datos-demo` según el rol, analitica, un host y quien
+no tiene sesión **no borran** ni con la palabra puesta, admin borra el demo de
+**un** restaurante (los demás siguen igual) y luego todo, un **cliente real**
+sigue ahí después de los dos borrados, y el aviso desaparece solo.

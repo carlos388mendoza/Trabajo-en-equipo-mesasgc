@@ -33,7 +33,8 @@ Qué significa cada marca:
 | `/analiticas` (vista global y por restaurante) | Sí | — | Sí |
 | `/mapa` (mapa general, todas las marcas) | Sí | — | Sí (solo lectura) |
 | `/restaurante/[id]/mapa` (plano en vivo, solo lectura) | Sí | Suyos | Sí, sin nombres |
-| `/admin/datos-demo` (datos de demostración) | Sí, y borra | Sí, sin borrar | Sí, sin borrar |
+| `/admin` → «Datos de demostración» (conteos por restaurante y borrado) | Sí, y borra | — | — |
+| `/admin/datos-demo` (los mismos conteos, solo lectura) | Sí, y borra | — | Sí, sin borrar |
 
 ## Acciones
 
@@ -51,14 +52,15 @@ Qué significa cada marca:
 | `mapa:ver` | `/mapa`, la action `loadOverviewCounters` y la sala `overview` de Socket.IO | Sí | — | Sí |
 | `plano:ver` | `/restaurante/[id]/mapa` y la action `loadLivePlan` (estados y ocupación) | Sí | Suyos | Sí |
 | `plano:clientes` | Nombre del cliente de cada mesa en el plano en vivo | Sí | Suyos | — |
-| `demo:ver` | Ver que hay datos de demostración y cuántos son: el aviso global y `/admin/datos-demo` | Sí | Sí | Sí |
-| `demo:borrar` | **Borrarlos**: la action `deleteDemoDataAction` (`app/admin/demo-actions.ts`) | Sí | — | — |
+| `demo:ver` | Ver que hay datos de demostración y cuántos son: el aviso global y `/admin/datos-demo` | Sí | — | Sí |
+| `demo:borrar` | **Borrarlos**, todos o los de un restaurante: la action `deleteDemoDataAction` (`app/admin/demo-actions.ts`) | Sí | — | — |
 
-Las dos últimas son globales, no de un restaurante: el lote de demostración
-afecta a los 8 locales a la vez. `demo:ver` la tienen los tres roles a propósito:
-quien está mirando el mapa o las estadísticas tiene derecho a saber si los
-números son reales. `demo:borrar` es solo del admin, porque es la **única
-operación de la app que elimina filas**.
+Las dos últimas son globales, no de un restaurante. `demo:ver` es de admin y
+analítica: quien mira el mapa o las estadísticas tiene derecho a saber si los
+números son reales. Desde el 2 de octubre el host ya no la tiene (pedido de la
+dirección): en el modo sencillo cada carta de demostración lleva la etiqueta
+**«Demo»**, que basta para distinguirla. `demo:borrar` es solo del admin,
+porque es la operación que más filas elimina de golpe.
 
 Cinco casos que vale la pena tener presentes:
 
@@ -82,22 +84,22 @@ Cinco casos que vale la pena tener presentes:
 - **Entrar en la room de Socket.IO de un restaurante** exige `editor:ver` o
   `rapido:ver` en él. Por eso analitica no entra en ninguna: no edita nada en
   vivo, y en esas rooms viajan los ids de los clientes.
-- **Borrar los datos de demostración es global**, así que `demo:borrar` no es
-  «de un restaurante» y un host con varios locales no puede: aunque tuviera dos,
-  el borrado no es suyo. Lo que puede un host es **ver** que los hay
-  (`demo:ver`).
+- **Borrar los datos de demostración es cosa del admin**, también el botón
+  «Borrar demo de este restaurante»: un host no puede ni en sus propios
+  restaurantes (`demo:borrar` no es una acción de restaurante). El host
+  distingue las cartas de demostración por su etiqueta «Demo».
 
 ## Datos de demostración
 
 Si hay un lote de demostración cargado (`npm run db:demo`), una franja discreta
-lo avisa en todas las pantallas. Verlo no necesita más que `demo:ver`.
+lo avisa a quien tiene `demo:ver`, con un enlace a la sección.
 
-| Quién | Ve el aviso | Ve `/admin/datos-demo` | Ve el botón de borrar |
-|---|:---:|:---:|:---:|
-| Administrador | Sí | Sí | **Sí** |
-| Restaurante | Sí | Sí (solo lectura) | — |
-| Analítica | Sí | Sí (solo lectura) | — |
-| Sin sesión | No (va a `/login`) | No (va a `/login`) | — |
+| Quién | Ve el aviso | Sección de `/admin` | `/admin/datos-demo` | Borra | Etiqueta «Demo» en las cartas |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Administrador | Sí → `/admin#datos-demo` | Sí | Sí | **Sí** (todo o por restaurante) | Sí |
+| Restaurante | — | — | — (`/sin-acceso`) | — | Sí |
+| Analítica | Sí → `/admin/datos-demo` | — | Sí (solo lectura) | — | — (no opera) |
+| Sin sesión | No (va a `/login`) | No | No | — | — |
 
 - El aviso **no bloquea nada**, y en particular **no bloquea el Modo rápido**.
 - Para borrar hay que escribir `BORRAR`: el botón no se habilita hasta
@@ -106,9 +108,13 @@ lo avisa en todas las pantallas. Verlo no necesita más que `demo:ver`.
 - El botón escondido **no protege**: quien no tiene `demo:borrar` recibe
   «No tienes permiso» aunque mande la palabra. Sin sesión, el proxy lo manda a
   `/login`.
-- Las pruebas están repartidas: `verify:demo` (85) comprueba la matriz de
-  `can()` y la lógica de datos, y `verify:auth` (329) lo hace por HTTP contra la
-  app real.
+- Borra **solo** lo marcado `is_demo`: nunca un cliente, una mesa o una zona
+  reales, ni restaurantes, marcas o usuarios. Con un restaurante, solo el demo
+  de ese restaurante.
+- Las pruebas están repartidas: `verify:demo` comprueba la matriz de `can()`,
+  el desglose y el borrado por restaurante, y `verify:auth` lo hace por HTTP
+  contra la app real (un cliente real sobrevive a los dos borrados; solo el
+  admin puede).
 
 ## Mapa general y plano en vivo
 
