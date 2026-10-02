@@ -1243,31 +1243,46 @@ section("Datos de demostración");
   check("  con el enlace para administrarlos", (await aviso("admin")).text.includes("Administrar datos demo"));
   check("analitica ve el aviso", (await aviso("analitica")).text.includes("datos de demostración cargados"));
   check("  pero con el enlace de solo ver", (await aviso("analitica")).text.includes("Ver datos de demostración") && !(await aviso("analitica")).text.includes("Administrar datos demo"));
-  check("el host ve el aviso", (await aviso("centro")).text.includes("datos de demostración cargados"));
+  // Desde el 2 de octubre el aviso es solo para admin y analítica: el host ve
+  // la etiqueta «Demo» en cada carta del modo sencillo.
+  check("el host NO ve el aviso", !(await aviso("centro")).text.includes("datos de demostración cargados"));
+  // En HTML (<a href=...>) o en el payload de React ("href":...): /inicio redirige al admin.
+  check("el admin va a la sección de /admin desde el aviso", (await aviso("admin")).text.includes("/admin#datos-demo") && !(await aviso("analitica")).text.includes("/admin#datos-demo"));
   check("sin sesión, la página sigue yendo a /login", landing(await aviso(null)) === "/login");
 
-  // El aviso no bloquea el Modo rápido: la página abre y trae el aviso.
-  const rapido = await http("GET", "/restaurante/rest_centro/rapido", { cookie: cookies.centro });
-  check("el modo rápido sigue abriendo con el aviso encima", landing(rapido) === "200" && rapido.text.includes("datos de demostración cargados"));
+  // El modo rápido abre igual; para el admin, con el aviso encima.
+  const rapido = await http("GET", "/restaurante/rest_centro/rapido", { cookie: cookies.admin });
+  check("el modo rápido sigue abriendo con el aviso encima (admin)", landing(rapido) === "200" && rapido.text.includes("datos de demostración cargados"));
+  check("  y para el host, sin el aviso", landing(await http("GET", "/restaurante/rest_centro/rapido", { cookie: cookies.centro })) === "200");
+  const cartasHost = JSON.parse((await http("GET", "/api/restaurante/rest_centro/cartas?rango=7dias", { cookie: cookies.centro })).text) as { entries: { isDemo: boolean }[] };
+  check("las cartas traen la marca demo (para la etiqueta «Demo»)", cartasHost.entries.some((e) => e.isDemo) && cartasHost.entries.every((e) => typeof e.isDemo === "boolean"));
 
   // La pantalla /admin/datos-demo.
   const pantalla = (who: Who | null) => http("GET", "/admin/datos-demo", { cookie: who ? cookies[who] : undefined });
   check("admin entra a /admin/datos-demo", landing(await pantalla("admin")) === "200");
-  check("  y ve el botón de borrar", (await pantalla("admin")).text.includes("Borrar datos demo"));
+  check("  y ve el botón de borrar", (await pantalla("admin")).text.includes("Borrar todos los datos de demostración"));
   check("analitica también la ve (los conteos son información)", landing(await pantalla("analitica")) === "200");
-  check("  pero sin botón de borrar", !(await pantalla("analitica")).text.includes("Borrar datos demo"));
-  check("un host también, pero sin borrar", landing(await pantalla("centro")) === "200" && !(await pantalla("centro")).text.includes("Borrar datos demo"));
+  check("  pero sin botón de borrar", !(await pantalla("analitica")).text.includes("Borrar todos los datos de demostración") && !(await pantalla("analitica")).text.includes("Borrar demo de este restaurante"));
+  check("un host ya no entra (no es para él)", landing(await pantalla("centro")) === "/sin-acceso");
   check("sin sesión, va a /login", landing(await pantalla(null)) === "/login");
+
+  // La sección dentro de /admin: conteos por restaurante y los dos botones.
+  const adminPage = (await http("GET", "/admin", { cookie: cookies.admin })).text;
+  check("/admin tiene la sección «Datos de demostración»", adminPage.includes('id="datos-demo"') && adminPage.includes("Datos de demostración"));
+  check("  con el botón de borrar todo", adminPage.includes("Borrar todos los datos de demostración"));
+  check("  una fila por restaurante, con su botón", adminPage.includes("China Wok Centro") && (adminPage.match(/Borrar demo de este restaurante/g) ?? []).length >= 8);
+  check("  y las columnas clientes, historial, mesas y zonas", [">Clientes<", ">Historial<", ">Mesas<", ">Zonas<"].every((t) => adminPage.includes(t)));
+  check("analitica no entra a /admin", landing(await http("GET", "/admin", { cookie: cookies.analitica })) === "/sin-acceso");
 
   // La server action: aquí es donde de verdad se comprueba el permiso, porque
   // un POST a mano no pasa por la página.
   const deleteId = findActionId("deleteDemoDataAction", "admin");
   check("se localiza la server action deleteDemoDataAction", deleteId !== null);
-  const callDelete = async (who: Who | null, confirmacion: string) =>
+  const callDelete = async (who: Who | null, confirmacion: string, restaurantId?: string) =>
     (
       await http("POST", "/admin/datos-demo", {
         cookie: who ? cookies[who] : undefined,
-        body: JSON.stringify([{ confirmacion }]),
+        body: JSON.stringify([{ confirmacion, restaurantId }]),
         headers: { "Next-Action": deleteId ?? "", "Content-Type": "text/plain;charset=UTF-8", Accept: "text/x-component" },
       })
     ).text;
@@ -1295,8 +1310,31 @@ section("Datos de demostración");
     const enMinusculas = await callDelete("admin", "borra");
     check("  ni escribiéndola en minúsculas", enMinusculas.includes("No se borró nada") && (await demoSummary()).total === resumen.total);
 
+    // --- Borrar el demo de UN restaurante, con un cliente real que tiene que seguir.
+    const { demoBreakdown } = await import("@/lib/demo/summary");
+    const realId = crypto.randomUUID();
+    await db.insert(waitlistEntries).values({ id: realId, restaurantId: "rest_centro", customerName: "Cliente real de la prueba", partySize: 2, status: "esperando" });
+    const antesRest = await demoBreakdown();
+    const centroAntes = antesRest.restaurantes.find((r) => r.restaurantId === "rest_centro");
+    const norteAntes = antesRest.restaurantes.find((r) => r.restaurantId === "rest_norte");
+    check("el desglose cuenta el demo de rest_centro y de rest_norte", Boolean(centroAntes && norteAntes && centroAntes.clientes > 0 && centroAntes.historial > 0 && centroAntes.mesas > 0 && centroAntes.zonas > 0), JSON.stringify(centroAntes));
+    check("  y los totales cuadran con el resumen", antesRest.totales.total === resumen.total, `${antesRest.totales.total} vs ${resumen.total}`);
+    const porHost = await callDelete("centro", "BORRAR", "rest_centro");
+    check("un host no puede borrar el demo de su restaurante", porHost.includes("No tienes permiso") && (await demoBreakdown()).totales.total === antesRest.totales.total, porHost.slice(0, 120));
+    const malId = await callDelete("admin", "BORRAR", "x".repeat(80));
+    check("un restaurante no válido no borra nada", malId.includes("no válido") && (await demoBreakdown()).totales.total === antesRest.totales.total, malId.slice(0, 120));
+    const soloCentro = await callDelete("admin", "BORRAR", "rest_centro");
+    const trasCentro = await demoBreakdown();
+    check("admin borra el demo de rest_centro", soloCentro.includes('"ok":true') && !trasCentro.restaurantes.some((r) => r.restaurantId === "rest_centro"), soloCentro.slice(0, 160));
+    check("  y solo el de ese restaurante", JSON.stringify(trasCentro.restaurantes.find((r) => r.restaurantId === "rest_norte")) === JSON.stringify(norteAntes));
+    const [real] = await db.select().from(waitlistEntries).where(eq(waitlistEntries.id, realId));
+    check("  el cliente real de rest_centro sigue ahí", real?.customerName === "Cliente real de la prueba" && real.isDemo === false);
+    check("  y su zona real también", (await db.select({ id: tableLayouts.id }).from(tableLayouts).where(and(eq(tableLayouts.restaurantId, "rest_centro"), eq(tableLayouts.isDemo, false)))).length > 0);
+
     const borrado = await callDelete("admin", "BORRAR");
     check("admin sí borra escribiendo BORRAR", borrado.includes('"ok":true'), borrado.slice(0, 160));
+    check("  y el cliente real sigue después de borrar TODO el demo", (await db.select().from(waitlistEntries).where(eq(waitlistEntries.id, realId))).length === 1);
+    await db.delete(waitlistEntries).where(eq(waitlistEntries.id, realId));
 
     const resumenFinal = await demoSummary();
     check("  y ya no queda nada demo", !resumenFinal.activo && resumenFinal.total === 0, JSON.stringify(resumenFinal));
