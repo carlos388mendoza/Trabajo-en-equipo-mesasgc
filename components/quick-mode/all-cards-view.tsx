@@ -21,7 +21,7 @@ import {
   plural,
   waitColor,
 } from "@/components/quick-mode/format";
-import { Overlay } from "@/components/quick-mode/overlay";
+import { Overlay, SheetHandle, useSheetDrag } from "@/components/quick-mode/overlay";
 import type { WaitlistStatus } from "@/lib/db/enums";
 import type { WaitlistChange, WaitlistUndoState } from "@/lib/realtime/events";
 import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
@@ -73,7 +73,7 @@ type AllCardsViewProps = {
 
 export function AllCardsView(props: AllCardsViewProps) {
   return (
-    <Overlay open={props.open} onClose={props.onClose} labelledBy="todas-cartas-titulo" size="wide">
+    <Overlay open={props.open} onClose={props.onClose} labelledBy="todas-cartas-titulo" size="wide" draggable>
       <AllCardsContent {...props} />
     </Overlay>
   );
@@ -85,13 +85,14 @@ function AllCardsContent({
   now,
   connected,
   undoState,
-  onClose,
   subscribe,
   onResolve,
   onReopen,
   onDelete,
   onUndo,
 }: AllCardsViewProps) {
+  // Arrastrar el panel desde la cabecera (null fuera de un panel arrastrable).
+  const drag = useSheetDrag();
   const [range, setRange] = useState<CardRange>("hoy");
   const [filter, setFilter] = useState<StatusFilter>(initialFilter);
   const [query, setQuery] = useState("");
@@ -179,7 +180,13 @@ function AllCardsContent({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex flex-wrap items-center gap-3 border-b border-app-border px-5 pb-4 pt-3 sm:px-7 lg:pt-6">
+      {/* Agarradera, cabecera y filtros: la zona que arrastra el panel hacia
+          arriba o hacia abajo (`touch-none`: el dedo mueve el panel, no la
+          página). Sus botones y el buscador se siguen pudiendo tocar. La lista
+          de abajo hace scroll normal. Ya no hay X: bajarlo del todo lo cierra. */}
+      <div onPointerDown={drag?.onPointerDown} className="shrink-0 touch-none select-none">
+      <SheetHandle label="Mover el panel de todas las cartas" />
+      <header className="flex flex-wrap items-center gap-3 border-b border-app-border px-5 pb-4 pt-1 sm:px-7">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-accent/10 text-accent">
           <LayoutGrid aria-hidden size={20} />
         </span>
@@ -199,14 +206,6 @@ function AllCardsContent({
         >
           <Undo2 aria-hidden size={17} />
           Deshacer
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="grid h-11 w-11 place-items-center rounded-xl border border-app-border text-panel-muted transition hover:bg-app-border/50 hover:text-panel-text"
-          aria-label="Cerrar todas las cartas"
-        >
-          <X aria-hidden size={20} />
         </button>
       </header>
 
@@ -238,8 +237,9 @@ function AllCardsContent({
           />
         </label>
       </div>
+      </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 sm:px-7">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 sm:px-7">
         {error && (
           <p role="alert" className="mb-4 rounded-xl border border-estado-ocupada/40 px-4 py-3 text-sm text-panel-text">
             {error}
