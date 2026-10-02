@@ -17,12 +17,16 @@ import {
 } from "motion/react";
 import { Clock3, UsersRound } from "lucide-react";
 
+import { DemoTag } from "@/components/quick-mode/demo-tag";
+
 export type SwipeGuest = {
   id: string;
   name: string;
   party: number;
   arrived: number;
   note: string;
+  /** De los datos de demostración: lleva la etiqueta «Demo». */
+  demo?: boolean;
 };
 
 export type SwipeDecision = "listo" | "ausente";
@@ -188,6 +192,7 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
         {/* El nombre es lo primero que hay que ver: dos líneas como mucho y el
             texto completo en el `title`, para que «los clientes de la mesa 4»
             se lean enteros y no se recorten a medias. */}
+        {guest.demo && <DemoTag className="mb-2" />}
         <h2
           title={guest.name}
           className="break-words text-3xl font-bold leading-tight tracking-tight line-clamp-2 movil-horizontal:!text-2xl sm:text-4xl"

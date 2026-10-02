@@ -11,8 +11,12 @@ import { demoSummary } from "@/lib/demo/load";
 // steals el foco y no impide usar el Modo rápido ni el mapa. Solo avisa, que es
 // lo que hace falta para que nadie tome por reales unos números que no lo son.
 //
-//  - Admin: el aviso lleva al botón para borrarlos.
-//  - Los demás: solo el texto, con un enlace a la pantalla para ver los conteos.
+// Lo ven el admin y analítica (`demo:ver`). El host no: en el modo sencillo
+// cada carta de demostración lleva su etiqueta «Demo».
+//
+//  - Admin: el aviso lleva a la sección «Datos de demostración» de /admin, con
+//    los botones para borrarlos.
+//  - Analítica: a /admin/datos-demo, para ver los conteos (sin borrar).
 //
 // Desaparece solo en cuanto no queda nada marcado como demo: la página se
 // renderiza en el servidor, así que `demoSummary()` se consulta en cada carga y
@@ -39,7 +43,7 @@ export async function DemoBanner() {
         cifras que ves ahora no son reales.
       </span>
       <Link
-        href="/admin/datos-demo"
+        href={puedeBorrar ? "/admin#datos-demo" : "/admin/datos-demo"}
         className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 font-semibold underline underline-offset-2 hover:bg-accent/15"
       >
         {puedeBorrar ? <ShieldCheck aria-hidden size={13} strokeWidth={2} /> : null}

@@ -42,13 +42,13 @@ export type Action =
   | "plano:clientes"
   /**
    * Ver que hay datos de demostración cargados y cuántos son (/admin/datos-demo
-   * y el aviso global). Lo tienen los tres roles.
+   * y el aviso global). Admin y analítica.
    */
   | "demo:ver"
   /**
-   * BORRAR los datos de demostración. Solo admin, a propósito: el borrado es
-   * global (no es de un restaurante) y es la única operación de la app que
-   * elimina filas, así que no se delega a nadie más.
+   * BORRAR los datos de demostración (todos, o los de un restaurante). Solo
+   * admin, a propósito: es la operación que más filas elimina de golpe, así
+   * que no se delega a nadie más.
    */
   | "demo:borrar";
 
@@ -91,8 +91,10 @@ export function isRestaurantAction(action: Action): boolean {
 export const ROLE_PERMISSIONS: Record<Role, readonly Action[]> = {
   // Todo, en todos los restaurantes.
   [ROLES.ADMIN]: ALL_ACTIONS,
-  // Modo sencillo y completo, solo en SUS restaurantes. `demo:ver` para que vea
-  // el aviso de que lo que tiene delante es de demostración; `demo:borrar` no.
+  // Modo sencillo y completo, solo en SUS restaurantes. Sin `demo:ver` (desde
+  // el 2 de octubre, pedido de la dirección): el aviso de datos demo es para
+  // admin y analítica; el host distingue cada carta de demostración por su
+  // etiqueta «Demo» en el modo sencillo.
   [ROLES.RESTAURANTE]: [
     "editor:ver",
     "editor:guardar",
@@ -101,7 +103,6 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Action[]> = {
     "mesas:asignar",
     "plano:ver",
     "plano:clientes",
-    "demo:ver",
   ],
   // Solo lectura: estadísticas de todos, el asistente y el mapa general. En
   // el plano en vivo ve estados y ocupación, pero NO los nombres de los

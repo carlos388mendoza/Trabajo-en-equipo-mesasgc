@@ -4,14 +4,14 @@ import { ArrowLeft } from "lucide-react";
 import { AdminDemoData } from "@/components/admin/admin-demo";
 import { requirePage } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
-import { demoSummary } from "@/lib/demo/load";
+import { demoBreakdown } from "@/lib/demo/summary";
 import { DEMO_BATCH_ID, DEMO_HISTORY_DAYS } from "@/lib/demo/fixtures";
 
 // Datos de demostración (/admin/datos-demo).
 //
-// Ver los conteos es para cualquier usuario con sesión (`demo:ver`): quien esté
-// mirando el mapa o las estadísticas tiene derecho a saber si lo que ve es real
-// o de mentira. BORRAR es solo del admin (`demo:borrar`), y la comprobación se
+// Ver los conteos es para admin y analítica (`demo:ver`): quien esté mirando
+// el mapa o las estadísticas tiene derecho a saber si lo que ve es real o de
+// mentira. La sección para borrar está en /admin (`#datos-demo`). BORRAR es solo del admin (`demo:borrar`), y la comprobación se
 // repite en la server action (`app/admin/demo-actions.ts`), que es la que vale:
 // esta página es solo presentación.
 //
@@ -21,7 +21,7 @@ export const metadata = { title: "Datos demo · Administración · Table Waitlis
 
 export default async function DatosDemoPage() {
   const me = await requirePage("/admin/datos-demo", "demo:ver");
-  const [summary] = await Promise.all([demoSummary()]);
+  const breakdown = await demoBreakdown();
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
@@ -40,7 +40,7 @@ export default async function DatosDemoPage() {
       </div>
 
       <AdminDemoData
-        summary={{ zonas: summary.zonas, mesas: summary.mesas, clientes: summary.clientes, total: summary.total }}
+        breakdown={breakdown}
         puedeBorrar={can(me, "demo:borrar")}
       />
 

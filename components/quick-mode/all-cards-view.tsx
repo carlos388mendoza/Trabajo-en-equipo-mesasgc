@@ -21,6 +21,7 @@ import {
   plural,
   waitColor,
 } from "@/components/quick-mode/format";
+import { DemoTag } from "@/components/quick-mode/demo-tag";
 import { Overlay, SheetHandle, useSheetDrag } from "@/components/quick-mode/overlay";
 import type { WaitlistStatus } from "@/lib/db/enums";
 import type { WaitlistChange, WaitlistUndoState } from "@/lib/realtime/events";
@@ -459,8 +460,11 @@ function CardRow({ entry, now, disabled, busy, table, onResolve, onReopen, onDel
         >
           {entry.customerName}
         </h3>
-        <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLE[entry.status]}`}>
-          {STATUS_LABEL[entry.status]}
+        <span className="flex shrink-0 flex-col items-end gap-1">
+          <span className={`rounded-full border px-2.5 py-0.5 text-xs font-bold ${STATUS_STYLE[entry.status]}`}>
+            {STATUS_LABEL[entry.status]}
+          </span>
+          {entry.isDemo && <DemoTag />}
         </span>
       </div>
       <div className="mt-2 grid gap-1 text-sm text-panel-muted">
