@@ -55,6 +55,7 @@ type Guest = {
   arrived: number;
   note: string;
   status: "waiting" | "ready" | "seated" | "absent";
+  demo: boolean;
 };
 
 function statusOf(status: string): Guest["status"] {
@@ -75,6 +76,7 @@ function fromSnapshot(entry: WaitlistEntrySnapshot): Guest {
     arrived: entry.arrivedAt,
     note: entry.notes ?? "",
     status: statusOf(entry.status),
+    demo: entry.isDemo,
   };
 }
 

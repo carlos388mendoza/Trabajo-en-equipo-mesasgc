@@ -21,6 +21,7 @@
 // rápido de los ocho restaurantes.
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
 import type { AdminResult } from "@/app/admin/actions";
 import { guardAction } from "@/lib/auth/session";
@@ -37,10 +38,15 @@ export type DemoDeleteState = AdminResult;
  * permiso.
  */
 export async function deleteDemoDataAction(
-  raw: { confirmacion?: string } | undefined,
+  raw: { confirmacion?: string; restaurantId?: string } | undefined,
 ): Promise<DemoDeleteState> {
   const guard = await guardAction("demo:borrar");
   if (!guard.ok) return guard;
+
+  // Sin restaurante, se borra el demo de TODOS; con él, solo el de ese.
+  const scope = z.object({ restaurantId: z.string().min(1).max(64).optional() }).safeParse({ restaurantId: raw?.restaurantId });
+  if (!scope.success) return { ok: false, error: "Restaurante no válido. No se borró nada." };
+  const restaurantId = scope.data.restaurantId;
 
   const confirmacion = (raw?.confirmacion ?? "").trim();
   if (confirmacion !== DEMO_DELETE_WORD) {
@@ -51,7 +57,7 @@ export async function deleteDemoDataAction(
   }
 
   try {
-    const result = await borrarDemoData();
+    const result = await borrarDemoData({ restaurantId });
     if (!result.ok) {
       // `borrarDemoData` se negó: hay un dato real que depende de algo demo. No
       // se escribe nada y se enseña el motivo.
@@ -76,7 +82,7 @@ export async function deleteDemoDataAction(
     return {
       ok: true,
       message:
-        `Datos de demostración borrados: ${result.zonas} zona(s), ` +
+        `Datos de demostración borrados${restaurantId ? " de ese restaurante" : ""}: ${result.zonas} zona(s), ` +
         `${result.mesas} mesa(s) y ${result.clientes} cliente(s).`,
     };
   } catch (error) {

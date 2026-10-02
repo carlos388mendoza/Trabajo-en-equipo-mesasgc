@@ -74,12 +74,21 @@ export type DemoDeleteBlocked = {
 /**
  * Borra todo lo que tenga `is_demo`, o explica por qué no puede.
  *
+ * Con `restaurantId`, solo lo de ESE restaurante (botón «Borrar demo de este
+ * restaurante» de /admin): las mismas garantías, recortadas a sus filas.
+ *
  * `dryRun: true` hace la misma comprobación y devuelve lo que habría de borrar
  * sin escribir nada: lo usa la pantalla para confirmar antes de hacerlo.
  */
 export async function borrarDemoData(
-  options: { dryRun?: boolean } = {},
+  options: { dryRun?: boolean; restaurantId?: string } = {},
 ): Promise<DemoDeleteResult | DemoDeleteBlocked> {
+  const { restaurantId } = options;
+  // El mismo recorte para las tres tablas: todas tienen `restaurant_id`.
+  const inEntries = restaurantId ? eq(waitlistEntries.restaurantId, restaurantId) : undefined;
+  const inTables = restaurantId ? eq(tables.restaurantId, restaurantId) : undefined;
+  const inLayouts = restaurantId ? eq(tableLayouts.restaurantId, restaurantId) : undefined;
+
   // --- (3) Comprobaciones ANTES de escribir nada -------------------------
   // Clientes reales sentados en mesas demo: borrarlas les dejaría sin mesa.
   const [{ count: clientesReales }] = await db
@@ -89,7 +98,9 @@ export async function borrarDemoData(
       and(
         sql`${waitlistEntries.isDemo} = 0`,
         isNotNull(waitlistEntries.assignedTableId),
-        sql`exists (select 1 from ${tables} where ${tables.id} = ${waitlistEntries.assignedTableId} and ${tables.isDemo} = 1)`,
+        restaurantId
+          ? sql`exists (select 1 from ${tables} where ${tables.id} = ${waitlistEntries.assignedTableId} and ${tables.isDemo} = 1 and ${tables.restaurantId} = ${restaurantId})`
+          : sql`exists (select 1 from ${tables} where ${tables.id} = ${waitlistEntries.assignedTableId} and ${tables.isDemo} = 1)`,
       ),
     );
 
@@ -101,6 +112,7 @@ export async function borrarDemoData(
       and(
         sql`${tables.isDemo} = 0`,
         sql`exists (select 1 from ${tableLayouts} where ${tableLayouts.id} = ${tables.layoutId} and ${tableLayouts.isDemo} = 1)`,
+        inTables,
       ),
     );
 
@@ -126,9 +138,9 @@ export async function borrarDemoData(
 
   // --- Conteo previo (lo que se va a borrar) ---------------------------
   const [clientesDemo, mesasDemo, zonasDemo] = await Promise.all([
-    db.select({ n: sql<number>`count(*)` }).from(waitlistEntries).where(eq(waitlistEntries.isDemo, true)),
-    db.select({ n: sql<number>`count(*)` }).from(tables).where(eq(tables.isDemo, true)),
-    db.select({ n: sql<number>`count(*)` }).from(tableLayouts).where(eq(tableLayouts.isDemo, true)),
+    db.select({ n: sql<number>`count(*)` }).from(waitlistEntries).where(and(eq(waitlistEntries.isDemo, true), inEntries)),
+    db.select({ n: sql<number>`count(*)` }).from(tables).where(and(eq(tables.isDemo, true), inTables)),
+    db.select({ n: sql<number>`count(*)` }).from(tableLayouts).where(and(eq(tableLayouts.isDemo, true), inLayouts)),
   ]);
   const clientes = Number(clientesDemo[0].n);
   const mesas = Number(mesasDemo[0].n);
@@ -149,7 +161,7 @@ export async function borrarDemoData(
     //    NULL) y las mesas demo apuntan a ellos (puntero blando).
     const clientesBorrados = await tx
       .delete(waitlistEntries)
-      .where(eq(waitlistEntries.isDemo, true))
+      .where(and(eq(waitlistEntries.isDemo, true), inEntries))
       .returning({ id: waitlistEntries.id });
 
     // 2. Las mesas demo. Antes se les vacía `current_entry_id`: es un puntero
@@ -158,17 +170,17 @@ export async function borrarDemoData(
     await tx
       .update(tables)
       .set({ currentEntryId: null, status: "libre", updatedAt: new Date() })
-      .where(and(eq(tables.isDemo, true), isNotNull(tables.currentEntryId)));
+      .where(and(eq(tables.isDemo, true), isNotNull(tables.currentEntryId), inTables));
 
     const mesasBorradas = await tx
       .delete(tables)
-      .where(eq(tables.isDemo, true))
+      .where(and(eq(tables.isDemo, true), inTables))
       .returning({ id: tables.id });
 
     // 3. Las zonas demo, al final: de ellas cuelgan las mesas por cascada.
     const zonasBorradas = await tx
       .delete(tableLayouts)
-      .where(eq(tableLayouts.isDemo, true))
+      .where(and(eq(tableLayouts.isDemo, true), inLayouts))
       .returning({ id: tableLayouts.id });
 
     return {

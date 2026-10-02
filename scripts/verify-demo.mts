@@ -462,6 +462,39 @@ section("Recarga tras borrar");
 }
 
 // ---------------------------------------------------------------------------
+// Desglose por restaurante y borrado de UN restaurante (/admin, botón «Borrar
+// demo de este restaurante»)
+// ---------------------------------------------------------------------------
+
+section("Desglose y borrado por restaurante");
+
+{
+  const { demoBreakdown } = await import("@/lib/demo/summary");
+  const desglose = await demoBreakdown();
+  const resumenAhora = await demoSummary();
+  check("el desglose tiene un renglón por restaurante con demo", desglose.restaurantes.length === new Set(DEMO_PLANS.map((p) => p.restaurantId)).size, `${desglose.restaurantes.length}`);
+  check("  clientes + historial = clientes demo del resumen", desglose.totales.clientes + desglose.totales.historial === resumenAhora.clientes, `${desglose.totales.clientes}+${desglose.totales.historial} vs ${resumenAhora.clientes}`);
+  check("  mesas y zonas cuadran", desglose.totales.mesas === resumenAhora.mesas && desglose.totales.zonas === resumenAhora.zonas);
+  check("  los clientes de hoy y el historial salen separados", desglose.totales.clientes > 0 && desglose.totales.historial > desglose.totales.clientes);
+
+  const objetivo = "rest_centro";
+  const otro = desglose.restaurantes.find((r) => r.restaurantId !== objetivo)!;
+  const antesObjetivo = desglose.restaurantes.find((r) => r.restaurantId === objetivo)!;
+  const realAntes = await db.select().from(waitlistEntries).where(eq(waitlistEntries.id, REAL_CLIENTE));
+  const ensayo = await borrarDemoData({ restaurantId: objetivo, dryRun: true });
+  check("el ensayo de un restaurante dice lo que borraría", ensayo.ok && ensayo.clientes === antesObjetivo.clientes + antesObjetivo.historial && ensayo.mesas === antesObjetivo.mesas && ensayo.zonas === antesObjetivo.zonas, JSON.stringify(ensayo));
+  const uno = await borrarDemoData({ restaurantId: objetivo });
+  const despues = await demoBreakdown();
+  check(`borra solo el demo de ${objetivo}`, uno.ok && !despues.restaurantes.some((r) => r.restaurantId === objetivo), JSON.stringify(uno));
+  check("  el demo de los demás restaurantes no se toca", JSON.stringify(despues.restaurantes.find((r) => r.restaurantId === otro.restaurantId)) === JSON.stringify(otro));
+  check("  el cliente real de ese restaurante sigue intacto", JSON.stringify(await db.select().from(waitlistEntries).where(eq(waitlistEntries.id, REAL_CLIENTE))) === JSON.stringify(realAntes));
+  check("  su mesa real también", (await db.select().from(tables).where(eq(tables.id, REAL_MESA))).length === 1);
+  check("  no queda ninguna fila demo de ese restaurante", (await db.select().from(waitlistEntries).where(and(eq(waitlistEntries.restaurantId, objetivo), eq(waitlistEntries.isDemo, true)))).length === 0 && (await db.select().from(tables).where(and(eq(tables.restaurantId, objetivo), eq(tables.isDemo, true)))).length === 0);
+  const otraVez = await borrarDemoData({ restaurantId: objetivo });
+  check("  repetirlo no falla ni borra nada", otraVez.ok && otraVez.clientes === 0 && otraVez.mesas === 0 && otraVez.zonas === 0);
+}
+
+// ---------------------------------------------------------------------------
 // Permisos: quién ve el aviso y quién puede borrar
 //
 // Se comprueba `can()` directamente, que es la única fuente de permisos de la
@@ -487,11 +520,13 @@ section("Permisos de los datos de demostración");
   const inactivo: Subject = { active: false, roles: [ROLES.ADMIN], restaurantIds: [] };
 
   check("admin puede ver y borrar", can(admin, "demo:ver") && can(admin, "demo:borrar"));
-  check("restaurante puede ver el aviso", can(restaurante, "demo:ver"));
-  check("  pero NO puede borrar", !can(restaurante, "demo:borrar"));
+  // Desde el 2 de octubre el aviso es solo de admin y analítica; el host ve la
+  // etiqueta «Demo» en las cartas.
+  check("restaurante NO ve el aviso (ve la etiqueta «Demo» en las cartas)", !can(restaurante, "demo:ver"));
+  check("  ni puede borrar", !can(restaurante, "demo:borrar"));
   check("analitica puede ver el aviso", can(analitica, "demo:ver"));
   check("  pero NO puede borrar", !can(analitica, "demo:borrar"));
-  check("con dos roles, los permisos se suman y sigue sin poder borrar", can(gerente, "demo:ver") && !can(gerente, "demo:borrar"));
+  check("con dos roles, los permisos se suman (analítica ve el aviso) y sigue sin poder borrar", can(gerente, "demo:ver") && !can(gerente, "demo:borrar"));
   check("un admin desactivado tampoco", !can(inactivo, "demo:ver") && !can(inactivo, "demo:borrar"));
   check("sin usuario, tampoco", !can(null, "demo:ver") && !can(null, "demo:borrar"));
 

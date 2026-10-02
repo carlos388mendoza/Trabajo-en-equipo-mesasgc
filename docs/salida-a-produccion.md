@@ -314,6 +314,9 @@ restaurante: en espera, listas y ausentes. Por defecto muestra las de **hoy**;
 (sin importar tildes). Cada carta dice a qué hora llegó, cuánto esperó y
 quién la resolvió.
 
+Las cartas de los **datos de demostración** llevan la etiqueta **«Demo»**: no
+son clientes de verdad.
+
 El panel **no tiene X**: se mueve arrastrando su parte de arriba (la rayita,
 el título o los filtros). Arrastrado hacia abajo se queda a media pantalla;
 hacia arriba vuelve a ocupar casi toda. **Bajarlo del todo lo cierra** (también
