@@ -50,6 +50,10 @@ type Props = {
    */
   pulse: number;
   onSelect: (id: string) => void;
+  /** Clic o tap completo (no al empezar a arrastrar): reparto de meseros. */
+  onTap?: (id: string) => void;
+  /** Mesero de la mesa en la configuración que se mira; null si no tiene. */
+  waiter?: { color: string; label: string } | null;
   /** Falso en el plano en vivo (solo lectura): la mesa no se mueve. */
   draggable?: boolean;
   /** Avisa al canvas de que un arrastre empezó, para que suelte el Stage. */
@@ -124,6 +128,8 @@ function ElementNodeBase({
   minutes,
   pulse,
   onSelect,
+  onTap,
+  waiter = null,
   draggable = true,
   onDragStart,
   onDragMove,
@@ -131,6 +137,16 @@ function ElementNodeBase({
   registerNode,
 }: Props) {
   const waveRef = useRef<Konva.Circle | null>(null);
+  // En pantallas táctiles algunos navegadores mandan `tap` y además un
+  // `click` emulado: sin esto, una mesa se pintaría y despintaría de golpe.
+  const lastTap = useRef(0);
+  const tap = (e: Konva.KonvaEventObject<Event>) => {
+    if (!onTap) return;
+    const now = e.evt.timeStamp;
+    if (now - lastTap.current < 400) return;
+    lastTap.current = now;
+    onTap(element.id);
+  };
   const echoRef = useRef<Konva.Circle | null>(null);
 
   const style = elementStyle(type);
@@ -479,6 +495,8 @@ function ElementNodeBase({
         onDragMove(element.id, e.target.x() - width / 2, e.target.y() - height / 2);
       }}
       onDragEnd={onDragEnd}
+      onClick={tap}
+      onTap={tap}
     >
       {/* Ondas del pulso en vivo. Ocultas (`visible={false}`, no solo
           transparentes) salvo durante la animación: si no, el Transformer
@@ -518,6 +536,23 @@ function ElementNodeBase({
         opacity={0}
       />
 
+      {/* Zona de mesero: un halo del color del mesero detrás de la mesa. Va
+          antes del cuerpo para no tapar el estado (libre, ocupada…). */}
+      {waiter ? (
+        <Rect
+          x={seats > 0 ? -14 : -6}
+          y={seats > 0 ? -14 : -6}
+          width={width + (seats > 0 ? 28 : 12)}
+          height={height + (seats > 0 ? 28 : 12)}
+          cornerRadius={style.shape === "circle" ? (Math.min(width, height) + 28) / 2 : 18}
+          fill={withAlpha(waiter.color, theme.dark ? 0.28 : 0.22)}
+          stroke={waiter.color}
+          strokeWidth={3}
+          listening={false}
+          {...glow(waiter.color, theme, 0.7)}
+        />
+      ) : null}
+
       {body}
 
       {/* Nombre, ícono, marcador y cliente van en un grupo que contrarresta el
@@ -547,6 +582,32 @@ function ElementNodeBase({
               {...glow(colors.stroke, theme, 0.8)}
             />
             <CanvasIcon node={icon} color={colors.onStroke} size={13} x={0} y={0} />
+          </Group>
+        ) : null}
+
+        {waiter ? (
+          <Group y={-height / 2 - (seats > 0 ? 30 : 14)}>
+            <Rect
+              x={-Math.max(labelWidth, 84) / 2}
+              y={-10}
+              width={Math.max(labelWidth, 84)}
+              height={20}
+              cornerRadius={10}
+              fill={waiter.color}
+            />
+            <Text
+              x={-Math.max(labelWidth, 84) / 2 + 6}
+              y={-5.5}
+              width={Math.max(labelWidth, 84) - 12}
+              align="center"
+              text={waiter.label}
+              fontSize={11}
+              fontStyle="bold"
+              fontFamily={CANVAS_FONT}
+              fill="#ffffff"
+              wrap="none"
+              ellipsis
+            />
           </Group>
         ) : null}
 

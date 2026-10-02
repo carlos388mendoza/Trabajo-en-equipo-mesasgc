@@ -46,6 +46,12 @@ export type RestaurantCounters = {
    * El navegador calcula con ella la espera media, que así avanza sola.
    */
   averageArrivedAt: number | null;
+  /**
+   * Configuración de meseros activa y su versión (`id:versión`), o null.
+   * No dice nada de nadie: solo sirve para que el plano en vivo de analítica,
+   * que se entera por esta sala, sepa que tiene que repintar los colores.
+   */
+  waitersKey: string | null;
 };
 
 /** Respuesta (ack) de un evento que el cliente espera. */
@@ -156,7 +162,12 @@ export type WaitlistChange = {
 };
 
 /** Una mesa cuya ocupación cambió, con su cliente. */
-export type TableChange = { table: TableOccupancy; entryId: string };
+export type TableChange = {
+  table: TableOccupancy;
+  entryId: string;
+  /** Al sentar: el mesero que lo atiende según la configuración activa (o null). */
+  waiterName?: string | null;
+};
 
 // ---------------------------------------------------------------------------
 // Eventos
@@ -220,6 +231,11 @@ export interface ServerToClientEvents {
    * local). Las zonas que el cliente tenga abiertas pueden no existir ya.
    */
   "structure:changed": () => void;
+  /**
+   * Cambiaron las zonas de meseros (se activó otra configuración, o se guardó
+   * o borró una). Sin datos: cada pantalla vuelve a pedir lo suyo.
+   */
+  "waiters:changed": (payload: { activeConfigId: string | null }) => void;
   /** Sala `overview`: cambiaron los contadores de un restaurante. */
   "overview:counters": (payload: RestaurantCounters) => void;
   /** Cambio de lista aplicado; se envía a todas las tablets del local. */

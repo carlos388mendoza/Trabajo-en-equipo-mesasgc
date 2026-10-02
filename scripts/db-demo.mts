@@ -80,6 +80,7 @@ try {
   console.log(`  clientes esperando:      ${result.esperando}`);
   console.log(`  clientes sentados:       ${result.sentados}`);
   console.log(`  mesas reservadas:        ${result.reservadas}`);
+  console.log(`  configs. de meseros:     ${result.meseros}`);
   console.log(`  historial (${DEMO_HISTORY_DAYS} días): ${result.historial}`);
 
   if (result.omitidos.length > 0) {

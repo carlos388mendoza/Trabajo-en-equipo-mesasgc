@@ -1153,7 +1153,8 @@ section("Sala overview: contadores del mapa general");
   check("analitica NO entra en la room de un restaurante (vería nombres)", !bad.ok);
 }
 
-const COUNTER_KEYS = ["averageArrivedAt", "restaurantId", "tablesOccupied", "tablesReserved", "tablesTotal", "waiting"];
+// `waitersKey` no es de ningún cliente: id y versión de la configuración de meseros activa.
+const COUNTER_KEYS = ["averageArrivedAt", "restaurantId", "tablesOccupied", "tablesReserved", "tablesTotal", "waitersKey", "waiting"];
 
 {
   const joinAnalitica = (await ask(analitica, "overview:join", {})) as AnyAck & { counters?: unknown[] };
@@ -1266,6 +1267,97 @@ const COUNTER_KEYS = ["averageArrivedAt", "restaurantId", "tablesOccupied", "tab
     () => true,
   );
   check("un usuario desactivado ya no conecta", rejected);
+}
+
+// ---------------------------------------------------------------------------
+// Zonas de meseros en tiempo real
+// ---------------------------------------------------------------------------
+
+section("Zonas de meseros: quién atiende al sentar, y el cambio de configuración");
+
+{
+  const { activateWaiterConfig, createWaiterConfig, listWaiterConfigs, saveWaiterConfig } = await import("@/lib/waiters/configs");
+  const { listSeatableTables } = await import("@/lib/tables/list");
+  const { waiterConfigs } = await import("@/lib/db/schema");
+  const { and } = await import("drizzle-orm");
+
+  // Mesas y clientes propios: las de antes pueden estar ocupadas.
+  await db.insert(tables).values([mesa("w-1"), mesa("w-2"), mesa("w-3"), mesa("w-4")]);
+  await db.insert(waitlistEntries).values([cliente("mesero-a"), cliente("mesero-b"), cliente("mesero-c")]);
+  await ask(hostA, "restaurant:join", { restaurantId: REST });
+  await ask(hostB, "restaurant:join", { restaurantId: REST });
+
+  const sinConfig = await getRestaurantCounters(REST);
+  check("sin configuración, los contadores no traen meseros", sinConfig.waitersKey === null);
+
+  const dos = await createWaiterConfig({ restaurantId: REST, waiterCount: 2 });
+  const tres = await createWaiterConfig({ restaurantId: REST, waiterCount: 3 });
+  check("se crean «2 meseros» (activa) y «3 meseros»", dos.ok && tres.ok && dos.config.isActive && !tres.config.isActive);
+  if (dos.ok && tres.ok) {
+    const conDos = await getRestaurantCounters(REST);
+    check("  los contadores dicen cuál está activa (para el plano de analítica)", conDos.waitersKey === `${dos.config.id}:${dos.config.version}`, String(conDos.waitersKey));
+    check("  la otra configuración no toca a REST_2", (await getRestaurantCounters(REST_2)).waitersKey === null);
+
+    const libres = (await listSeatableTables(REST)).filter((t) => t.id.startsWith("w-"));
+    check("cada mesa trae el mesero de la configuración activa", libres.every((t) => t.waiterName?.startsWith("Mesero ") && t.waiterColor?.startsWith("#")), JSON.stringify(libres.map((t) => t.waiterName)));
+
+    const avisos = counter(hostA, "table:assigned");
+    const mesaA = libres[0];
+    const ack = (await ask(hostB, "table:assign", { tableId: mesaA.id, entryId: "mesero-a" })) as AnyAck & { waiterName?: string | null };
+    await settle();
+    check("al sentar, el ack trae el mesero que lo atiende", ack.ok && ack.waiterName === mesaA.waiterName, JSON.stringify(ack));
+    const aviso = avisos.at(-1) as { waiterName?: string | null } | undefined;
+    check("  y el aviso a toda la room también", aviso?.waiterName === mesaA.waiterName, JSON.stringify(aviso));
+    const [filaA] = await db.select({ waiterName: waitlistEntries.waiterName }).from(waitlistEntries).where(eq(waitlistEntries.id, "mesero-a"));
+    check("  y queda guardado en el cliente", filaA?.waiterName === mesaA.waiterName);
+
+    // Un reenvío de la cola offline devuelve el MISMO mesero sin volver a sentar.
+    const operationId = crypto.randomUUID();
+    const mesaB = libres[1];
+    const primero = (await ask(hostB, "table:assign", { tableId: mesaB.id, entryId: "mesero-b", operationId })) as AnyAck & { waiterName?: string | null };
+    const repetido = (await ask(hostB, "table:assign", { tableId: mesaB.id, entryId: "mesero-b", operationId })) as AnyAck & { waiterName?: string | null };
+    check("un reenvío offline responde lo mismo, mesero incluido", primero.ok && repetido.ok && repetido.waiterName === primero.waiterName);
+
+    // Cambio de configuración: los clientes nuevos se apuntan al mesero nuevo.
+    const cambios = counter(hostA, "waiters:changed");
+    const activada = await activateWaiterConfig({ restaurantId: REST, configId: tres.config.id });
+    emitToRestaurant(REST, "waiters:changed", { activeConfigId: tres.config.id });
+    await settle();
+    check("se activa «3 meseros» con una llamada", activada.ok && (await listWaiterConfigs(REST)).find((c) => c.isActive)?.id === tres.config.id);
+    check("  la room recibe «waiters:changed» con la activa", (cambios.at(-1) as { activeConfigId?: string } | undefined)?.activeConfigId === tres.config.id);
+    check("  y los contadores cambian de clave", (await getRestaurantCounters(REST)).waitersKey === `${tres.config.id}:${tres.config.version}`);
+    const zonaNueva = tres.config.zones.find((z) => z.tableIds.includes(libres[2].id));
+    const ackC = (await ask(hostB, "table:assign", { tableId: libres[2].id, entryId: "mesero-c" })) as AnyAck & { waiterName?: string | null };
+    check("  el siguiente cliente se apunta al mesero de la configuración nueva", ackC.ok && ackC.waiterName === zonaNueva?.waiterName, `${ackC.waiterName} vs ${zonaNueva?.waiterName}`);
+    const [filaA2] = await db.select({ waiterName: waitlistEntries.waiterName }).from(waitlistEntries).where(eq(waitlistEntries.id, "mesero-a"));
+    check("  y el que ya estaba sentado conserva el suyo", filaA2?.waiterName === mesaA.waiterName);
+
+    // Conflictos: dos tablets a la vez.
+    await Promise.all([
+      activateWaiterConfig({ restaurantId: REST, configId: dos.config.id }),
+      activateWaiterConfig({ restaurantId: REST, configId: tres.config.id }),
+    ]);
+    const activas = await db.select({ id: waiterConfigs.id }).from(waiterConfigs).where(and(eq(waiterConfigs.restaurantId, REST), eq(waiterConfigs.isActive, true)));
+    check("dos activaciones a la vez dejan UNA sola activa", activas.length === 1, `${activas.length}`);
+
+    const base = (await listWaiterConfigs(REST)).find((c) => c.id === dos.config.id)!;
+    const guardar = (nombre: string) =>
+      saveWaiterConfig({
+        restaurantId: REST,
+        configId: base.id,
+        version: base.version,
+        name: base.name,
+        zones: base.zones.map((z) => ({ id: z.id, waiterName: nombre, color: z.color })),
+        assignments: base.zones.flatMap((z) => z.tableIds.map((tableId) => ({ tableId, zoneId: z.id }))),
+      });
+    const [g1, g2] = await Promise.all([guardar("Tablet 1"), guardar("Tablet 2")]);
+    check("dos guardados con la misma versión: gana uno y el otro recibe el aviso", [g1, g2].filter((g) => g.ok).length === 1 && [g1, g2].some((g) => !g.ok && g.error.includes("Otro dispositivo")), JSON.stringify([g1, g2]));
+
+    // Liberar las mesas de la prueba.
+    for (const [tableId, entryId] of [[mesaA.id, "mesero-a"], [mesaB.id, "mesero-b"], [libres[2].id, "mesero-c"]]) {
+      await ask(hostB, "table:release", { tableId, entryId });
+    }
+  }
 }
 
 hostA.close();

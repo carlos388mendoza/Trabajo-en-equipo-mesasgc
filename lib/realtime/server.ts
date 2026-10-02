@@ -133,12 +133,12 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         const outcome = await runOnce({ operationId, restaurantId, userId: socket.data.userId, action: "table:assign" }, async () => {
           const result = await assignTable({ restaurantId, tableId, entryId, userId: socket.data.userId });
           if (!result.ok) return fail(result.error);
-          return { ok: true as const, table: result.table, entryId: result.entryId };
+          return { ok: true as const, table: result.table, entryId: result.entryId, waiterName: result.waiterName };
         });
         // Un reenvío de la cola offline (`repetida`) devuelve la misma
         // respuesta, pero no vuelve a avisar: la room ya lo supo la primera vez.
         if (outcome.kind === "nueva" && outcome.result.ok) {
-          io.to(roomFor(restaurantId)).emit("table:assigned", { table: outcome.result.table, entryId: outcome.result.entryId });
+          io.to(roomFor(restaurantId)).emit("table:assigned", { table: outcome.result.table, entryId: outcome.result.entryId, waiterName: outcome.result.waiterName });
           // Contadores al mapa general, sin esperar: el ack no depende de eso.
           void emitOverview(restaurantId);
         }

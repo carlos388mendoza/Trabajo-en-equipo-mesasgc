@@ -166,6 +166,14 @@ check("hay un usuario real y su rol", (await db.select().from(authUser)).length 
 
 section("Carga del lote de demostración");
 
+// Un restaurante que ya tiene SU configuración de meseros: el demo no le
+// añade las de ejemplo ni le cambia la activa.
+const { createWaiterConfig, listWaiterConfigs } = await import("@/lib/waiters/configs");
+const { waiterConfigs } = await import("@/lib/db/schema");
+const CON_MESEROS = DEMO_PLANS[0].restaurantId;
+const meserosReales = await createWaiterConfig({ restaurantId: CON_MESEROS, waiterCount: 4 });
+check("hay una configuración de meseros real en un restaurante", meserosReales.ok && meserosReales.config.isActive);
+
 const carga = await loadDemoData();
 check("la carga informa del lote", carga.batchId === DEMO_BATCH_ID, carga.batchId);
 check(`crea ${DEMO_PLANS.length} zonas demo`, carga.zonas === DEMO_PLANS.length, `${carga.zonas}`);
@@ -174,6 +182,19 @@ check("crea clientes esperando", carga.esperando > 0, `${carga.esperando}`);
 check("sienta clientes en mesas demo", carga.sentados > 0, `${carga.sentados}`);
 check("reserva mesas demo", carga.reservadas > 0, `${carga.reservadas}`);
 check("no omite ningún restaurante", carga.omitidos.length === 0, carga.omitidos.join(", "));
+{
+  const demoConfigs = await db.select().from(waiterConfigs).where(eq(waiterConfigs.isDemo, true));
+  check(
+    "crea «2 meseros» y «3 meseros» de ejemplo donde no había ninguna",
+    carga.meseros === (DEMO_PLANS.length - 1) * 2 && demoConfigs.length === carga.meseros && demoConfigs.every((c) => c.demoBatchId === DEMO_BATCH_ID),
+    `${carga.meseros} / ${demoConfigs.length}`,
+  );
+  const propias = await listWaiterConfigs(CON_MESEROS);
+  check("  y no toca el restaurante que ya tenía la suya", propias.length === 1 && propias[0].isActive && !propias[0].isDemo);
+  const conMesero = await db.select({ n: sql<number>`count(*)` }).from(waitlistEntries).where(and(eq(waitlistEntries.isDemo, true), isNotNull(waitlistEntries.waiterName)));
+  check("  los sentados del demo tienen mesero (estadísticas por mesero)", Number(conMesero[0].n) > 0, `${conMesero[0].n}`);
+  check("  y las estadísticas los cuentan", (await getAnalytics()).waiters.length > 0);
+}
 
 const resumen1 = await demoSummary();
 check("el resumen ve datos demo", resumen1.activo && resumen1.total > 0, JSON.stringify(resumen1));
@@ -394,7 +415,10 @@ section("Borrado del lote");
     check(`borra ${borrado.clientes} clientes demo`, borrado.clientes === resumen1.clientes, `${borrado.clientes} vs ${resumen1.clientes}`);
     check(`borra ${borrado.mesas} mesas demo`, borrado.mesas === resumen1.mesas, `${borrado.mesas} vs ${resumen1.mesas}`);
     check(`borra ${borrado.zonas} zonas demo`, borrado.zonas === resumen1.zonas, `${borrado.zonas} vs ${resumen1.zonas}`);
+    check(`borra las ${borrado.meseros} configuraciones de meseros de ejemplo`, borrado.meseros === carga.meseros && (await db.select().from(waiterConfigs).where(eq(waiterConfigs.isDemo, true))).length === 0);
   }
+  const propias = await listWaiterConfigs(CON_MESEROS);
+  check("la configuración de meseros real sigue, activa", propias.length === 1 && propias[0].isActive && !propias[0].isDemo);
 
   const resumenFinal = await demoSummary();
   check("ya no queda nada marcado como demo", !resumenFinal.activo && resumenFinal.total === 0, JSON.stringify(resumenFinal));
@@ -533,7 +557,7 @@ section("Permisos de los datos de demostración");
   // Los permisos del demo no cambian los de antes: el admin sigue teniendo
   // todo y el resto, lo de siempre.
   const { ALL_ACTIONS } = await import("@/lib/auth/rbac");
-  check("los permisos del admin son los de siempre, con los dos nuevos", can(admin, "usuarios:gestionar") && can(admin, "catalogo:gestionar") && ALL_ACTIONS.length === 14, `${ALL_ACTIONS.length}`);
+  check("los permisos del admin son los de siempre, con los del demo y meseros:gestionar", can(admin, "usuarios:gestionar") && can(admin, "catalogo:gestionar") && can(admin, "meseros:gestionar") && ALL_ACTIONS.length === 15, `${ALL_ACTIONS.length}`);
   check("el demo no le da el mapa general a un host", !can(restaurante, "mapa:ver") && !can(restaurante, "analiticas:ver"));
 }
 

@@ -31,7 +31,7 @@ type Target = { kind: "todo" } | { kind: "restaurante"; restaurantId: string; na
 const fmt = (n: number) => n.toLocaleString("es-HN");
 
 function describe(c: DemoCounts): string {
-  return `${fmt(c.clientes)} cliente(s), ${fmt(c.historial)} del historial, ${fmt(c.mesas)} mesa(s) y ${fmt(c.zonas)} zona(s)`;
+  return `${fmt(c.clientes)} cliente(s), ${fmt(c.historial)} del historial, ${fmt(c.mesas)} mesa(s), ${fmt(c.zonas)} zona(s) y ${fmt(c.meseros)} configuración(es) de meseros`;
 }
 
 export function AdminDemoData({ breakdown, puedeBorrar }: { breakdown: DemoBreakdown; puedeBorrar: boolean }) {
@@ -91,12 +91,13 @@ export function AdminDemoData({ breakdown, puedeBorrar }: { breakdown: DemoBreak
 
       {totales.total > 0 ? (
         <>
-          <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <dl className="grid grid-cols-2 gap-2 sm:grid-cols-5">
             {([
               ["Clientes", totales.clientes],
               ["Historial", totales.historial],
               ["Mesas", totales.mesas],
               ["Zonas", totales.zonas],
+              ["Meseros", totales.meseros],
             ] as const).map(([label, value]) => (
               <div key={label} className="rounded-xl bg-app-border/40 px-3 py-2">
                 <dt className="text-xs text-panel-muted">{label}</dt>
@@ -114,6 +115,7 @@ export function AdminDemoData({ breakdown, puedeBorrar }: { breakdown: DemoBreak
                   <th className="px-2 py-2 text-right font-medium">Historial</th>
                   <th className="px-2 py-2 text-right font-medium">Mesas</th>
                   <th className="px-2 py-2 text-right font-medium">Zonas</th>
+                  <th className="px-2 py-2 text-right font-medium">Meseros</th>
                   {puedeBorrar ? <th className="py-2 pl-3"><span className="sr-only">Acciones</span></th> : null}
                 </tr>
               </thead>
@@ -128,6 +130,7 @@ export function AdminDemoData({ breakdown, puedeBorrar }: { breakdown: DemoBreak
                     <td className="px-2 py-2 text-right tabular-nums">{fmt(r.historial)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{fmt(r.mesas)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{fmt(r.zonas)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{fmt(r.meseros)}</td>
                     {puedeBorrar ? (
                       <td className="py-2 pl-3 text-right">
                         <button
@@ -147,7 +150,8 @@ export function AdminDemoData({ breakdown, puedeBorrar }: { breakdown: DemoBreak
           <p className="flex items-start gap-2 text-sm text-panel-muted">
             <AlertTriangle aria-hidden size={18} strokeWidth={2} className="mt-0.5 shrink-0" />
             <span>
-              Borrar quita SOLO lo marcado como demostración: sus zonas, mesas, clientes e historial.
+              Borrar quita SOLO lo marcado como demostración: sus zonas, mesas, clientes, historial y
+              configuraciones de meseros de ejemplo.
               Ninguna marca, restaurante, usuario, catálogo, plano ni cliente real se toca.
             </span>
           </p>
@@ -185,7 +189,7 @@ export function AdminDemoData({ breakdown, puedeBorrar }: { breakdown: DemoBreak
           danger
         >
           <p>
-            Se borrarán <strong>{fmt(scope.clientes + scope.historial + scope.mesas + scope.zonas)}</strong> filas
+            Se borrarán <strong>{fmt(scope.clientes + scope.historial + scope.mesas + scope.zonas + scope.meseros)}</strong> filas
             marcadas como demostración{target.kind === "restaurante" ? ` de ${target.name}` : ""}: {describe(scope)}.
           </p>
           <p>Las marcas, los restaurantes, los usuarios, los planos y los clientes reales no se tocan.</p>

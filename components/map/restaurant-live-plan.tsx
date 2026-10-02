@@ -23,6 +23,9 @@ type Props = {
   restaurantId: string;
   initialPlan: LivePlanData;
   live: "restaurante" | "overview";
+  /** `meseros:gestionar` en este restaurante. */
+  canManageWaiters?: boolean;
+  startEditingWaiters?: boolean;
 };
 
 export function RestaurantLivePlan(props: Props) {
@@ -41,7 +44,7 @@ function useFallbackTick(): number {
   return tick;
 }
 
-function ViaRestaurantRoom({ restaurantId, initialPlan }: Props) {
+function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startEditingWaiters }: Props) {
   const [events, setEvents] = useState(0);
   const tick = useFallbackTick();
   const bump = () => setEvents((n) => n + 1);
@@ -50,6 +53,8 @@ function ViaRestaurantRoom({ restaurantId, initialPlan }: Props) {
     "table:released": bump,
     "layout:updated": bump,
     "structure:changed": bump,
+    // Otra tablet activó, guardó o borró una configuración de meseros.
+    "waiters:changed": bump,
   });
   return (
     <LivePlan
@@ -57,6 +62,8 @@ function ViaRestaurantRoom({ restaurantId, initialPlan }: Props) {
       initialPlan={initialPlan}
       refreshSignal={`${events}-${tick}`}
       toolbar={<LiveBadge status={status} />}
+      canManageWaiters={canManageWaiters}
+      startEditingWaiters={startEditingWaiters}
     />
   );
 }

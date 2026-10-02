@@ -1359,6 +1359,159 @@ section("Datos de demostración");
 }
 
 // ---------------------------------------------------------------------------
+// Zonas de meseros y plano por defecto (requisitos del enunciado)
+// ---------------------------------------------------------------------------
+
+section("Zonas de meseros y plano por defecto");
+
+{
+  const { listWaiterConfigs } = await import("@/lib/waiters/configs");
+  const { listSeatableTables } = await import("@/lib/tables/list");
+  const { tableLayouts } = await import("@/lib/db/schema");
+  const { and, eq } = await import("drizzle-orm");
+
+  // Las páginas: compilan las actions y dicen quién ve qué.
+  const planoCentro = await http("GET", "/restaurante/rest_centro/mapa", { cookie: cookies.centro });
+  check("el plano en vivo muestra «Meseros activos» al host", landing(planoCentro) === "200" && planoCentro.text.includes("Meseros activos"));
+  check("  y le deja editar las zonas", planoCentro.text.includes("Editar zonas"));
+  const planoAnalitica = await http("GET", "/restaurante/rest_centro/mapa", { cookie: cookies.analitica });
+  check("analítica ve el selector de meseros", landing(planoAnalitica) === "200" && planoAnalitica.text.includes("Meseros activos"));
+  check("  pero no el botón de editar", !planoAnalitica.text.includes("Editar zonas") && !planoAnalitica.text.includes("Nueva con"));
+  check("norte no ve el plano de rest_centro", landing(await http("GET", "/restaurante/rest_centro/mapa", { cookie: cookies.norte })) === "/sin-acceso");
+  const editorCentro = await http("GET", "/restaurante/rest_centro/editor", { cookie: cookies.centro });
+  check("el editor ofrece «Repartir mesas entre meseros» al host", editorCentro.text.includes("Repartir mesas entre meseros"));
+  check("  y marcar el plano por defecto", editorCentro.text.includes("Por defecto") || editorCentro.text.includes("Marcar por defecto"));
+
+  const seedConfigs = await listWaiterConfigs("rest_centro");
+  check("el seed deja «2 meseros» (activa) y «3 meseros» en rest_centro", seedConfigs.length === 2 && seedConfigs.find((c) => c.waiterCount === 2)?.isActive === true, JSON.stringify(seedConfigs.map((c) => [c.name, c.isActive])));
+  check("  con nombres de mesero y todas las mesas repartidas", seedConfigs.every((c) => c.zones.every((z) => !z.waiterName.startsWith("Mesero ")) && c.zones.some((z) => z.tableIds.length > 0)));
+
+  const activateId = findActionId("activateWaiterConfigAction", "meseros");
+  const saveWaitersId = findActionId("saveWaiterConfigAction", "meseros");
+  const createWaitersId = findActionId("createWaiterConfigAction", "meseros");
+  const deleteWaitersId = findActionId("deleteWaiterConfigAction", "meseros");
+  const defaultId = findActionId("setDefaultLayoutAction", "editor");
+  check("se localizan las server actions de meseros y de plano por defecto", Boolean(activateId && saveWaitersId && createWaitersId && deleteWaitersId && defaultId));
+
+  const callAction = async (actionId: string | null, who: Who, path: string, payload: Record<string, unknown>) =>
+    (
+      await http("POST", path, {
+        cookie: cookies[who],
+        body: JSON.stringify([payload]),
+        headers: { "Next-Action": actionId ?? "", "Content-Type": "text/plain;charset=UTF-8", Accept: "text/x-component" },
+      })
+    ).text;
+  const okText = (text: string) => /"ok":true/.test(text);
+  const denied = (text: string) => text.includes("No tienes permiso");
+
+  const tres = seedConfigs.find((c) => c.waiterCount === 3)!;
+  const dos = seedConfigs.find((c) => c.waiterCount === 2)!;
+  const activeOf = async () => (await listWaiterConfigs("rest_centro")).find((c) => c.isActive)?.id;
+
+  if (activateId && tres && dos) {
+    check("analítica no puede cambiar la configuración activa", denied(await callAction(activateId, "analitica", "/restaurante/rest_centro/mapa", { restaurantId: "rest_centro", configId: tres.id })) && (await activeOf()) === dos.id);
+    check("norte tampoco, en un restaurante que no es suyo", denied(await callAction(activateId, "norte", "/restaurante/rest_centro/mapa", { restaurantId: "rest_centro", configId: tres.id })) && (await activeOf()) === dos.id);
+    const cruzada = await callAction(activateId, "norte", "/restaurante/rest_norte/mapa", { restaurantId: "rest_norte", configId: tres.id });
+    check("  ni haciéndola pasar por suya (config de rest_centro con su restaurante)", !okText(cruzada) && (await activeOf()) === dos.id, cruzada.slice(0, 120));
+
+    // El cambio llega en tiempo real a las tablets del restaurante.
+    const tablet = await connect(cookies.centro);
+    const otraTablet = await connect(cookies.admin);
+    if (tablet && otraTablet) {
+      await emit(tablet, "restaurant:join", { restaurantId: "rest_centro" });
+      await emit(otraTablet, "restaurant:join", { restaurantId: "rest_centro" });
+      const aviso = new Promise<{ activeConfigId: string | null } | null>((res) => {
+        const timer = setTimeout(() => res(null), 5000);
+        otraTablet.once("waiters:changed", (payload: { activeConfigId: string | null }) => {
+          clearTimeout(timer);
+          res(payload);
+        });
+      });
+      const cambio = await callAction(activateId, "centro", "/restaurante/rest_centro/mapa", { restaurantId: "rest_centro", configId: tres.id });
+      check("el host cambia a «3 meseros» con un toque", okText(cambio) && (await activeOf()) === tres.id, cambio.slice(0, 120));
+      const recibido = await aviso;
+      check("  y la otra tablet del restaurante recibe «waiters:changed» al instante", recibido?.activeConfigId === tres.id, JSON.stringify(recibido));
+      check("  solo queda una activa", (await listWaiterConfigs("rest_centro")).filter((c) => c.isActive).length === 1);
+
+      // Sentar a un cliente apunta el mesero de la zona de su mesa.
+      const mesas = await listSeatableTables("rest_centro");
+      const libre = mesas.find((t) => t.currentEntryId === null && t.waiterName);
+      check("las mesas de «Sentar» traen su mesero y su color", Boolean(libre?.waiterName && libre?.waiterColor));
+      const apiMesas = JSON.parse((await http("GET", "/api/restaurante/rest_centro/mesas", { cookie: cookies.centro })).text) as { tables: { waiterName: string | null }[] };
+      check("  también por la API del modo sencillo", apiMesas.tables.some((t) => t.waiterName));
+      if (libre) {
+        const entryId = crypto.randomUUID();
+        await db.insert(waitlistEntries).values({ id: entryId, restaurantId: "rest_centro", customerName: "Prueba del mesero", partySize: 2, status: "esperando" });
+        const asignado = new Promise<{ waiterName?: string | null } | null>((res) => {
+          const timer = setTimeout(() => res(null), 5000);
+          otraTablet.once("table:assigned", (payload: { waiterName?: string | null }) => {
+            clearTimeout(timer);
+            res(payload);
+          });
+        });
+        const ack = (await emit(tablet, "table:assign", { tableId: libre.id, entryId })) as { ok: boolean; waiterName?: string | null };
+        check("al sentar, el ack dice qué mesero lo atiende", ack.ok && ack.waiterName === libre.waiterName, JSON.stringify(ack));
+        check("  y el aviso a la room también", (await asignado)?.waiterName === libre.waiterName);
+        const [fila] = await db.select({ waiterName: waitlistEntries.waiterName }).from(waitlistEntries).where(eq(waitlistEntries.id, entryId));
+        check("  y queda guardado en el cliente (para las estadísticas)", fila?.waiterName === libre.waiterName);
+        await emit(tablet, "table:release", { tableId: libre.id, entryId });
+      }
+      tablet.disconnect();
+      otraTablet.disconnect();
+    }
+
+    // Guardar el reparto.
+    if (saveWaitersId) {
+      const actual = (await listWaiterConfigs("rest_centro")).find((c) => c.id === tres.id)!;
+      const payload = {
+        restaurantId: "rest_centro",
+        configId: actual.id,
+        version: actual.version,
+        name: actual.name,
+        zones: actual.zones.map((z) => ({ id: z.id, waiterName: `${z.waiterName} (prueba)`, color: z.color })),
+        assignments: actual.zones.flatMap((z) => z.tableIds.map((tableId) => ({ tableId, zoneId: z.id }))),
+      };
+      check("analítica no puede guardar zonas de meseros", denied(await callAction(saveWaitersId, "analitica", "/restaurante/rest_centro/mapa", payload)));
+      check("norte tampoco", denied(await callAction(saveWaitersId, "norte", "/restaurante/rest_centro/mapa", payload)));
+      check("el host sí", okText(await callAction(saveWaitersId, "centro", "/restaurante/rest_centro/mapa", payload)));
+      const vieja = await callAction(saveWaitersId, "centro", "/restaurante/rest_centro/mapa", payload);
+      check("  y con la versión vieja se le avisa en vez de pisar", !okText(vieja) && vieja.includes("Otro dispositivo"), vieja.slice(0, 120));
+    }
+
+    // Crear y borrar: el admin en cualquiera, el host solo en los suyos.
+    if (createWaitersId && deleteWaitersId) {
+      check("centro no puede crear configuraciones en rest_norte", denied(await callAction(createWaitersId, "centro", "/restaurante/rest_norte/mapa", { restaurantId: "rest_norte", waiterCount: 4 })));
+      const creada = await callAction(createWaitersId, "admin", "/restaurante/rest_norte/mapa", { restaurantId: "rest_norte", waiterCount: 4 });
+      const nueva = (await listWaiterConfigs("rest_norte")).find((c) => c.waiterCount === 4);
+      check("el admin crea «4 meseros» en rest_norte, ya repartida", okText(creada) && nueva?.zones.length === 4 && nueva.zones.reduce((n, z) => n + z.tableIds.length, 0) > 0);
+      if (nueva) {
+        check("norte no la puede borrar desde otro restaurante", !okText(await callAction(deleteWaitersId, "norte", "/restaurante/rest_centro/mapa", { restaurantId: "rest_centro", configId: nueva.id })));
+        check("analítica tampoco", denied(await callAction(deleteWaitersId, "analitica", "/restaurante/rest_norte/mapa", { restaurantId: "rest_norte", configId: nueva.id })));
+        check("el host de rest_norte sí", okText(await callAction(deleteWaitersId, "norte", "/restaurante/rest_norte/mapa", { restaurantId: "rest_norte", configId: nueva.id })) && !(await listWaiterConfigs("rest_norte")).some((c) => c.id === nueva.id));
+      }
+    }
+    // Se deja como estaba: «2 meseros» activa.
+    await callAction(activateId, "centro", "/restaurante/rest_centro/mapa", { restaurantId: "rest_centro", configId: dos.id });
+  }
+
+  // Plano por defecto: lo eligen los usuarios del restaurante.
+  const defaultOf = async () =>
+    (await db.select({ id: tableLayouts.id }).from(tableLayouts).where(and(eq(tableLayouts.restaurantId, "rest_centro"), eq(tableLayouts.isDefault, true)))).map((r) => r.id);
+  if (defaultId) {
+    const pedir = { restaurantId: "rest_centro", layoutId: "lay_centro_terraza" };
+    check("analítica no elige el plano por defecto", denied(await callAction(defaultId, "analitica", "/restaurante/rest_centro/editor", pedir)));
+    check("norte tampoco, en rest_centro", denied(await callAction(defaultId, "norte", "/restaurante/rest_centro/editor", pedir)));
+    check("  y sigue el de siempre", JSON.stringify(await defaultOf()) === JSON.stringify(["lay_centro_principal"]));
+    check("el host de rest_centro elige la Terraza", okText(await callAction(defaultId, "centro", "/restaurante/rest_centro/editor", pedir)));
+    check("  y queda UNA sola por defecto: la Terraza", JSON.stringify(await defaultOf()) === JSON.stringify(["lay_centro_terraza"]));
+    const editor = await http("GET", "/restaurante/rest_centro/editor", { cookie: cookies.centro });
+    check("  el editor abre ahora la Terraza", /layoutId\\?":\\?"lay_centro_terraza/.test(editor.text) && editor.text.includes("Por defecto"));
+    check("una zona de otro restaurante no se puede marcar", !okText(await callAction(defaultId, "norte", "/restaurante/rest_norte/editor", { restaurantId: "rest_norte", layoutId: "lay_centro_principal" })) && JSON.stringify(await defaultOf()) === JSON.stringify(["lay_centro_terraza"]));
+    check("el admin también puede, y lo deja como estaba", okText(await callAction(defaultId, "admin", "/restaurante/rest_centro/editor", { restaurantId: "rest_centro", layoutId: "lay_centro_principal" })) && JSON.stringify(await defaultOf()) === JSON.stringify(["lay_centro_principal"]));
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Usuario desactivado
 // ---------------------------------------------------------------------------
 

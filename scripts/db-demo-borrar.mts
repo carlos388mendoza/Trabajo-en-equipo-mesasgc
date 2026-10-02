@@ -59,6 +59,7 @@ try {
   console.log(`  zonas:                 ${prevision.zonas}`);
   console.log(`  mesas:                 ${prevision.mesas}`);
   console.log(`  clientes:              ${prevision.clientes}`);
+  console.log(`  meseros (configs):     ${prevision.meseros}`);
   console.log("");
   console.log("NO se toca: marcas, restaurantes, catálogo de tipos, usuarios, sesiones,");
   console.log("roles ni ninguna zona, mesa o cliente real.");
@@ -89,6 +90,7 @@ try {
   console.log(`  zonas:    ${resultado.zonas}`);
   console.log(`  mesas:    ${resultado.mesas}`);
   console.log(`  clientes: ${resultado.clientes}`);
+  console.log(`  meseros:  ${resultado.meseros}`);
 
   const despues = await demoSummary();
   console.log("");

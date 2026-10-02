@@ -72,6 +72,13 @@ export function SeatPicker({ entry, tables, loaded, busy, onPick, onClose }: Sea
                         <span className="text-xs text-panel-muted">
                           {occupied ? "Ocupada" : table.capacity ? `${table.capacity} lugares${small ? " · pequeña" : ""}` : "Libre"}
                         </span>
+                        {table.waiterName ? (
+                          // El mesero que lo va a atender: el de la zona de la mesa.
+                          <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-panel-text">
+                            <span aria-hidden className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: table.waiterColor ?? undefined }} />
+                            {table.waiterName}
+                          </span>
+                        ) : null}
                       </button>
                     </li>
                   );

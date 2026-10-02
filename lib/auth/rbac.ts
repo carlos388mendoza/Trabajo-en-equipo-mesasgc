@@ -22,8 +22,13 @@ export type Action =
   | "catalogo:gestionar"
   /** Ver el editor de mesas (modo completo). */
   | "editor:ver"
-  /** Guardar o copiar la estructura del local. */
+  /** Guardar o copiar la estructura del local, y elegir su plano por defecto. */
   | "editor:guardar"
+  /**
+   * Crear, editar, borrar y ACTIVAR las configuraciones de zonas de meseros
+   * («2 meseros», «3 meseros»…). Verlas en el plano solo pide `plano:ver`.
+   */
+  | "meseros:gestionar"
   /** Ver el modo rápido (modo sencillo). */
   | "rapido:ver"
   /** Añadir clientes y marcarlos listos o ausentes. */
@@ -57,6 +62,7 @@ export const ALL_ACTIONS: readonly Action[] = [
   "catalogo:gestionar",
   "editor:ver",
   "editor:guardar",
+  "meseros:gestionar",
   "rapido:ver",
   "rapido:modificar",
   "mesas:asignar",
@@ -76,6 +82,7 @@ export const ALL_ACTIONS: readonly Action[] = [
 const RESTAURANT_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   "editor:ver",
   "editor:guardar",
+  "meseros:gestionar",
   "rapido:ver",
   "rapido:modificar",
   "mesas:asignar",
@@ -98,6 +105,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Action[]> = {
   [ROLES.RESTAURANTE]: [
     "editor:ver",
     "editor:guardar",
+    "meseros:gestionar",
     "rapido:ver",
     "rapido:modificar",
     "mesas:asignar",

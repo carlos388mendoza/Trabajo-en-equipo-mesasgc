@@ -34,6 +34,7 @@ import { tableLayouts } from "@/lib/db/schema";
 import { emitOverview } from "@/lib/realtime/overview";
 import { emitToRestaurant } from "@/lib/realtime/registry";
 import { applyLayoutStructure } from "@/lib/layout/save";
+import { setDefaultLayout } from "@/lib/layout/default";
 import type { SaveResult } from "@/lib/layout/save";
 import {
   copyLayoutInputSchema,
@@ -79,6 +80,29 @@ export async function saveLayoutStructure(raw: unknown): Promise<SaveResult> {
 
 /** Resultado simple para acciones que no devuelven datos. */
 export type SimpleResult = { ok: true } | { ok: false; error: string };
+
+const defaultLayoutSchema = z.object({
+  restaurantId: z.string().min(1).max(64),
+  layoutId: z.string().min(1).max(64),
+});
+
+/**
+ * Elige el plano por defecto del restaurante: la zona que se abre al entrar
+ * en el editor y en el plano en vivo. Es parte de «la estructura de las
+ * mesas», así que pide lo mismo que guardarla (`editor:guardar`): el
+ * restaurante en los suyos y el admin; analítica no.
+ */
+export async function setDefaultLayoutAction(raw: unknown): Promise<SimpleResult & { message?: string }> {
+  const parsed = defaultLayoutSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "Zona no válida." };
+  const guard = await guardAction("editor:guardar", parsed.data.restaurantId);
+  if (!guard.ok) return guard;
+  const result = await setDefaultLayout(parsed.data);
+  if (!result.ok) return result;
+  revalidatePath(`/restaurante/${parsed.data.restaurantId}/editor`);
+  revalidatePath(`/restaurante/${parsed.data.restaurantId}/mapa`);
+  return { ok: true, message: `«${result.name}» es ahora el plano por defecto.` };
+}
 
 // ---------------------------------------------------------------------------
 // Copia de estructura a otro restaurante (paso 3)
