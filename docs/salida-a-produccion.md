@@ -333,14 +333,35 @@ Deshace solo la **última** acción del restaurante, en cualquier tablet, y
 hay que hacerlo enseguida. Si pasó mucho rato o alguien hizo otra cosa
 después, ya no se puede: búscala en **Ver todas las cartas** y corrígela ahí.
 
-**Si arriba dice «Sin conexión» o «Reconectando»**
+**Sentar y liberar mesa:** en **Ver todas las cartas**, una carta en espera o
+lista tiene **Sentar**: elige una mesa libre (por zona, con sus lugares). Una
+carta sentada tiene **Liberar Mesa N** cuando el grupo se va. Si otra tablet
+ocupó esa mesa un segundo antes, sale «Esta mesa ya fue asignada»: elige otra.
 
-1. Espera 10 segundos: casi siempre vuelve sola.
-2. Revisa el wifi de la tablet.
-3. Recarga la página.
-4. Si en 2 minutos no vuelve: **pasa a la lista en papel** y avisa al
-   encargado. Cuando vuelva la conexión, pasa a la tablet a los que sigan
-   esperando.
+**Si se va el Internet (modo sin conexión)**
+
+Arriba, junto a «SIGUIENTE EN LA FILA», siempre dice cómo está la conexión:
+🟢 **Conectado**, 🔴 **Sin conexión**, 🟠 **Sincronizando…** o 🟢
+**Sincronizado**, y cuántos **cambios pendientes** hay.
+
+1. **Sigue trabajando.** Sin conexión se puede agregar (uno o varios),
+   marcar listo o ausente, volver a la espera, sentar, liberar mesa y
+   eliminar. Cada cambio se guarda en la tablet y suma un «cambio
+   pendiente». Deshacer (o Ctrl+Z) quita el último que todavía no se envió.
+2. **Se puede recargar o cerrar la pestaña:** al volver a abrir el modo
+   sencillo (en la misma tablet y con el mismo usuario) están la lista y los
+   cambios pendientes. Para eso hay que haber abierto el modo sencillo con
+   Internet al menos una vez en esa tablet.
+3. **Al volver el Internet** se envía todo sola, en orden («Sincronizando…»)
+   y la lista se vuelve a leer del servidor. No hay que hacer nada.
+4. Si otra tablet cambió lo mismo mientras tanto (por ejemplo, ocupó la mesa
+   que elegiste), ese cambio **no se aplica** y sale un aviso en rojo con el
+   motivo. La lista ya muestra lo que hay de verdad; pulsa **Entendido** y
+   corrígelo si hace falta (por ejemplo, sienta al cliente en otra mesa).
+5. **No cierres sesión con cambios pendientes:** se perderían (la app avisa
+   antes). Cerrar sesión borra de la tablet la lista y la cola.
+6. Si pasan muchos minutos sin Internet y la fila crece, la **lista en papel**
+   sigue siendo el respaldo: avisa al encargado.
 
 **No compartas la contraseña fuera del equipo del piloto.** Si alguien nuevo
 necesita entrar, el administrador le crea su propio usuario.

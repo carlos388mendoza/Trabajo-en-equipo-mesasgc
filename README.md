@@ -479,6 +479,60 @@ restaurante. `Deshacer` revierte la última acción del local: elimina un grupo
 que acaba de agregarse o restaura el estado anterior. El registro de deshacer
 vive en memoria y se reinicia al reiniciar el servidor.
 
+### Modo sin conexión (requisito de la dirección)
+
+El modo sencillo sigue funcionando sin Internet. Con conexión, todo es como
+antes (Socket.IO, avisos a la room, validaciones del servidor).
+
+- **Cola persistente** (`lib/offline/store.ts`, IndexedDB `tw-modo-sencillo`).
+  Cada cambio se guarda **antes** de mandarlo, con `operationId` (UUID),
+  `action` (el evento del socket), `targetId`, `data` (payload), `sequence`,
+  `createdAt`, `state` (`pendiente`, `enviando` o `conflicto`), `attempts`
+  y `error`. Es por usuario y restaurante, y sobrevive a recargar, girar la
+  tablet o cerrar la pestaña. Nunca guarda contraseñas, tokens ni la cookie.
+  Al cerrar sesión se borra (`components/layout/sign-out-button.tsx`).
+- **Lo que se ve** es «últimos datos del servidor + cola aplicada en orden»
+  (`applyOperations`, en `lib/offline/apply.ts`). Una operación que ya no
+  tiene sentido sobre esos datos (ocupar una mesa ocupada) no se pinta.
+  Deshacer sin conexión quita la última de la cola.
+- **Acciones en cola:** `waitlist:add`, `waitlist:add-many`,
+  `waitlist:resolve` (listo o ausente), `waitlist:reopen`, `waitlist:delete`,
+  `table:assign` (sentar) y `table:release` (liberar mesa). El deshacer del
+  servidor (`waitlist:undo`) no se encola: vive en memoria del servidor.
+- **Copia local** de la lista y de las mesas (`saveSnapshot`), y un service
+  worker (`public/sw.js`, red primero) que guarda solo la página del modo
+  sencillo, `/_next/static` y los logos, para poder **recargar sin red**.
+  Nunca la API, el login, los sockets ni ningún POST.
+- **Reconexión** (`use-offline-queue.ts`): al entrar de nuevo en la room se
+  manda la cola **en orden**, una a una («Sincronizando…»), y después se
+  vuelve a leer todo del servidor. Las confirmadas salen de la cola. Dos
+  pestañas no sincronizan a la vez (`navigator.locks`) y se avisan los
+  cambios (`BroadcastChannel`).
+- **Sin duplicados** (`lib/offline/operations.ts`, migración `0008`, tabla
+  `offline_operations`): el servidor guarda la respuesta de cada
+  `operationId`. Un reenvío devuelve la misma respuesta sin aplicarla otra
+  vez ni avisar a la room. Las altas llevan además un id de cliente elegido en
+  la tablet, y su hora real de llegada (limitada a las últimas 24 h, para que
+  no sirva para colarse). Un `operationId` de otro restaurante se rechaza.
+- **Conflictos:** los decide el servidor con los mismos mecanismos que en
+  línea (el UPDATE condicional de `assignTable`, `releaseTable` con el
+  cliente esperado, `updated_at` en resolver y borrar). Si A, sin conexión,
+  sentó a alguien en una mesa que B ocupó entretanto, la operación de A se
+  rechaza («Esta mesa ya fue asignada»), no pisa a B, queda como
+  `conflicto` y se enseña en rojo hasta que el host pulsa «Entendido». Un
+  rechazo por sesión o por no estar en la room no es un conflicto: se
+  reintenta.
+- **Estados:** 🟢 Conectado, 🟠 Sincronizando…, 🔴 Sin conexión, «N cambios
+  pendientes», 🟢 Sincronizado (`sync-status.tsx`).
+- **Sentar y liberar** desde «Ver todas las cartas» (`seat-picker.tsx`, con
+  `GET /api/restaurante/[id]/mesas`, permiso `rapido:ver`; el socket exige
+  `mesas:asignar`).
+- **Pruebas:** `verify:realtime` (reenvíos, conflictos entre dispositivos,
+  ids ajenos, hora de llegada, `applyOperations`) y `verify:auth` (permisos de
+  `/mesas`). En el navegador, con dos dispositivos y la app compilada: sin
+  red, acciones, cola en IndexedDB, recarga sin red, conflicto, reconexión,
+  sin duplicados y tiempo real.
+
 ### Las cartas: agregar, abanico y «Ver todas las cartas»
 
 Desde el PR `feat/cartas-baraja` el montón ocupa todo el ancho y el
