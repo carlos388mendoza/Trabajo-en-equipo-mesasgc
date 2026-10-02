@@ -312,7 +312,13 @@ completa.
 restaurante: en espera, listas y ausentes. Por defecto muestra las de **hoy**;
 **Últimos 7 días** muestra la semana. Filtra por estado o busca por nombre
 (sin importar tildes). Cada carta dice a qué hora llegó, cuánto esperó y
-quién la resolvió. Desde ahí:
+quién la resolvió.
+
+El panel **no tiene X**: se mueve arrastrando su parte de arriba (la rayita,
+el título o los filtros). Arrastrado hacia abajo se queda a media pantalla;
+hacia arriba vuelve a ocupar casi toda. **Bajarlo del todo lo cierra** (también
+Esc o tocar fuera). La lista de cartas se desplaza con el dedo como siempre.
+Desde ahí:
 
 - una carta **en espera** se marca **Listo** o **Ausente**;
 - una **lista o ausente** que fue un error vuelve con **Volver a la espera**
