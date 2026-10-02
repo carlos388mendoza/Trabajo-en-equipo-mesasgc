@@ -534,6 +534,39 @@ export const userRestaurants = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// Modo offline: operaciones ya aplicadas
+//
+// Cuando una tablet trabaja sin Internet, guarda sus cambios en una cola local
+// y los manda al volver la conexión, cada uno con su `operationId`. Si el ack
+// se pierde y la tablet lo reenvía, el servidor tiene que reconocerlo y
+// devolver la MISMA respuesta sin aplicarlo dos veces (dos clientes iguales,
+// o un «ya fue atendido» falso). Esta tabla es esa memoria: no depende del
+// proceso, así que sobrevive a un reinicio del servidor.
+//
+// Sin FK a propósito: es un registro técnico, y borrar un restaurante o un
+// usuario no tiene por qué fallar por él. Las filas viejas se purgan solas.
+// ---------------------------------------------------------------------------
+
+export const offlineOperations = sqliteTable(
+  "offline_operations",
+  {
+    /** UUID que generó la tablet para esa operación. */
+    operationId: text("operation_id").primaryKey(),
+    restaurantId: text("restaurant_id").notNull(),
+    userId: text("user_id"),
+    /** El evento: `waitlist:add`, `table:assign`... */
+    action: text("action").notNull(),
+    ok: integer("ok", { mode: "boolean" }).notNull(),
+    /** El ack que se devolvió, en JSON, para repetirlo tal cual. */
+    response: text("response").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => [index("offline_operations_created_idx").on(t.createdAt)],
+);
+
+// ---------------------------------------------------------------------------
 // Relaciones (para el API `db.query.*`)
 // ---------------------------------------------------------------------------
 

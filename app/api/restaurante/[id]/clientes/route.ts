@@ -7,6 +7,7 @@ import { z } from "zod";
 import { guardApi } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { waitlistEntries } from "@/lib/db/schema";
+import { snapshot } from "@/lib/waitlist/quick-actions";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -27,14 +28,9 @@ export async function GET(request: Request, { params }: Context) {
       .where(eq(waitlistEntries.restaurantId, id))
       .orderBy(asc(waitlistEntries.arrivedAt));
 
-    return NextResponse.json({
-      entries: entries.map((entry) => ({
-        ...entry,
-        arrivedAt: entry.arrivedAt.getTime(),
-        calledAt: entry.calledAt?.getTime() ?? null,
-        seatedAt: entry.seatedAt?.getTime() ?? null,
-      })),
-    });
+    // La misma «foto» que mandan los eventos del socket (`snapshot`): el modo
+    // sencillo la guarda tal cual para seguir trabajando sin conexión.
+    return NextResponse.json({ entries: entries.map((entry) => snapshot(entry)) });
   } catch (error) {
     console.error("Failed to load restaurant waitlist", error);
     return NextResponse.json({ error: "No se pudo cargar la lista de clientes." }, { status: 500 });
