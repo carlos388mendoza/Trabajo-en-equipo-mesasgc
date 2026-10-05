@@ -57,6 +57,20 @@
       "when": 1790876115034,
       "tag": "0007_datos_demo",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790953278881,
+      "tag": "0008_operaciones_offline",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790958463622,
+      "tag": "0009_zonas_meseros",
+      "breakpoints": true
     }
   ]
 }

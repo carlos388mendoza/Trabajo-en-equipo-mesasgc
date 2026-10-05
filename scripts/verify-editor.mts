@@ -1133,6 +1133,177 @@ console.log("\nMarcas y restaurantes desde /admin (lib/layout/catalog-admin)");
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Zonas de meseros (requisito del enunciado)
+// ---------------------------------------------------------------------------
+
+section("Zonas de meseros");
+
+{
+  const { autoBalance, MAX_WAITERS } = await import("@/lib/waiters/balance");
+  const waiters = await import("@/lib/waiters/configs");
+  const { saveWaiterConfigSchema, createWaiterConfigSchema } = await import("@/lib/waiters/validation");
+  const { waiterConfigs, waiterZoneTables } = await import("@/lib/db/schema");
+  const { and, eq } = await import("drizzle-orm");
+
+  // Reparto automático: equilibrado y por bloques de mesas vecinas.
+  const grid = Array.from({ length: 7 }, (_, i) => ({ id: `g${i}`, layoutId: "z", x: i * 100, y: 0 }));
+  const reparto = autoBalance(grid, 3, ["z"]);
+  const tamaños = [0, 1, 2].map((z) => [...reparto.values()].filter((v) => v === z).length);
+  check("autoBalance reparte 7 mesas entre 3: 3, 2 y 2", JSON.stringify(tamaños) === "[3,2,2]", JSON.stringify(tamaños));
+  check("  en bloques contiguos de izquierda a derecha", ["g0", "g1", "g2"].every((id) => reparto.get(id) === 0) && reparto.get("g6") === 2);
+  check("  sin mesas no reparte nada", autoBalance([], 3).size === 0);
+  check("Zod no deja crear 0 meseros ni más del tope", !createWaiterConfigSchema.safeParse({ restaurantId: "r", waiterCount: 0 }).success && !createWaiterConfigSchema.safeParse({ restaurantId: "r", waiterCount: MAX_WAITERS + 1 }).success);
+  check("Zod rechaza un color que no es #rrggbb", !saveWaiterConfigSchema.safeParse({ restaurantId: "r", configId: "c", version: 1, name: "x", zones: [{ id: "z", waiterName: "Ana", color: "red" }], assignments: [] }).success);
+
+  // Un restaurante propio: 6 mesas, un baño, y otro restaurante con una mesa.
+  const R = "rest-meseros";
+  const R2 = "rest-meseros-otro";
+  await db.insert(restaurants).values([
+    { id: R, name: "Meseros", slug: "meseros" },
+    { id: R2, name: "Otro", slug: "meseros-otro" },
+  ]);
+  await db.insert(tableLayouts).values([
+    { id: "lay-m1", restaurantId: R, name: "Comedor", width: 1200, height: 800, isDefault: true, version: 1 },
+    { id: "lay-m2", restaurantId: R, name: "Terraza", width: 800, height: 600, sortOrder: 1, version: 1 },
+    { id: "lay-otro", restaurantId: R2, name: "Comedor", width: 800, height: 600, isDefault: true, version: 1 },
+  ]);
+  const m = (id: string, x: number, layoutId = "lay-m1", restaurantId = R, elementTypeId: string = TYPES.mesa) =>
+    ({ id, restaurantId, layoutId, elementTypeId, label: id, x, y: 0, width: 80, height: 80, rotation: 0, capacity: 4 });
+  await db.insert(tables).values([
+    m("wm-1", 0), m("wm-2", 100), m("wm-3", 200), m("wm-4", 300),
+    m("wm-5", 0, "lay-m2"), m("wm-6", 100, "lay-m2"),
+    { ...m("wm-bano", 400), elementTypeId: TYPES.bano, capacity: null },
+    m("wm-ajena", 0, "lay-otro", R2),
+  ]);
+
+  const dos = await waiters.createWaiterConfig({ restaurantId: R, waiterCount: 2 });
+  check("crear «2 meseros» la deja activa (no había ninguna)", dos.ok && dos.config.isActive && dos.config.name === "2 meseros");
+  if (!dos.ok) throw new Error("no se pudo crear la configuración");
+  const asignadas = dos.config.zones.flatMap((z) => z.tableIds);
+  check("  reparte las 6 mesas, 3 y 3, y no el baño", asignadas.length === 6 && !asignadas.includes("wm-bano") && dos.config.zones.every((z) => z.tableIds.length === 3), JSON.stringify(dos.config.zones.map((z) => z.tableIds)));
+  check("  cada mesero con nombre y color distintos", new Set(dos.config.zones.map((z) => z.color)).size === 2 && dos.config.zones.every((z) => z.waiterName.length > 0));
+  const tres = await waiters.createWaiterConfig({ restaurantId: R, waiterCount: 3 });
+  check("crear «3 meseros» NO cambia la activa", tres.ok && !tres.config.isActive && (await waiters.listWaiterConfigs(R)).find((c) => c.isActive)?.id === dos.config.id);
+  if (!tres.ok) throw new Error("no se pudo crear la configuración");
+
+  const marcas = await waiters.getActiveWaiterMarks(R);
+  check("las marcas del plano son las de la configuración activa", Object.keys(marcas).length === 6 && marcas["wm-1"].zoneId === dos.config.zones[0].id);
+  check("  y no salen marcas de otro restaurante", Object.keys(await waiters.getActiveWaiterMarks(R2)).length === 0);
+
+  // Activar: un toque, y solo una activa.
+  check("activar «3 meseros»", (await waiters.activateWaiterConfig({ restaurantId: R, configId: tres.config.id })).ok);
+  const activas = await db.select({ id: waiterConfigs.id }).from(waiterConfigs).where(and(eq(waiterConfigs.restaurantId, R), eq(waiterConfigs.isActive, true)));
+  check("  queda UNA sola activa, la nueva", activas.length === 1 && activas[0].id === tres.config.id);
+  check("no se activa la configuración de un restaurante desde otro", !(await waiters.activateWaiterConfig({ restaurantId: R2, configId: dos.config.id })).ok);
+
+  // Guardar: integridad.
+  const actual = (await waiters.listWaiterConfigs(R)).find((c) => c.id === dos.config.id)!;
+  const valido = {
+    restaurantId: R,
+    configId: actual.id,
+    version: actual.version,
+    name: "Fin de semana",
+    zones: actual.zones.map((z, i) => ({ id: z.id, waiterName: ["Ana", "Luis"][i], color: z.color })),
+    assignments: [
+      { tableId: "wm-1", zoneId: actual.zones[0].id },
+      { tableId: "wm-2", zoneId: actual.zones[1].id },
+    ],
+  };
+  const err = async (patch: Partial<typeof valido>, texto: string) => {
+    const res = await waiters.saveWaiterConfig({ ...valido, ...patch });
+    return !res.ok && res.error.includes(texto);
+  };
+  check("no se guarda una mesa de otro restaurante", await err({ assignments: [{ tableId: "wm-ajena", zoneId: actual.zones[0].id }] }, "no es de este restaurante"));
+  check("ni un baño (no admite clientes)", await err({ assignments: [{ tableId: "wm-bano", zoneId: actual.zones[0].id }] }, "no admite clientes"));
+  check("ni la misma mesa con dos meseros", await err({ assignments: [{ tableId: "wm-1", zoneId: actual.zones[0].id }, { tableId: "wm-1", zoneId: actual.zones[1].id }] }, "dos meseros"));
+  check("ni una zona de otra configuración", await err({ assignments: [{ tableId: "wm-1", zoneId: tres.config.zones[0].id }] }, "no coinciden"));
+  check("ni con un mesero de menos", await err({ zones: valido.zones.slice(0, 1) }, "no coinciden"));
+  check("ni desde otro restaurante", await err({ restaurantId: R2 }, "no existe en este restaurante"));
+  check("ni con una versión vieja", await err({ version: actual.version - 1 }, "Otro dispositivo"));
+  const guardado = await waiters.saveWaiterConfig(valido);
+  check("un guardado válido sube la versión", guardado.ok && guardado.version === actual.version + 1);
+  const tras = (await waiters.listWaiterConfigs(R)).find((c) => c.id === actual.id)!;
+  check("  y guarda nombre, meseros y reparto", tras.name === "Fin de semana" && tras.zones.map((z) => z.waiterName).join() === "Ana,Luis" && tras.zones[0].tableIds.join() === "wm-1" && tras.zones[1].tableIds.join() === "wm-2");
+  check("  repetirlo con la versión de antes ya no pisa nada", !(await waiters.saveWaiterConfig(valido)).ok);
+
+  // El reparto no toca las mesas, y el editor no toca el reparto (salvo que
+  // la mesa se borre, que sale de su zona sola).
+  const [mesa1] = await db.select().from(tables).where(eq(tables.id, "wm-1"));
+  check("guardar meseros no cambia ni la mesa ni su ocupación", mesa1.status === "libre" && mesa1.currentEntryId === null && mesa1.version === 1);
+  const layoutM1 = await getLayout("lay-m1", R);
+  const sinW2 = (layoutM1?.elements ?? []).filter((e) => e.id !== "wm-2").map(({ id, elementTypeId, label, x, y, width, height, rotation, capacity }) => ({ id, elementTypeId, label, x, y, width, height, rotation, capacity }));
+  const quitada = await applyLayoutStructure({ layoutId: "lay-m1", restaurantId: R, width: 1200, height: 800, elements: sinW2 });
+  const enlaces = await db.select({ tableId: waiterZoneTables.tableId }).from(waiterZoneTables).where(eq(waiterZoneTables.configId, actual.id));
+  check("borrar una mesa en el editor la saca de su zona de mesero", quitada.ok && enlaces.map((e) => e.tableId).join() === "wm-1");
+
+  // Borrar la activa deja activa otra.
+  check("borrar la configuración activa…", (await waiters.deleteWaiterConfig({ restaurantId: R, configId: tres.config.id })).ok);
+  check("  …pasa a activa la que queda", (await waiters.listWaiterConfigs(R)).map((c) => `${c.id}:${c.isActive}`).join() === `${actual.id}:true`);
+  check("no se borra la de otro restaurante", !(await waiters.deleteWaiterConfig({ restaurantId: R2, configId: actual.id })).ok);
+
+  // Plano por defecto.
+  const { setDefaultLayout, ensureDefaultLayout } = await import("@/lib/layout/default");
+  const defaults = async (restaurantId: string) =>
+    (await db.select({ id: tableLayouts.id }).from(tableLayouts).where(and(eq(tableLayouts.restaurantId, restaurantId), eq(tableLayouts.isDefault, true)))).map((r) => r.id);
+  check("marcar la Terraza como plano por defecto", (await setDefaultLayout({ restaurantId: R, layoutId: "lay-m2" })).ok && (await defaults(R)).join() === "lay-m2");
+  check("  y sigue habiendo UNA sola", (await defaults(R)).length === 1);
+  check("no se marca la zona de otro restaurante", !(await setDefaultLayout({ restaurantId: R, layoutId: "lay-otro" })).ok && (await defaults(R2)).join() === "lay-otro");
+  await db.update(tableLayouts).set({ isDefault: false }).where(eq(tableLayouts.restaurantId, R));
+  check("si un restaurante se queda sin plano por defecto, se marca la primera zona", (await ensureDefaultLayout(R)) === "lay-m1" && (await defaults(R)).join() === "lay-m1");
+  check("  y si ya tiene, no la cambia", (await ensureDefaultLayout(R2)) === "lay-otro");
+}
+
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Copiar y pegar elementos
+// ---------------------------------------------------------------------------
+
+section("Copiar y pegar elementos");
+
+{
+  const { pastedCopy, PASTE_OFFSET } = await import("@/lib/layout/clipboard");
+  const { eq } = await import("drizzle-orm");
+  const R = "rest-pegar";
+  await db.insert(restaurants).values({ id: R, name: "Pegar", slug: "pegar" });
+  await db.insert(tableLayouts).values({ id: "lay-pegar", restaurantId: R, name: "Comedor", width: 600, height: 400, isDefault: true, version: 1 });
+  await db.insert(tables).values({
+    id: "pg-1", restaurantId: R, layoutId: "lay-pegar", elementTypeId: TYPES.mesa, label: "Mesa 1",
+    x: 100, y: 50, width: 90, height: 70, rotation: 45, capacity: 6, status: "ocupada", currentEntryId: "cliente-pg",
+  });
+  const zona = await getLayout("lay-pegar", R);
+  const original = zona!.elements.find((e) => e.id === "pg-1")!;
+  check("la mesa original está ocupada (para ver que eso NO se copia)", original.status === "ocupada" && original.currentEntryId === "cliente-pg");
+
+  const copia = pastedCopy(original, { id: "pg-copia", typeKey: "mesa-sillas", labelsOfType: ["Mesa 1"], zoneWidth: 600, zoneHeight: 400 });
+  check("la copia tiene un id nuevo y el siguiente nombre", copia.id === "pg-copia" && copia.label === "Mesa 2");
+  check("  y las mismas propiedades visuales (tipo, tamaño, giro, puestos)",
+    copia.elementTypeId === original.elementTypeId && copia.width === 90 && copia.height === 70 && copia.rotation === 45 && copia.capacity === 6);
+  check("  desplazada para que se vean las dos", copia.x === original.x + PASTE_OFFSET && copia.y === original.y + PASTE_OFFSET);
+  check("  y NO copia las relaciones: nace libre, sin cliente", copia.status === "libre" && copia.currentEntryId === null && copia.occupantName === null && copia.seatedAt === null);
+  const enElBorde = pastedCopy({ ...original, x: 590, y: 390 }, { id: "x", typeKey: "mesa-sillas", labelsOfType: [], zoneWidth: 600, zoneHeight: 400 });
+  check("  pegada junto al borde, no se sale de la zona", enElBorde.x === 600 - 90 && enElBorde.y === 400 - 70);
+  const junto = pastedCopy(original, { id: "y", typeKey: "mesa-sillas", labelsOfType: [], anchor: { x: 10, y: 20 }, zoneWidth: 600, zoneHeight: 400 });
+  check("  y se puede pegar junto a otro elemento", junto.x === 10 + PASTE_OFFSET && junto.y === 20 + PASTE_OFFSET);
+
+  // Guardar la copia (después de «modificarla»: otro nombre y girada) es un
+  // guardado normal: entra como elemento nuevo y libre, y la original sigue
+  // ocupada con su cliente.
+  const modificada = { ...copia, label: "Mesa terraza", rotation: 90 };
+  const payload = [original, modificada].map(({ id, elementTypeId, label, x, y, width, height, rotation, capacity }) => ({ id, elementTypeId, label, x, y, width, height, rotation, capacity }));
+  const guardado = await applyLayoutStructure({ layoutId: "lay-pegar", restaurantId: R, width: 600, height: 400, elements: payload });
+  check("la copia se guarda como cualquier elemento", guardado.ok);
+  const [filaCopia] = await db.select().from(tables).where(eq(tables.id, "pg-copia"));
+  check("  en la base: libre, sin cliente, con su nombre y su giro", filaCopia?.status === "libre" && filaCopia.currentEntryId === null && filaCopia.label === "Mesa terraza" && filaCopia.rotation === 90);
+  const [filaOriginal] = await db.select().from(tables).where(eq(tables.id, "pg-1"));
+  check("  y la original sigue ocupada con su cliente", filaOriginal?.status === "ocupada" && filaOriginal.currentEntryId === "cliente-pg");
+  const sinCopia = await applyLayoutStructure({ layoutId: "lay-pegar", restaurantId: R, width: 600, height: 400, elements: payload.slice(0, 1) });
+  check("eliminar la copia y guardar la quita", sinCopia.ok && (await db.select().from(tables).where(eq(tables.id, "pg-copia"))).length === 0);
+}
+
+// ---------------------------------------------------------------------------
+
 // El cliente de libSQL sigue con la conexión abierta (el proxy de `lib/db` es
 // perezoso y no se cierra solo), así que en Windows el fichero está pillado y
 // `rmSync` da EPERM. No es un fallo del test: se borra al principio de la

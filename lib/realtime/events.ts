@@ -46,6 +46,12 @@ export type RestaurantCounters = {
    * El navegador calcula con ella la espera media, que así avanza sola.
    */
   averageArrivedAt: number | null;
+  /**
+   * Configuración de meseros activa y su versión (`id:versión`), o null.
+   * No dice nada de nadie: solo sirve para que el plano en vivo de analítica,
+   * que se entera por esta sala, sepa que tiene que repintar los colores.
+   */
+  waitersKey: string | null;
 };
 
 /** Respuesta (ack) de un evento que el cliente espera. */
@@ -59,6 +65,12 @@ export type Ack<T extends object = object> =
 
 const idSchema = z.string().min(1).max(64);
 
+/**
+ * Id de la operación en la cola offline (ver `lib/offline/operations.ts`).
+ * Opcional: en línea no hace falta. Con él, un reenvío no se aplica dos veces.
+ */
+const operationIdSchema = z.string().uuid().optional();
+
 export const joinRestaurantSchema = z.object({
   restaurantId: idSchema,
 });
@@ -69,6 +81,7 @@ export const assignTableSchema = z.object({
   tableId: idSchema,
   /** Cliente de la lista de espera que se sienta. */
   entryId: idSchema,
+  operationId: operationIdSchema,
 });
 
 export type AssignTableInput = z.infer<typeof assignTableSchema>;
@@ -77,6 +90,7 @@ export const releaseTableSchema = z.object({
   tableId: idSchema,
   /** El cliente que el host ve en la mesa (ver `releaseTable`). */
   entryId: idSchema,
+  operationId: operationIdSchema,
 });
 
 export type ReleaseTableInput = z.infer<typeof releaseTableSchema>;
@@ -85,9 +99,24 @@ export const addWaitlistEntrySchema = z.object({
   customerName: z.string().trim().min(1).max(100),
   partySize: z.number().int().min(1).max(10),
   notes: z.string().trim().max(500).optional().default(""),
+  /**
+   * Id que eligió la tablet (sin conexión, para poder mostrarlo y resolverlo
+   * antes de que el servidor lo conozca). Si llega dos veces, no se duplica.
+   */
+  entryId: z.string().uuid().optional(),
+  /**
+   * Cuándo llegó de verdad (ms), si se anotó sin conexión: la fila tiene que
+   * respetar ese orden, no el de la sincronización. El servidor lo limita a
+   * las últimas 24 h (`clampArrival`), así que no sirve para colarse.
+   */
+  arrivedAt: z.number().int().positive().optional(),
 });
 
 export type AddWaitlistEntryInput = z.infer<typeof addWaitlistEntrySchema>;
+
+/** `waitlist:add`: un grupo, con su id de operación si viene de la cola. */
+export const addOneWaitlistEntrySchema = addWaitlistEntrySchema.extend({ operationId: operationIdSchema });
+export type AddOneWaitlistEntryInput = z.input<typeof addOneWaitlistEntrySchema>;
 
 /**
  * Varios grupos de una vez, con las mismas reglas que uno. El tope vive aquí
@@ -96,6 +125,7 @@ export type AddWaitlistEntryInput = z.infer<typeof addWaitlistEntrySchema>;
 export const MAX_BATCH_ENTRIES = 30;
 export const addManyWaitlistEntriesSchema = z.object({
   entries: z.array(addWaitlistEntrySchema).min(1).max(MAX_BATCH_ENTRIES),
+  operationId: operationIdSchema,
 });
 
 export type AddManyWaitlistEntriesInput = z.infer<typeof addManyWaitlistEntriesSchema>;
@@ -103,6 +133,7 @@ export type AddManyWaitlistEntriesInput = z.infer<typeof addManyWaitlistEntriesS
 export const resolveWaitlistEntrySchema = z.object({
   entryId: idSchema,
   status: z.enum(["listo", "ausente"]),
+  operationId: operationIdSchema,
 });
 
 export type ResolveWaitlistEntryInput = z.infer<typeof resolveWaitlistEntrySchema>;
@@ -111,8 +142,12 @@ export const undoWaitlistSchema = z.object({ actionId: idSchema });
 export type UndoWaitlistInput = z.infer<typeof undoWaitlistSchema>;
 
 /** Volver a la espera a un cliente listo o ausente («Ver todas las cartas»). */
-export const reopenWaitlistEntrySchema = z.object({ entryId: idSchema });
+export const reopenWaitlistEntrySchema = z.object({ entryId: idSchema, operationId: operationIdSchema });
 export type ReopenWaitlistEntryInput = z.infer<typeof reopenWaitlistEntrySchema>;
+
+/** Eliminar a un cliente de la lista («Ver todas las cartas»). */
+export const deleteWaitlistEntrySchema = z.object({ entryId: idSchema, operationId: operationIdSchema });
+export type DeleteWaitlistEntryInput = z.infer<typeof deleteWaitlistEntrySchema>;
 
 export type WaitlistUndoState = {
   actionId: string;
@@ -127,7 +162,12 @@ export type WaitlistChange = {
 };
 
 /** Una mesa cuya ocupación cambió, con su cliente. */
-export type TableChange = { table: TableOccupancy; entryId: string };
+export type TableChange = {
+  table: TableOccupancy;
+  entryId: string;
+  /** Al sentar: el mesero que lo atiende según la configuración activa (o null). */
+  waiterName?: string | null;
+};
 
 // ---------------------------------------------------------------------------
 // Eventos
@@ -158,7 +198,7 @@ export interface ClientToServerEvents {
     ack: (res: Ack<{ counters: RestaurantCounters[] }>) => void,
   ) => void;
   /** Agregar un grupo a la lista rápida. */
-  "waitlist:add": (payload: AddWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
+  "waitlist:add": (payload: AddOneWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
   /**
    * Agregar varios grupos de una vez: todos o ninguno. La room recibe un
    * `waitlist:changed` («added») por cada uno, en el orden de llegada.
@@ -168,6 +208,12 @@ export interface ClientToServerEvents {
   "waitlist:resolve": (payload: ResolveWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
   /** Volver a la espera a un grupo listo o ausente. Se puede deshacer. */
   "waitlist:reopen": (payload: ReopenWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
+  /**
+   * Eliminar a un grupo de la lista. La room recibe `waitlist:changed` con
+   * `removed`, igual que al deshacer un «agregar», así que los dos clientes lo
+   * borran de su pantalla sin ninguna ruta nueva. Se puede deshacer.
+   */
+  "waitlist:delete": (payload: DeleteWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
   /** Deshacer la última acción de la lista para ese restaurante. */
   "waitlist:undo": (payload: UndoWaitlistInput, ack: (res: Ack<{ action: "removed" | "restored"; entry: WaitlistEntrySnapshot; entries?: WaitlistEntrySnapshot[] }>) => void) => void;
 }
@@ -185,6 +231,11 @@ export interface ServerToClientEvents {
    * local). Las zonas que el cliente tenga abiertas pueden no existir ya.
    */
   "structure:changed": () => void;
+  /**
+   * Cambiaron las zonas de meseros (se activó otra configuración, o se guardó
+   * o borró una). Sin datos: cada pantalla vuelve a pedir lo suyo.
+   */
+  "waiters:changed": (payload: { activeConfigId: string | null }) => void;
   /** Sala `overview`: cambiaron los contadores de un restaurante. */
   "overview:counters": (payload: RestaurantCounters) => void;
   /** Cambio de lista aplicado; se envía a todas las tablets del local. */

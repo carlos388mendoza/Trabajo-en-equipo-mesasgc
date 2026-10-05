@@ -158,8 +158,9 @@ function SingleForm({ connected, onClose, onSubmit }: Omit<AddGuestSheetProps, "
         </label>
       </div>
       <FormError message={error} />
-      <Actions onClose={onClose} disabled={saving || !connected}>
-        {saving ? "Guardando…" : connected ? "Agregar a la fila" : "Esperando conexión…"}
+      {/* Sin conexión también se puede: va a la cola y se envía al volver. */}
+      <Actions onClose={onClose} disabled={saving}>
+        {saving ? "Guardando…" : connected ? "Agregar a la fila" : "Agregar (sin conexión)"}
       </Actions>
     </form>
   );
@@ -400,14 +401,12 @@ function ManyForm({ connected, onClose, onSubmitMany }: Omit<AddGuestSheetProps,
       </button>
 
       <FormError message={error || (attempted ? blocking : "")} />
-      <Actions onClose={onClose} disabled={saving || !connected || !filled.length}>
+      <Actions onClose={onClose} disabled={saving || !filled.length}>
         {saving
           ? "Guardando…"
-          : !connected
-            ? "Esperando conexión…"
-            : filled.length
-              ? `Agregar ${filled.length} ${filled.length === 1 ? "cliente" : "clientes"}`
-              : "Escribe al menos un nombre"}
+          : filled.length
+            ? `Agregar ${filled.length} ${filled.length === 1 ? "cliente" : "clientes"}${connected ? "" : " (sin conexión)"}`
+            : "Escribe al menos un nombre"}
       </Actions>
     </form>
   );

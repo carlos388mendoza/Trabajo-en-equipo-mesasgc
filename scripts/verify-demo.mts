@@ -166,6 +166,14 @@ check("hay un usuario real y su rol", (await db.select().from(authUser)).length 
 
 section("Carga del lote de demostración");
 
+// Un restaurante que ya tiene SU configuración de meseros: el demo no le
+// añade las de ejemplo ni le cambia la activa.
+const { createWaiterConfig, listWaiterConfigs } = await import("@/lib/waiters/configs");
+const { waiterConfigs } = await import("@/lib/db/schema");
+const CON_MESEROS = DEMO_PLANS[0].restaurantId;
+const meserosReales = await createWaiterConfig({ restaurantId: CON_MESEROS, waiterCount: 4 });
+check("hay una configuración de meseros real en un restaurante", meserosReales.ok && meserosReales.config.isActive);
+
 const carga = await loadDemoData();
 check("la carga informa del lote", carga.batchId === DEMO_BATCH_ID, carga.batchId);
 check(`crea ${DEMO_PLANS.length} zonas demo`, carga.zonas === DEMO_PLANS.length, `${carga.zonas}`);
@@ -174,6 +182,19 @@ check("crea clientes esperando", carga.esperando > 0, `${carga.esperando}`);
 check("sienta clientes en mesas demo", carga.sentados > 0, `${carga.sentados}`);
 check("reserva mesas demo", carga.reservadas > 0, `${carga.reservadas}`);
 check("no omite ningún restaurante", carga.omitidos.length === 0, carga.omitidos.join(", "));
+{
+  const demoConfigs = await db.select().from(waiterConfigs).where(eq(waiterConfigs.isDemo, true));
+  check(
+    "crea «2 meseros» y «3 meseros» de ejemplo donde no había ninguna",
+    carga.meseros === (DEMO_PLANS.length - 1) * 2 && demoConfigs.length === carga.meseros && demoConfigs.every((c) => c.demoBatchId === DEMO_BATCH_ID),
+    `${carga.meseros} / ${demoConfigs.length}`,
+  );
+  const propias = await listWaiterConfigs(CON_MESEROS);
+  check("  y no toca el restaurante que ya tenía la suya", propias.length === 1 && propias[0].isActive && !propias[0].isDemo);
+  const conMesero = await db.select({ n: sql<number>`count(*)` }).from(waitlistEntries).where(and(eq(waitlistEntries.isDemo, true), isNotNull(waitlistEntries.waiterName)));
+  check("  los sentados del demo tienen mesero (estadísticas por mesero)", Number(conMesero[0].n) > 0, `${conMesero[0].n}`);
+  check("  y las estadísticas los cuentan", (await getAnalytics()).waiters.length > 0);
+}
 
 const resumen1 = await demoSummary();
 check("el resumen ve datos demo", resumen1.activo && resumen1.total > 0, JSON.stringify(resumen1));
@@ -394,7 +415,10 @@ section("Borrado del lote");
     check(`borra ${borrado.clientes} clientes demo`, borrado.clientes === resumen1.clientes, `${borrado.clientes} vs ${resumen1.clientes}`);
     check(`borra ${borrado.mesas} mesas demo`, borrado.mesas === resumen1.mesas, `${borrado.mesas} vs ${resumen1.mesas}`);
     check(`borra ${borrado.zonas} zonas demo`, borrado.zonas === resumen1.zonas, `${borrado.zonas} vs ${resumen1.zonas}`);
+    check(`borra las ${borrado.meseros} configuraciones de meseros de ejemplo`, borrado.meseros === carga.meseros && (await db.select().from(waiterConfigs).where(eq(waiterConfigs.isDemo, true))).length === 0);
   }
+  const propias = await listWaiterConfigs(CON_MESEROS);
+  check("la configuración de meseros real sigue, activa", propias.length === 1 && propias[0].isActive && !propias[0].isDemo);
 
   const resumenFinal = await demoSummary();
   check("ya no queda nada marcado como demo", !resumenFinal.activo && resumenFinal.total === 0, JSON.stringify(resumenFinal));
@@ -462,6 +486,39 @@ section("Recarga tras borrar");
 }
 
 // ---------------------------------------------------------------------------
+// Desglose por restaurante y borrado de UN restaurante (/admin, botón «Borrar
+// demo de este restaurante»)
+// ---------------------------------------------------------------------------
+
+section("Desglose y borrado por restaurante");
+
+{
+  const { demoBreakdown } = await import("@/lib/demo/summary");
+  const desglose = await demoBreakdown();
+  const resumenAhora = await demoSummary();
+  check("el desglose tiene un renglón por restaurante con demo", desglose.restaurantes.length === new Set(DEMO_PLANS.map((p) => p.restaurantId)).size, `${desglose.restaurantes.length}`);
+  check("  clientes + historial = clientes demo del resumen", desglose.totales.clientes + desglose.totales.historial === resumenAhora.clientes, `${desglose.totales.clientes}+${desglose.totales.historial} vs ${resumenAhora.clientes}`);
+  check("  mesas y zonas cuadran", desglose.totales.mesas === resumenAhora.mesas && desglose.totales.zonas === resumenAhora.zonas);
+  check("  los clientes de hoy y el historial salen separados", desglose.totales.clientes > 0 && desglose.totales.historial > desglose.totales.clientes);
+
+  const objetivo = "rest_centro";
+  const otro = desglose.restaurantes.find((r) => r.restaurantId !== objetivo)!;
+  const antesObjetivo = desglose.restaurantes.find((r) => r.restaurantId === objetivo)!;
+  const realAntes = await db.select().from(waitlistEntries).where(eq(waitlistEntries.id, REAL_CLIENTE));
+  const ensayo = await borrarDemoData({ restaurantId: objetivo, dryRun: true });
+  check("el ensayo de un restaurante dice lo que borraría", ensayo.ok && ensayo.clientes === antesObjetivo.clientes + antesObjetivo.historial && ensayo.mesas === antesObjetivo.mesas && ensayo.zonas === antesObjetivo.zonas, JSON.stringify(ensayo));
+  const uno = await borrarDemoData({ restaurantId: objetivo });
+  const despues = await demoBreakdown();
+  check(`borra solo el demo de ${objetivo}`, uno.ok && !despues.restaurantes.some((r) => r.restaurantId === objetivo), JSON.stringify(uno));
+  check("  el demo de los demás restaurantes no se toca", JSON.stringify(despues.restaurantes.find((r) => r.restaurantId === otro.restaurantId)) === JSON.stringify(otro));
+  check("  el cliente real de ese restaurante sigue intacto", JSON.stringify(await db.select().from(waitlistEntries).where(eq(waitlistEntries.id, REAL_CLIENTE))) === JSON.stringify(realAntes));
+  check("  su mesa real también", (await db.select().from(tables).where(eq(tables.id, REAL_MESA))).length === 1);
+  check("  no queda ninguna fila demo de ese restaurante", (await db.select().from(waitlistEntries).where(and(eq(waitlistEntries.restaurantId, objetivo), eq(waitlistEntries.isDemo, true)))).length === 0 && (await db.select().from(tables).where(and(eq(tables.restaurantId, objetivo), eq(tables.isDemo, true)))).length === 0);
+  const otraVez = await borrarDemoData({ restaurantId: objetivo });
+  check("  repetirlo no falla ni borra nada", otraVez.ok && otraVez.clientes === 0 && otraVez.mesas === 0 && otraVez.zonas === 0);
+}
+
+// ---------------------------------------------------------------------------
 // Permisos: quién ve el aviso y quién puede borrar
 //
 // Se comprueba `can()` directamente, que es la única fuente de permisos de la
@@ -487,18 +544,20 @@ section("Permisos de los datos de demostración");
   const inactivo: Subject = { active: false, roles: [ROLES.ADMIN], restaurantIds: [] };
 
   check("admin puede ver y borrar", can(admin, "demo:ver") && can(admin, "demo:borrar"));
-  check("restaurante puede ver el aviso", can(restaurante, "demo:ver"));
-  check("  pero NO puede borrar", !can(restaurante, "demo:borrar"));
+  // Desde el 2 de octubre el aviso es solo de admin y analítica; el host ve la
+  // etiqueta «Demo» en las cartas.
+  check("restaurante NO ve el aviso (ve la etiqueta «Demo» en las cartas)", !can(restaurante, "demo:ver"));
+  check("  ni puede borrar", !can(restaurante, "demo:borrar"));
   check("analitica puede ver el aviso", can(analitica, "demo:ver"));
   check("  pero NO puede borrar", !can(analitica, "demo:borrar"));
-  check("con dos roles, los permisos se suman y sigue sin poder borrar", can(gerente, "demo:ver") && !can(gerente, "demo:borrar"));
+  check("con dos roles, los permisos se suman (analítica ve el aviso) y sigue sin poder borrar", can(gerente, "demo:ver") && !can(gerente, "demo:borrar"));
   check("un admin desactivado tampoco", !can(inactivo, "demo:ver") && !can(inactivo, "demo:borrar"));
   check("sin usuario, tampoco", !can(null, "demo:ver") && !can(null, "demo:borrar"));
 
   // Los permisos del demo no cambian los de antes: el admin sigue teniendo
   // todo y el resto, lo de siempre.
   const { ALL_ACTIONS } = await import("@/lib/auth/rbac");
-  check("los permisos del admin son los de siempre, con los dos nuevos", can(admin, "usuarios:gestionar") && can(admin, "catalogo:gestionar") && ALL_ACTIONS.length === 14, `${ALL_ACTIONS.length}`);
+  check("los permisos del admin son los de siempre, con los del demo y meseros:gestionar", can(admin, "usuarios:gestionar") && can(admin, "catalogo:gestionar") && can(admin, "meseros:gestionar") && ALL_ACTIONS.length === 15, `${ALL_ACTIONS.length}`);
   check("el demo no le da el mapa general a un host", !can(restaurante, "mapa:ver") && !can(restaurante, "analiticas:ver"));
 }
 

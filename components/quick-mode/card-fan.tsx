@@ -15,11 +15,12 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Clock3, UsersRound, X } from "lucide-react";
 
+import { DemoTag } from "@/components/quick-mode/demo-tag";
 import { minutes, minutesBetween, people, waitColor } from "@/components/quick-mode/format";
 
 export const FAN_LIMIT = 7;
 
-export type FanGuest = { id: string; name: string; party: number; arrived: number };
+export type FanGuest = { id: string; name: string; party: number; arrived: number; demo?: boolean };
 
 type CardFanProps = {
   open: boolean;
@@ -206,8 +207,13 @@ type FaceProps = { guest: FanGuest; waited: number; position: number };
 function FullFace({ guest, waited, position, maxWidth }: FaceProps & { maxWidth?: number }) {
   return (
     <span className="flex flex-col" style={{ maxWidth }}>
-      <span className="text-xs font-semibold uppercase tracking-wider text-panel-muted">N.º {position}</span>
-      <span className="mt-1.5 line-clamp-3 break-words text-lg font-bold leading-tight">{guest.name}</span>
+      <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-panel-muted">
+        N.º {position}
+        {guest.demo && <DemoTag />}
+      </span>
+      {/* `title`: si el nombre es largo y se corta, al pasar el mouse por
+          encima sale entero. */}
+      <span title={guest.name} className="mt-1.5 line-clamp-3 break-words text-lg font-bold leading-tight">{guest.name}</span>
       <span className="mt-2 inline-flex items-center gap-1.5 text-sm text-panel-muted">
         <UsersRound aria-hidden size={15} className="shrink-0" />
         <span className="truncate">{people(guest.party)}</span>
@@ -225,13 +231,14 @@ function CompactFace({ guest, waited, position }: FaceProps) {
   return (
     <span className="flex h-full w-9 flex-col items-center gap-1 -ml-0.5">
       <span className="text-[11px] font-semibold text-panel-muted">{position}</span>
+      {guest.demo && <span className="text-[9px] font-bold uppercase text-accent">Demo</span>}
       <span className="inline-flex items-center gap-0.5 text-sm font-bold">
         {guest.party}
         <UsersRound aria-hidden size={12} />
       </span>
       <span className={`text-xs font-bold ${waitColor(waited)}`}>{waited}′</span>
       <span className="mt-1 min-h-0 flex-1 overflow-hidden text-sm font-bold [writing-mode:vertical-rl]">
-        <span className="line-clamp-1">{guest.name}</span>
+        <span className="line-clamp-1" title={guest.name}>{guest.name}</span>
       </span>
     </span>
   );

@@ -50,7 +50,7 @@ La guía paso a paso para desplegar en Railway está en [`docs/despliegue.md`](d
 | Rol | Acceso |
 |---|---|
 | **Administrador** | Crea usuarios, accede a todos los restaurantes y a todas las estadísticas |
-| **Usuario de restaurante** | Accede solo a su restaurante, modos sencillo y completo |
+| **Usuario de restaurante** | Accede solo a su restaurante, modos sencillo y completo; edita la estructura de sus mesas, elige su plano por defecto y gestiona sus zonas de meseros |
 | **Usuario de analíticas** | Ve estadísticas de todos los restaurantes/marcas, vista completa o filtrada por restaurante |
 
 Un usuario puede tener varios roles a la vez. Cómo está hecho: sección 14 y
@@ -479,6 +479,60 @@ restaurante. `Deshacer` revierte la última acción del local: elimina un grupo
 que acaba de agregarse o restaura el estado anterior. El registro de deshacer
 vive en memoria y se reinicia al reiniciar el servidor.
 
+### Modo sin conexión (requisito de la dirección)
+
+El modo sencillo sigue funcionando sin Internet. Con conexión, todo es como
+antes (Socket.IO, avisos a la room, validaciones del servidor).
+
+- **Cola persistente** (`lib/offline/store.ts`, IndexedDB `tw-modo-sencillo`).
+  Cada cambio se guarda **antes** de mandarlo, con `operationId` (UUID),
+  `action` (el evento del socket), `targetId`, `data` (payload), `sequence`,
+  `createdAt`, `state` (`pendiente`, `enviando` o `conflicto`), `attempts`
+  y `error`. Es por usuario y restaurante, y sobrevive a recargar, girar la
+  tablet o cerrar la pestaña. Nunca guarda contraseñas, tokens ni la cookie.
+  Al cerrar sesión se borra (`components/layout/sign-out-button.tsx`).
+- **Lo que se ve** es «últimos datos del servidor + cola aplicada en orden»
+  (`applyOperations`, en `lib/offline/apply.ts`). Una operación que ya no
+  tiene sentido sobre esos datos (ocupar una mesa ocupada) no se pinta.
+  Deshacer sin conexión quita la última de la cola.
+- **Acciones en cola:** `waitlist:add`, `waitlist:add-many`,
+  `waitlist:resolve` (listo o ausente), `waitlist:reopen`, `waitlist:delete`,
+  `table:assign` (sentar) y `table:release` (liberar mesa). El deshacer del
+  servidor (`waitlist:undo`) no se encola: vive en memoria del servidor.
+- **Copia local** de la lista y de las mesas (`saveSnapshot`), y un service
+  worker (`public/sw.js`, red primero) que guarda solo la página del modo
+  sencillo, `/_next/static` y los logos, para poder **recargar sin red**.
+  Nunca la API, el login, los sockets ni ningún POST.
+- **Reconexión** (`use-offline-queue.ts`): al entrar de nuevo en la room se
+  manda la cola **en orden**, una a una («Sincronizando…»), y después se
+  vuelve a leer todo del servidor. Las confirmadas salen de la cola. Dos
+  pestañas no sincronizan a la vez (`navigator.locks`) y se avisan los
+  cambios (`BroadcastChannel`).
+- **Sin duplicados** (`lib/offline/operations.ts`, migración `0008`, tabla
+  `offline_operations`): el servidor guarda la respuesta de cada
+  `operationId`. Un reenvío devuelve la misma respuesta sin aplicarla otra
+  vez ni avisar a la room. Las altas llevan además un id de cliente elegido en
+  la tablet, y su hora real de llegada (limitada a las últimas 24 h, para que
+  no sirva para colarse). Un `operationId` de otro restaurante se rechaza.
+- **Conflictos:** los decide el servidor con los mismos mecanismos que en
+  línea (el UPDATE condicional de `assignTable`, `releaseTable` con el
+  cliente esperado, `updated_at` en resolver y borrar). Si A, sin conexión,
+  sentó a alguien en una mesa que B ocupó entretanto, la operación de A se
+  rechaza («Esta mesa ya fue asignada»), no pisa a B, queda como
+  `conflicto` y se enseña en rojo hasta que el host pulsa «Entendido». Un
+  rechazo por sesión o por no estar en la room no es un conflicto: se
+  reintenta.
+- **Estados:** 🟢 Conectado, 🟠 Sincronizando…, 🔴 Sin conexión, «N cambios
+  pendientes», 🟢 Sincronizado (`sync-status.tsx`).
+- **Sentar y liberar** desde «Ver todas las cartas» (`seat-picker.tsx`, con
+  `GET /api/restaurante/[id]/mesas`, permiso `rapido:ver`; el socket exige
+  `mesas:asignar`).
+- **Pruebas:** `verify:realtime` (reenvíos, conflictos entre dispositivos,
+  ids ajenos, hora de llegada, `applyOperations`) y `verify:auth` (permisos de
+  `/mesas`). En el navegador, con dos dispositivos y la app compilada: sin
+  red, acciones, cola en IndexedDB, recarga sin red, conflicto, reconexión,
+  sin duplicados y tiempo real.
+
 ### Las cartas: agregar, abanico y «Ver todas las cartas»
 
 Desde el PR `feat/cartas-baraja` el montón ocupa todo el ancho y el
@@ -574,9 +628,36 @@ El editor está pensado para usarse con el dedo en una tablet:
 - **Mesas ocupadas:** el nombre del cliente y los minutos que lleva sentado. El
   contador avanza solo, con un único reloj para todo el mapa.
 - **Un pulso corto** cuando una mesa cambia por un evento en vivo.
-- **Barra de herramientas:** Guardar, Deshacer (también con Ctrl+Z), Girar el
-  plano ↺ ↻, Copiar plano, Alejar, Acercar y Ajustar. Al lado, el indicador
-  «En vivo».
+- **Marcador de mesa grande:** el nombre, el marcador de estado, el mesero y
+  el cliente sentado crecen con la mesa (`markScale`, entre 1 y 1,4), y
+  **Ajustar** encuadra las mesas que hay (no la zona entera, que puede ser un
+  lienzo mucho mayor), hasta un 160 %. Todo es proporcional: se ve igual de
+  bien en escritorio, tablet y celular, y la zona de toque sigue cubriendo la
+  mesa y sus sillas.
+- **Una sola ventana de control** (desde el 5 de octubre), arriba del plano:
+  - primera fila: zona, «★ Por defecto», **Guardar**, **Deshacer** (Ctrl+Z) y
+    **Rehacer** (Ctrl+Shift+Z o Ctrl+Y);
+  - herramientas: girar el plano ↺ ↻, **Pegar elemento**, **Copiar plano**,
+    zoom, «Meseros activos», «Ver meseros» y «Repartir meseros», y el
+    indicador «En vivo»;
+  - **elemento seleccionado**, en la misma ventana y solo si hay selección:
+    nombre, puestos, mesero, girar, **Copiar elemento**, **Pegar**,
+    **Duplicar**, **Eliminar** y **Listo**. Ya no hay ventanita aparte al tocar
+    una mesa;
+  - los avisos («Tienes cambios sin guardar», «Guardado…», «Otro dispositivo
+    guardó…») también van dentro.
+
+  Se **pliega** a la primera fila: en un celular (vertical u horizontal)
+  empieza plegada y en tablet o computadora abierta; lo decide CSS, así que no
+  hay parpadeo. Con el panel plegado, tocar una mesa sigue mostrando sus
+  herramientas. En el celular, la paleta de elementos va dentro de
+  «Herramientas».
+- **Copiar y pegar elementos** (Ctrl+C / Ctrl+V o los botones, que funcionan
+  con el dedo): la copia (`lib/layout/clipboard.ts`) tiene un id nuevo, el
+  siguiente nombre de su tipo y las mismas medidas, giro y puestos, y **no**
+  copia relaciones: nace libre, sin cliente, sin reserva y sin mesero. Entra en
+  Deshacer y Rehacer y se guarda como cualquier elemento. El portapapeles
+  sobrevive al cambio de zona.
 
 ### Íconos
 
@@ -811,25 +892,26 @@ Todos tienen la contraseña **`12345abc`**:
 | Correo | Nombre | Roles | Restaurantes |
 |---|---|---|---|
 | `admin@grupocomidas.test` | Administrador | admin | todos |
-| `centro@grupocomidas.test` | Host Centro | restaurante | rest_centro |
-| `norte@grupocomidas.test` | Host Norte | restaurante | rest_norte |
 | `analitica@grupocomidas.test` | Analista | analitica | todos (solo lectura) |
-| `gerente@grupocomidas.test` | Gerente Centro | restaurante, analitica | rest_centro |
-| `pizzahut-proceres@grupocomidas.test` | Host Pizza Hut Los Próceres | restaurante | rest_tgu_pizza |
-| `kfc-morazan@grupocomidas.test` | Host KFC Boulevard Morazán | restaurante | rest_tgu_kfc |
-| `dennys-lomas@grupocomidas.test` | Host Denny's Las Lomas | restaurante | rest_tgu_dennys |
-| `chinawok-circunvalacion@grupocomidas.test` | Host China Wok Circunvalación | restaurante | rest_sps_chinawok |
-| `kfc-riopiedras@grupocomidas.test` | Host KFC Río Piedras | restaurante | rest_sps_kfc |
-| `dennys-andes@grupocomidas.test` | Host Denny's Los Andes | restaurante | rest_sps_dennys |
-| `dennys@grupocomidas.test` | Denny's (piloto) | restaurante | rest_tgu_dennys, rest_sps_dennys |
-| `pizzahut@grupocomidas.test` | Pizza Hut (piloto) | restaurante | rest_norte, rest_tgu_pizza |
+| `pizzahut@grupocomidas.test` | Pizza Hut | restaurante | rest_norte, rest_tgu_pizza |
+| `dennys@grupocomidas.test` | Denny's | restaurante | rest_tgu_dennys, rest_sps_dennys |
+| `kfc@grupocomidas.test` | KFC | restaurante | rest_tgu_kfc, rest_sps_kfc |
+| `chinawok@grupocomidas.test` | China Wok | restaurante | rest_centro, rest_sps_chinawok |
 
-`dennys@` y `pizzahut@` son los usuarios del **piloto**
-(`docs/salida-a-produccion.md`, sección 3): uno por marca, cada uno con sus 2
-locales. Entran a `/inicio`, con sus 2 tarjetas, y cambian de restaurante con
-el selector de la cabecera. (Hasta el 1 de octubre era un solo usuario,
-`dennys-pizzahut@`, para los 4; el seed ya no lo crea, pero no lo borra de una
-base local que ya lo tenga.)
+**Un usuario de restaurante por marca**, con todos los locales de su marca
+(desde el 5 de octubre). Entran a `/inicio`, con una tarjeta por local, y
+cambian de restaurante con el selector de la cabecera.
+
+Antes el seed creaba un «Host» por local, `gerente@` (restaurante +
+analítica) y, hasta el 1 de octubre, `dennys-pizzahut@`. Ya no los crea, y en
+una base **local** que los tenga de antes **los quita** (son cuentas de prueba;
+sus sesiones, roles y accesos se van con ellos, y la lista de espera solo los
+referencia de forma blanda). En producción el seed no corre nunca: allí un
+usuario que sobra se **desactiva** desde `/admin`, no se borra.
+
+Los casos «un host con un solo restaurante» y «un usuario con dos roles» los
+cubre `verify:auth` con dos cuentas propias (`prueba-local@` y
+`prueba-dual@`) que solo existen en su base temporal.
 
 ### `npm run create-user`: crear o actualizar un usuario desde la terminal
 
@@ -1027,7 +1109,7 @@ Desde `/admin` → **Marcas y restaurantes**, sin scripts (solo admin, permiso
 ## 17. Datos de demostración
 
 Para probar el mapa, las estadísticas y el asistente sin esperar al piloto, hay
-un lote de datos **falsos** que se carga con un comando y se borra desde la web:
+un lote de datos **falsos** que se carga y se borra con un comando:
 
 ```bash
 npm run db:demo          # carga el lote (pide escribir «si»)
@@ -1069,33 +1151,20 @@ aditiva, en `table_layouts`, `tables` y `waitlist_entries`). El borrado usa esas
 columnas, **nunca el nombre**: renombrar una zona de demostración no la salva del
 borrado, ni renombrar una real la mete en el lote.
 
-### El aviso global
+### Sin interfaz desde el 5 de octubre
 
-Mientras haya datos de demostración, una franja discreta lo dice en todas las
-pantallas («Hay datos de demostración cargados»). No es un modal: no tapa nada y
-**no bloquea el Modo rápido**. Desaparece sola en cuanto no queda nada marcado
-como demo.
+A pedido de la dirección, **la interfaz de datos demo se quitó**: ya no hay
+aviso «Hay datos de demostración cargados», ni enlace «Datos demo», ni sección
+en `/admin`, ni `/admin/datos-demo` (da 404), ni su server action. Lo único
+que se ve en la app es la etiqueta **«Demo»** en las cartas del modo sencillo.
 
-### Borrado desde la web
-
-`/admin/datos-demo` muestra los conteos (zonas, mesas, clientes) y, **solo si
-eres admin**, el botón de borrado:
-
-| Quién | Ve los conteos | Puede borrar |
-| --- | --- | --- |
-| Administrador | Sí | **Sí** |
-| Restaurante | Sí (con el aviso) | No |
-| Analítica | Sí (con el aviso) | No |
-
-Hace falta escribir `BORRAR`: el botón no se habilita hasta que se escribe, y la
-server action lo vuelve a pedir en el servidor, porque un POST a mano no pasa por
-la página. El borrado es transaccional y aborta, sin escribir nada, si algún
-dato **real** dependiera de algo de demostración.
-
-Del lado del servidor, `borrarDemoData()` (`lib/demo/delete.ts`) es el único
-sitio que borra datos de demostración, y lo usan **los dos caminos**: la web y
-`npm run db:demo:borrar`. Por eso el script es el plan B y no una segunda
-implementación.
+**Los datos y el sistema se quedan**: `is_demo`, `demo_batch_id`, `lib/demo`,
+`verify:demo`, y los dos comandos (`npm run db:demo` y
+`npm run db:demo:borrar`; en producción, con `railway run`). `borrarDemoData()`
+(`lib/demo/delete.ts`) sigue siendo el único sitio que borra datos de
+demostración: transaccional, solo `is_demo`, y aborta sin escribir nada si algún
+dato **real** dependiera de algo de demostración. `npm run db:demo:borrar` pide
+escribir `BORRAR`.
 
 ### Archivos
 
@@ -1105,23 +1174,146 @@ implementación.
 | `lib/demo/load.ts` | `loadDemoData()` (idempotente) y `demoSummary()`. |
 | `lib/demo/history.ts` | Las ocho semanas de historial. |
 | `lib/demo/delete.ts` | `borrarDemoData()`: solo `is_demo`, en una transacción, y aborta si un dato real depende. |
+| `lib/demo/summary.ts` | `demoBreakdown()`: clientes, historial, mesas, zonas y configuraciones de meseros demo por restaurante. |
 | `scripts/db-demo.mts`, `scripts/db-demo-borrar.mts` | Los dos scripts de terminal. |
-| `app/admin/datos-demo/page.tsx`, `app/admin/demo-actions.ts` | La pantalla y la server action del borrado. |
-| `components/admin/admin-demo.tsx` | Los conteos y el diálogo con la palabra. |
-| `components/layout/demo-banner.tsx` | El aviso global. |
+| `components/quick-mode/demo-tag.tsx` | La etiqueta «Demo» de las cartas. |
 | `scripts/verify-demo.mts` | `npm run verify:demo`. |
 
 ### Qué lo comprueba
 
-`npm run verify:demo` (**85 comprobaciones**, en CI): migración aplicada, que
-cargar dos veces es lo mismo que cargar una, cobertura de los 8 restaurantes,
-teléfonos de mentira en los 12 309 clientes, estados variados, las 56 semanas
-(8) de historial, que `/analiticas` los lee como cualquier otro dato, que **no
-toca nada real**, que **aborta** si un cliente real dependiera de una mesa de
-demostración, el borrado, que lo real sobrevive y que se puede recargar.
+`npm run verify:demo` (en CI): migración aplicada, que cargar dos veces es lo
+mismo que cargar una, cobertura de los 8 restaurantes, teléfonos de mentira,
+estados variados, las 8 semanas de historial, que `/analiticas` los lee como
+cualquier otro dato, que **no toca nada real**, que **aborta** si un cliente
+real dependiera de una mesa de demostración, el borrado (todo o por
+restaurante), que lo real sobrevive y que se puede recargar.
 
-`npm run verify:auth` (**329 comprobaciones**) levanta la app de verdad y lo
-prueba por HTTP: el aviso aparece para admin, analitica y host, la pantalla
-`/admin/datos-demo` muestra o esconde el botón según el rol, analitica, un host
-y quien no tiene sesión **no borran** ni con la palabra puesta, admin sí borra
-escribiendo `BORRAR`, y el aviso desaparece solo después.
+`npm run verify:auth` levanta la app de verdad y comprueba que **no queda ningún
+rastro de la interfaz** para ningún rol (ni el aviso, ni el enlace, ni la
+sección, ni `/admin/datos-demo`, ni la server action) y que los datos demo
+siguen ahí y se ven en las estadísticas y en las cartas con su etiqueta.
+
+---
+
+## 18. Zonas de meseros (requisito del enunciado)
+
+> «Manejo de zonas de meseros, guardar configuración por cantidad de meseros
+> activa y la opción de cambiar entre configuración de zonas fácilmente.»
+
+Cada restaurante guarda varias **configuraciones de meseros** («2 meseros»,
+«3 meseros», «4 meseros»…) y **una está activa**. Cada configuración reparte
+las mesas del restaurante entre N meseros, cada uno con su **nombre** (o
+número) y su **color**. Se cambia de una a otra con **un toque**.
+
+### Qué se ve
+
+- **Plano en vivo** (`/restaurante/[id]/mapa`): el selector **«Meseros
+  activos: 2 | 3 | 4»** arriba, y cada mesa teñida del color de su mesero
+  con su nombre encima. Debajo, la leyenda: cada mesero con sus mesas y
+  cuántas quedan «sin mesero».
+- **Editar zonas** (botón del plano en vivo, o «Repartir meseros»
+  desde el editor, que abre `?meseros=editar`): nombre de la configuración,
+  nombre y color de cada mesero, y un **pincel**: se elige un mesero y se
+  tocan sus mesas (tocar otra vez se la quita). **«Selección en grupo»**
+  cambia el arrastre por un rectángulo que asigna todas las mesas que atrapa.
+  **«Repartir automáticamente»** reparte en bloques de mesas vecinas, con el
+  mismo número de mesas por mesero (como mucho una de diferencia).
+  **«Nueva con N meseros»** crea una configuración ya repartida.
+- **Editor** (`/restaurante/[id]/editor`): el mismo selector, **«Ver
+  meseros»** para teñir las mesas como en el plano en vivo, y el enlace para
+  repartirlas. El reparto se edita en el plano en vivo a propósito: allí un
+  toque no mueve la mesa.
+- **Modo sencillo**: al **sentar**, cada mesa del selector dice su mesero, y
+  el aviso dice «Ana se sentó en Mesa 4. **Lo atiende Luis.**». En «Ver todas
+  las cartas», los sentados dicen quién los atiende.
+- **Estadísticas**: «Clientes atendidos por mesero» (grupos y personas de los
+  últimos 14 días) y el asistente contesta «¿cuántos clientes atendió cada
+  mesero?». Hacia OpenRouter los meseros viajan con alias («Mesero R1»…).
+
+### Tiempo real
+
+Activar, guardar o borrar una configuración emite **`waiters:changed`** a la
+room del restaurante: todas sus tablets (editor y plano en vivo) se repintan
+al instante. Analítica, que no entra en las rooms, se entera por la sala
+`overview`: los contadores llevan `waitersKey` (id y versión de la activa; no
+dice nada de ningún cliente), y su plano se recarga cuando cambia.
+
+### Cómo está hecho
+
+| Pieza | Qué hace |
+| --- | --- |
+| Migración `0009` (solo aditiva) | Tablas `waiter_configs` (con `is_active`, `version`, `save_token`, `is_demo`), `waiter_zones` (mesero y color) y `waiter_zone_tables` (mesa → zona, una por configuración), y la columna `waitlist_entries.waiter_name`. |
+| `lib/waiters/configs.ts` | Listar, crear (ya repartida), guardar, activar y borrar. Comprueba que la configuración, las zonas y las mesas sean de **ese** restaurante, y que las mesas admitan clientes. |
+| `lib/waiters/balance.ts` | `autoBalance` (puro) y la paleta de colores. Lo usan el servidor y el navegador. |
+| `app/restaurante/[id]/meseros/actions.ts` | Server actions: Zod → `meseros:gestionar` → `lib/waiters` → `waiters:changed`. |
+| `components/waiters/waiter-zones.tsx` | Selector, leyenda y panel de edición. |
+| `lib/tables/assign.ts` | Al sentar, apunta en `waiter_name` el mesero de la mesa en la configuración activa, **en el mismo UPDATE** que sienta al cliente. |
+
+### Decisiones que conviene no deshacer sin pensarlo
+
+- **Una sola activa por restaurante**, garantizado por un índice único
+  parcial (`waiter_configs_one_active_idx`). Activar desmarca y marca en un
+  batch.
+- **Se guarda el nombre del mesero en el cliente**, no un id: las
+  estadísticas siguen valiendo aunque luego se cambie o se borre la
+  configuración.
+- **Guardar es un solo batch con bloqueo optimista.** La primera sentencia
+  sube la versión solo si sigue siendo la del navegador y deja su marca
+  (`save_token`); las demás solo actúan con esa marca. Dos tablets que
+  guardan a la vez: gana una y la otra recibe «Otro dispositivo cambió esta
+  configuración». Con transacciones interactivas, la segunda se bloqueaba.
+- **El reparto no toca `tables`**: ni la estructura ni la ocupación. Si el
+  editor borra una mesa, sale de su zona sola (`ON DELETE CASCADE`).
+
+### Permisos
+
+Crear, editar, borrar y activar: **`meseros:gestionar`**, del admin (todos)
+y del rol restaurante (los suyos). Analítica las **ve** (selector, colores y
+leyenda) pero no las cambia. Tabla completa en `docs/rbac.md`.
+
+### Seed y datos de demostración
+
+- `npm run db:seed` crea «2 meseros» (activa) y «3 meseros» en `rest_centro`
+  (Ana, Luis, Marta) y `rest_norte` (Carlos, Sofía, Diego), solo si no tienen
+  ninguna.
+- `npm run db:demo` crea «2 meseros» y «3 meseros» de ejemplo, marcadas
+  `is_demo`, en los restaurantes que **no** tengan ya una, y apunta mesero
+  al historial demo. Las borra `npm run db:demo:borrar` (si la borrada
+  era la activa, pasa a activa la siguiente que quede).
+
+### Qué lo comprueba
+
+- `verify:editor`: reparto automático, Zod, crear, activar (una sola),
+  guardar con sus reglas (otra mesa, un baño, mesa repetida, zona ajena,
+  versión vieja), que el reparto no toca las mesas y que borrar una mesa la
+  saca de su zona.
+- `verify:realtime`: el mesero en el ack y en el aviso al sentar, el reenvío
+  offline, `waiters:changed`, `waitersKey`, dos activaciones a la vez y dos
+  guardados a la vez.
+- `verify:auth`: quién ve y quién cambia (por página y por server action),
+  y que el cambio llega a la otra tablet por el socket.
+- `verify:demo`: configuraciones de ejemplo, mesero en el historial y borrado.
+
+---
+
+## 19. Plano por defecto y estructura de cada restaurante (requisito del enunciado)
+
+> «La configuración de las mesas por defecto en cada restaurante, las
+> actualizaciones de la estructura de las mesas las hacen los usuarios de
+> los restaurantes.»
+
+- **Cada restaurante tiene un plano por defecto**: la zona que se abre al
+  entrar en el editor y en el plano en vivo. Un restaurante nuevo nace con su
+  «Comedor principal» por defecto; si unos datos viejos no tuvieran ninguna,
+  `ensureDefaultLayout` marca la primera al abrir el editor o el plano.
+- **El editor la marca**: «★ Por defecto» en la zona que lo es, y
+  **«Marcar por defecto»** en las demás (`setDefaultLayoutAction`). Una sola
+  por restaurante (índice único parcial `table_layouts_one_default_idx`).
+- **La estructura la editan los usuarios del restaurante**: mover, añadir,
+  borrar, girar, **copiar y pegar** (Ctrl+C / Ctrl+V, o «Copiar», «Pegar» y
+  «Duplicar», también entre zonas) y elegir el plano por defecto. Todo con
+  `editor:guardar`: el rol restaurante en **los suyos** y el admin en todos;
+  analítica no.
+- Lo comprueban `verify:editor` (una sola por defecto, zona de otro
+  restaurante, `ensureDefaultLayout`) y `verify:auth` (centro elige la suya,
+  norte y analítica no, y el editor abre la nueva).

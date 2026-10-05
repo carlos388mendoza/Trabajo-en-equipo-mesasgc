@@ -29,9 +29,31 @@ import { typeIcon } from "./icons";
 export const CANVAS_FONT =
   "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 
-const LABEL_FONT = 12;
-const LABEL_HEIGHT = 20;
-const MARKER_RADIUS = 11;
+// Tamaño de lo que va ENCIMA de la mesa: el marcador redondo, la píldora del
+// nombre, la del mesero y la del cliente. Son los números base, en unidades del
+// plano; como el escenario de Konva se escala entero (zoom y ajuste a la
+// pantalla), un número mayor aquí sale mayor en todas partes, sin romper nada.
+const LABEL_FONT = 15;
+const LABEL_HEIGHT = 26;
+const MARKER_RADIUS = 15;
+const MARKER_ICON = 18;
+const WAITER_HEIGHT = 26;
+const WAITER_FONT = 13;
+const WAITER_MIN_WIDTH = 104;
+const OCCUPANT_HEIGHT = 28;
+const OCCUPANT_FONT = 13;
+const OCCUPANT_MIN_WIDTH = 150;
+
+/**
+ * Cuánto crece lo que va encima de una mesa respecto a una normal: una mesa
+ * grande admite un marcador y un nombre más grandes, y una pequeña se ahogaría.
+ * Proporcional al lado mayor del elemento y acotado, para que dos mesas juntas
+ * nunca se pisen ni la información se salga de la zona.
+ */
+export function markScale(width: number, height: number): number {
+  const lado = Math.max(width, height);
+  return Math.max(1, Math.min(1.4, lado / 75));
+}
 
 type Props = {
   element: LayoutElement;
@@ -50,6 +72,10 @@ type Props = {
    */
   pulse: number;
   onSelect: (id: string) => void;
+  /** Clic o tap completo (no al empezar a arrastrar): reparto de meseros. */
+  onTap?: (id: string) => void;
+  /** Mesero de la mesa en la configuración que se mira; null si no tiene. */
+  waiter?: { color: string; label: string } | null;
   /** Falso en el plano en vivo (solo lectura): la mesa no se mueve. */
   draggable?: boolean;
   /** Avisa al canvas de que un arrastre empezó, para que suelte el Stage. */
@@ -78,32 +104,36 @@ function LabelPill({
   text,
   width,
   y,
+  escala,
   theme,
 }: {
   text: string;
   width: number;
   y: number;
+  escala: number;
   theme: Theme;
 }) {
+  const alto = LABEL_HEIGHT * escala;
+  const fuente = LABEL_FONT * escala;
   return (
     <Group y={y} listening={false}>
       <Rect
         x={-width / 2}
-        y={-LABEL_HEIGHT / 2}
+        y={-alto / 2}
         width={width}
-        height={LABEL_HEIGHT}
-        cornerRadius={LABEL_HEIGHT / 2}
+        height={alto}
+        cornerRadius={alto / 2}
         fill={withAlpha(theme.panel, 0.92)}
         stroke={theme.border}
         strokeWidth={1}
       />
       <Text
         x={-width / 2}
-        y={-LABEL_FONT / 2 + 1}
+        y={-fuente / 2 + 1}
         width={width}
         align="center"
         text={text}
-        fontSize={LABEL_FONT}
+        fontSize={fuente}
         fontStyle="bold"
         fontFamily={CANVAS_FONT}
         fill={theme.panelText}
@@ -124,6 +154,8 @@ function ElementNodeBase({
   minutes,
   pulse,
   onSelect,
+  onTap,
+  waiter = null,
   draggable = true,
   onDragStart,
   onDragMove,
@@ -131,6 +163,16 @@ function ElementNodeBase({
   registerNode,
 }: Props) {
   const waveRef = useRef<Konva.Circle | null>(null);
+  // En pantallas táctiles algunos navegadores mandan `tap` y además un
+  // `click` emulado: sin esto, una mesa se pintaría y despintaría de golpe.
+  const lastTap = useRef(0);
+  const tap = (e: Konva.KonvaEventObject<Event>) => {
+    if (!onTap) return;
+    const now = e.evt.timeStamp;
+    if (now - lastTap.current < 400) return;
+    lastTap.current = now;
+    onTap(element.id);
+  };
   const echoRef = useRef<Konva.Circle | null>(null);
 
   const style = elementStyle(type);
@@ -139,6 +181,9 @@ function ElementNodeBase({
   const colors = theme.status[status];
   const icon = typeIcon(type.key).node;
   const baseRadius = Math.max(width, height) / 2 + 6;
+  // Lo que va encima de la mesa (marcador, nombre, mesero, cliente) crece con
+  // ella, dentro de unos límites: más presencia sin que dos mesas se pisen.
+  const MS = markScale(width, height);
 
   // Onda expansiva cuando la mesa cambia por un evento en vivo: un anillo del
   // color del estado nuevo que crece y se desvanece, y un eco detrás. Se salta
@@ -422,9 +467,12 @@ function ElementNodeBase({
       labelY = height / 2 + 16;
   }
 
-  // La etiqueta cabe DENTRO del elemento, para no tapar las sillas de los
-  // lados. Un nombre largo se corta con "…" en vez de salirse.
-  const labelWidth = Math.max(44, Math.min(width - (style.seatable ? 12 : 16), 132));
+  // La píldora del nombre ocupa lo que hay sitio, con un tope en unidades del plano
+  // para no invadir el hueco con la mesa de al lado. En las mesas con sillas
+  // puede pasar un poco del ancho, que es justo donde no hay nada. Un nombre
+  // largo se corta con "…" en vez de salirse.
+  const anchoMaximo = Math.min(180 * MS, style.seatable ? width + 14 : width - 16);
+  const labelWidth = Math.max(52 * MS, anchoMaximo);
   // Si el elemento es pequeño, ícono y nombre no caben uno encima del otro:
   // se queda solo el nombre.
   const showIcon = iconY !== null && height >= 64;
@@ -437,12 +485,14 @@ function ElementNodeBase({
         : occupantName
       : null;
 
-  // Marcador de las mesas: arriba a la derecha, sobre el borde. Las zonas,
-  // baños y cajas ya llevan su ícono en el centro.
+  // Marcador de las mesas: en la esquina, medio colgado del borde (entro la mitad
+  // de su radio, para que al crecer no quede flotando fuera). Las zonas, baños y
+  // cajas ya llevan su ícono en el centro.
+  const markerOffset = MARKER_RADIUS * MS * 0.55;
   const marker = style.seatable
     ? style.shape === "circle"
-      ? { x: radius * 0.72, y: -radius * 0.72 }
-      : { x: width / 2 - 6, y: -height / 2 + 6 }
+      ? { x: radius - markerOffset, y: -radius + markerOffset }
+      : { x: width / 2 - markerOffset, y: -height / 2 + markerOffset }
     : null;
 
   return (
@@ -479,6 +529,8 @@ function ElementNodeBase({
         onDragMove(element.id, e.target.x() - width / 2, e.target.y() - height / 2);
       }}
       onDragEnd={onDragEnd}
+      onClick={tap}
+      onTap={tap}
     >
       {/* Ondas del pulso en vivo. Ocultas (`visible={false}`, no solo
           transparentes) salvo durante la animación: si no, el Transformer
@@ -518,6 +570,23 @@ function ElementNodeBase({
         opacity={0}
       />
 
+      {/* Zona de mesero: un halo del color del mesero detrás de la mesa. Va
+          antes del cuerpo para no tapar el estado (libre, ocupada…). */}
+      {waiter ? (
+        <Rect
+          x={seats > 0 ? -14 : -6}
+          y={seats > 0 ? -14 : -6}
+          width={width + (seats > 0 ? 28 : 12)}
+          height={height + (seats > 0 ? 28 : 12)}
+          cornerRadius={style.shape === "circle" ? (Math.min(width, height) + 28) / 2 : 18}
+          fill={withAlpha(waiter.color, theme.dark ? 0.28 : 0.22)}
+          stroke={waiter.color}
+          strokeWidth={3}
+          listening={false}
+          {...glow(waiter.color, theme, 0.7)}
+        />
+      ) : null}
+
       {body}
 
       {/* Nombre, ícono, marcador y cliente van en un grupo que contrarresta el
@@ -534,40 +603,66 @@ function ElementNodeBase({
         ) : null}
 
         {style.showLabel ? (
-          <LabelPill text={element.label} width={labelWidth} y={labelY - height / 2} theme={theme} />
+          <LabelPill text={element.label} width={labelWidth} y={labelY - height / 2} escala={MS} theme={theme} />
         ) : null}
 
         {marker ? (
           <Group x={marker.x} y={marker.y}>
             <Circle
-              radius={MARKER_RADIUS}
+              radius={MARKER_RADIUS * MS}
               fill={colors.stroke}
               stroke={theme.mapBg}
               strokeWidth={2}
               {...glow(colors.stroke, theme, 0.8)}
             />
-            <CanvasIcon node={icon} color={colors.onStroke} size={13} x={0} y={0} />
+            <CanvasIcon node={icon} color={colors.onStroke} size={MARKER_ICON * MS} x={0} y={0} />
+          </Group>
+        ) : null}
+
+        {waiter ? (
+          <Group y={-height / 2 - (seats > 0 ? 34 * MS : 17 * MS)}>
+            <Rect
+              x={-Math.max(labelWidth, WAITER_MIN_WIDTH * MS) / 2}
+              y={(-WAITER_HEIGHT * MS) / 2}
+              width={Math.max(labelWidth, WAITER_MIN_WIDTH * MS)}
+              height={WAITER_HEIGHT * MS}
+              cornerRadius={(WAITER_HEIGHT * MS) / 2}
+              fill={waiter.color}
+            />
+            <Text
+              x={-Math.max(labelWidth, WAITER_MIN_WIDTH * MS) / 2 + 6}
+              y={-WAITER_FONT * MS * 0.5 + 1}
+              width={Math.max(labelWidth, WAITER_MIN_WIDTH * MS) - 12}
+              align="center"
+              text={waiter.label}
+              fontSize={WAITER_FONT * MS}
+              fontStyle="bold"
+              fontFamily={CANVAS_FONT}
+              fill="#ffffff"
+              wrap="none"
+              ellipsis
+            />
           </Group>
         ) : null}
 
         {occupantText ? (
-          <Group y={height / 2 + (seats > 0 ? 34 : 16)}>
+          <Group y={height / 2 + (seats > 0 ? 40 * MS : 20 * MS)}>
             <Rect
-              x={-Math.max(labelWidth, 120) / 2}
-              y={-11}
-              width={Math.max(labelWidth, 120)}
-              height={22}
-              cornerRadius={11}
+              x={-Math.max(labelWidth, OCCUPANT_MIN_WIDTH * MS) / 2}
+              y={(-OCCUPANT_HEIGHT * MS) / 2}
+              width={Math.max(labelWidth, OCCUPANT_MIN_WIDTH * MS)}
+              height={OCCUPANT_HEIGHT * MS}
+              cornerRadius={(OCCUPANT_HEIGHT * MS) / 2}
               fill={theme.status.ocupada.stroke}
               {...glow(theme.status.ocupada.stroke, theme, 0.6)}
             />
             <Text
-              x={-Math.max(labelWidth, 120) / 2 + 8}
-              y={-6}
-              width={Math.max(labelWidth, 120) - 16}
+              x={-Math.max(labelWidth, OCCUPANT_MIN_WIDTH * MS) / 2 + 8}
+              y={-OCCUPANT_FONT * MS * 0.5 + 1}
+              width={Math.max(labelWidth, OCCUPANT_MIN_WIDTH * MS) - 16}
               align="center"
               text={occupantText}
-              fontSize={11}
+              fontSize={OCCUPANT_FONT * MS}
               fontStyle="bold"
               fontFamily={CANVAS_FONT}
               fill={theme.status.ocupada.onStroke}

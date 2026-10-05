@@ -183,12 +183,11 @@ despliegue**: no está en el Pre-deploy y no se carga solo.
    esperando, 29 sentados, 6 mesas reservadas y ~12 251 de historial** (12 403
    filas en total), y **0 omitidos**. Si sale «Omitidos», es que en esa base
    falta algún restaurante: corre `db:restaurantes` y vuelve a correrlo.
-6. En el navegador: entra como admin, `/analiticas` y `/mapa` tienen cifras y el
-   aviso «Hay datos de demostración cargados» aparece arriba en todas las
-   pantallas. Como analitica, el aviso también sale, sin el botón de borrar.
-7. **Al terminar las pruebas, borra el lote** desde la web: `/admin/datos-demo`,
-   escribir `BORRAR`. Es la vía normal, y el aviso desaparece solo. Si hace
-   falta desde la terminal:
+6. En el navegador: entra como admin, `/analiticas` y `/mapa` tienen cifras.
+   Desde el 5 de octubre no hay aviso ni sección de datos demo en la interfaz;
+   en el modo sencillo cada carta de demostración lleva la etiqueta «Demo».
+7. **Al terminar las pruebas, borra el lote** desde la terminal (pide escribir
+   `BORRAR`):
 
    ```powershell
    railway run npm run db:demo:borrar

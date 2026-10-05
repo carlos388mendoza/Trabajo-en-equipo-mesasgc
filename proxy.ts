@@ -37,8 +37,10 @@ export function proxy(request: NextRequest) {
 export const config = {
   // Todo menos los endpoints de Better Auth (el propio login), los archivos
   // estáticos de Next, los logos de /brand y los íconos de la pestaña: sin
-  // esta exclusión el login no podría ni cargar su logo.
+  // esta exclusión el login no podría ni cargar su logo. `sw.js` (el service
+  // worker del modo sencillo sin conexión) también: el navegador lo vuelve a
+  // pedir por su cuenta para actualizarlo, y no lleva ningún dato.
   matcher: [
-    "/((?!api/auth|_next/static|_next/image|brand/|icon|apple-icon|favicon\\.ico).*)",
+    "/((?!api/auth|_next/static|_next/image|brand/|icon|apple-icon|favicon\\.ico|sw\\.js$).*)",
   ],
 };

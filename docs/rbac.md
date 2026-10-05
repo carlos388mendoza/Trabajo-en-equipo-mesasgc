@@ -33,7 +33,9 @@ Qué significa cada marca:
 | `/analiticas` (vista global y por restaurante) | Sí | — | Sí |
 | `/mapa` (mapa general, todas las marcas) | Sí | — | Sí (solo lectura) |
 | `/restaurante/[id]/mapa` (plano en vivo, solo lectura) | Sí | Suyos | Sí, sin nombres |
-| `/admin/datos-demo` (datos de demostración) | Sí, y borra | Sí, sin borrar | Sí, sin borrar |
+| Cabecera: **«Modo sencillo»** (acceso directo) y **«Panel»** (modo completo) | Modo sencillo: todos | Los dos: suyos | — |
+
+Los accesos directos de la cabecera salen solo con `rapido:ver` («Modo sencillo») y, para el rol restaurante, `editor:ver` («Panel»), calculados en el servidor con `can()`. Dentro de un restaurante llevan a ese; fuera, con varios, dejan elegir. Analítica no recibe ni la etiqueta.
 
 ## Acciones
 
@@ -42,7 +44,8 @@ Qué significa cada marca:
 | `usuarios:gestionar` | Crear, editar, restablecer contraseña y desactivar usuarios (`app/admin/actions.ts`) | Sí | — | — |
 | `catalogo:gestionar` | Crear, editar y desactivar marcas y restaurantes (`app/admin/catalog-actions.ts`) | Sí | — | — |
 | `editor:ver` | Ver el plano; nombre del cliente en vivo | Sí | Suyos | — |
-| `editor:guardar` | Guardar y copiar la estructura (server actions del editor) | Sí | Suyos | — |
+| `editor:guardar` | Guardar, copiar y pegar la estructura, y **elegir el plano por defecto** (`setDefaultLayoutAction`) | Sí | Suyos | — |
+| `meseros:gestionar` | Crear, editar, borrar y **activar** configuraciones de zonas de meseros (`app/restaurante/[id]/meseros/actions.ts`). Verlas solo pide `plano:ver` | Sí | Suyos | — |
 | `rapido:ver` | `GET /api/restaurante/[id]/clientes` | Sí | Suyos | — |
 | `rapido:modificar` | `POST …/clientes` y `PATCH …/clientes/[clienteId]` | Sí | Suyos | — |
 | `mesas:asignar` | Socket.IO `table:assign` y `table:release` | Sí | Suyos | — |
@@ -51,14 +54,15 @@ Qué significa cada marca:
 | `mapa:ver` | `/mapa`, la action `loadOverviewCounters` y la sala `overview` de Socket.IO | Sí | — | Sí |
 | `plano:ver` | `/restaurante/[id]/mapa` y la action `loadLivePlan` (estados y ocupación) | Sí | Suyos | Sí |
 | `plano:clientes` | Nombre del cliente de cada mesa en el plano en vivo | Sí | Suyos | — |
-| `demo:ver` | Ver que hay datos de demostración y cuántos son: el aviso global y `/admin/datos-demo` | Sí | Sí | Sí |
-| `demo:borrar` | **Borrarlos**: la action `deleteDemoDataAction` (`app/admin/demo-actions.ts`) | Sí | — | — |
+| `demo:ver` | Ver que hay datos de demostración y cuántos son. Sin pantalla desde el 5 de octubre: se conserva para `lib/demo` | Sí | — | Sí |
+| `demo:borrar` | Borrarlos. Sin pantalla desde el 5 de octubre: se borran con `npm run db:demo:borrar` | Sí | — | — |
 
-Las dos últimas son globales, no de un restaurante: el lote de demostración
-afecta a los 8 locales a la vez. `demo:ver` la tienen los tres roles a propósito:
-quien está mirando el mapa o las estadísticas tiene derecho a saber si los
-números son reales. `demo:borrar` es solo del admin, porque es la **única
-operación de la app que elimina filas**.
+Las dos últimas son globales, no de un restaurante. `demo:ver` es de admin y
+analítica: quien mira el mapa o las estadísticas tiene derecho a saber si los
+números son reales. Desde el 2 de octubre el host ya no la tiene (pedido de la
+dirección): en el modo sencillo cada carta de demostración lleva la etiqueta
+**«Demo»**, que basta para distinguirla. `demo:borrar` es solo del admin,
+porque es la operación que más filas elimina de golpe.
 
 Cinco casos que vale la pena tener presentes:
 
@@ -82,33 +86,54 @@ Cinco casos que vale la pena tener presentes:
 - **Entrar en la room de Socket.IO de un restaurante** exige `editor:ver` o
   `rapido:ver` en él. Por eso analitica no entra en ninguna: no edita nada en
   vivo, y en esas rooms viajan los ids de los clientes.
-- **Borrar los datos de demostración es global**, así que `demo:borrar` no es
-  «de un restaurante» y un host con varios locales no puede: aunque tuviera dos,
-  el borrado no es suyo. Lo que puede un host es **ver** que los hay
-  (`demo:ver`).
+- **Borrar los datos de demostración** ya no se hace desde la web: solo con
+  `npm run db:demo:borrar` en la terminal. El host distingue las cartas de
+  demostración por su etiqueta «Demo».
 
 ## Datos de demostración
 
-Si hay un lote de demostración cargado (`npm run db:demo`), una franja discreta
-lo avisa en todas las pantallas. Verlo no necesita más que `demo:ver`.
+Desde el 5 de octubre (pedido de la dirección) **la interfaz de datos demo ya
+no existe**: ni el aviso «Hay datos de demostración cargados», ni el enlace
+«Datos demo», ni la sección de `/admin`, ni `/admin/datos-demo` (da 404), ni
+su server action. Los datos se quedan, con `is_demo` y `demo_batch_id`, y se
+cargan y borran desde la terminal (`npm run db:demo` y `npm run db:demo:borrar`,
+o con `railway run` en producción).
 
-| Quién | Ve el aviso | Ve `/admin/datos-demo` | Ve el botón de borrar |
+- En el modo sencillo cada carta de demostración sigue llevando la etiqueta
+  **«Demo»**.
+- `demo:ver` y `demo:borrar` siguen en `lib/auth/rbac.ts`: `verify:demo`
+  comprueba su matriz, y `verify:auth` que no queda ningún rastro de la
+  interfaz y que los datos siguen ahí.
+
+## Zonas de meseros y plano por defecto
+
+Dos requisitos del enunciado: «manejo de zonas de meseros, guardar
+configuración por cantidad de meseros activa y la opción de cambiar entre
+configuración de zonas fácilmente» y «la configuración de las mesas por
+defecto en cada restaurante, las actualizaciones de la estructura de las mesas
+las hacen los usuarios de los restaurantes».
+
+| Qué | admin | restaurante | analitica |
 |---|:---:|:---:|:---:|
-| Administrador | Sí | Sí | **Sí** |
-| Restaurante | Sí | Sí (solo lectura) | — |
-| Analítica | Sí | Sí (solo lectura) | — |
-| Sin sesión | No (va a `/login`) | No (va a `/login`) | — |
+| Ver el selector «Meseros activos», los colores y la leyenda en el plano en vivo | Sí | Suyos | Sí (solo lectura) |
+| Cambiar la configuración activa (un toque) | Sí | Suyos | — |
+| Crear, editar (nombres, colores, reparto) y borrar configuraciones | Sí | Suyos | — |
+| Ver quién atiende al sentar (modo sencillo) | Sí | Suyos | — (no opera) |
+| Estadísticas por mesero y preguntarle al asistente | Sí | — | Sí |
+| Editar la estructura (mover, añadir, borrar, girar, copiar y pegar) | Sí | Suyos | — |
+| Elegir el plano por defecto | Sí | Suyos | — |
 
-- El aviso **no bloquea nada**, y en particular **no bloquea el Modo rápido**.
-- Para borrar hay que escribir `BORRAR`: el botón no se habilita hasta
-  entonces, y la server action lo vuelve a comprobar en el servidor, porque un
-  POST a mano no pasa por la página.
-- El botón escondido **no protege**: quien no tiene `demo:borrar` recibe
-  «No tienes permiso» aunque mande la palabra. Sin sesión, el proxy lo manda a
-  `/login`.
-- Las pruebas están repartidas: `verify:demo` (85) comprueba la matriz de
-  `can()` y la lógica de datos, y `verify:auth` (329) lo hace por HTTP contra la
-  app real.
+- **Se comprueba en el servidor**, como todo lo demás: cada server action
+  vuelve a pedir el permiso con el `restaurantId` del payload, y además
+  `lib/waiters/configs.ts` comprueba que la configuración, sus zonas y sus
+  mesas sean de **ese** restaurante (no vale mandar una configuración ajena
+  con el id de un restaurante propio).
+- **Tiempo real:** `waiters:changed` va a la room del restaurante. Analítica
+  no entra en las rooms: su plano se recarga cuando cambia `waitersKey` en
+  los contadores de la sala overview (id y versión de la configuración activa,
+  sin datos de clientes).
+- Lo prueban `verify:auth` (páginas, server actions por HTTP y el aviso por
+  socket a otra tablet), `verify:editor` y `verify:realtime`.
 
 ## Mapa general y plano en vivo
 
@@ -178,7 +203,8 @@ El enlace «Mapa» del encabezado lleva a `/mapa` a quien tiene `mapa:ver`, y a
 > los restaurantes/marcas, vista completa y opción de ver por restaurante.»
 
 Revisado el 1 de octubre de 2026 contra la app real en local, con los
-usuarios del seed. Todas las pruebas están en `npm run verify:auth` (329/329):
+usuarios del seed, y ampliado el 5 de octubre con las zonas de meseros y el
+plano por defecto. Todas las pruebas están en `npm run verify:auth` (392/392):
 levanta la app y hace peticiones HTTP y de Socket.IO de verdad con la cookie
 de cada usuario.
 
@@ -200,3 +226,5 @@ de cada usuario.
 | **Analítica no ve `/admin`** | Sí | `/admin` → `/sin-acceso`, y `createUserAction` → «No tienes permiso». |
 | **Múltiples roles: el gerente** (restaurante + analitica) tiene la suma y nada más | Sí | Tiene `rapido` y `editor` de `rest_centro`, `/analiticas`, `/mapa`, el asistente, la room de `rest_centro` y la sala overview. **No** tiene `rest_norte` (páginas, API GET/POST y socket), ni `/admin`, ni `createUserAction`. |
 | **Protecciones en el servidor**, no solo botones escondidos | Sí | Todo lo de arriba se prueba **sin la interfaz**: peticiones directas a páginas, API routes, server actions y eventos de Socket.IO con la cookie de cada rol. `can()` (`lib/auth/rbac.ts`) se comprueba en cada página, action, API y evento de socket. `proxy.ts` solo mira si hay cookie. |
+| **Zonas de meseros**: varias configuraciones por restaurante, una activa, cambio con un toque | Sí | «Zonas de meseros y plano por defecto»: el host de `rest_centro` activa «3 meseros» por la server action y la otra tablet recibe `waiters:changed`; analítica y norte reciben «No tienes permiso» al activar, guardar, crear o borrar, y una configuración de `rest_centro` no se activa con el id de `rest_norte`. Al sentar, el ack, el aviso y el cliente guardan el mesero. |
+| **Plano por defecto**, y la estructura la actualizan los usuarios de su restaurante | Sí | Mismo bloque: centro marca la Terraza como plano por defecto y el editor la abre; norte y analítica no pueden; una zona de otro restaurante no se puede marcar; el admin también puede. Guardar, copiar y pegar la estructura pide `editor:guardar` («Server actions del editor»). |

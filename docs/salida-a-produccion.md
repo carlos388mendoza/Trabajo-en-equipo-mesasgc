@@ -181,8 +181,9 @@ cumple: corregir lo que falló y repetir una semana con los mismos 4.
 
 ### 3.1 Preparar el piloto en /admin
 
-**Crear los dos usuarios del piloto.** Hay dos formas; las dos usan las
-mismas reglas.
+**Crear los usuarios de restaurante: uno por marca**, cada uno con todos los
+locales de su marca (`pizzahut@`, `dennys@`, `kfc@` y `chinawok@`). Hay
+dos formas; las dos usan las mismas reglas.
 
 *Desde la terminal* (recomendado: cada contraseña la escribe quien corre el
 comando, oculta, y no pasa por ninguna pantalla compartida). En PowerShell,
@@ -191,9 +192,11 @@ dentro de la carpeta del proyecto y con la CLI de Railway enlazada:
 ```powershell
 & "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo dennys@grupocomidas.test --nombre "Denny's" --rol restaurante --marca "Denny's"
 & "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo pizzahut@grupocomidas.test --nombre "Pizza Hut" --rol restaurante --marca "Pizza Hut"
+& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo kfc@grupocomidas.test --nombre "KFC" --rol restaurante --marca "KFC"
+& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo chinawok@grupocomidas.test --nombre "China Wok" --rol restaurante --marca "China Wok"
 ```
 
-Cada uno muestra la base (solo el host), el resumen con sus 2 restaurantes,
+Cada uno muestra la base (solo el host), el resumen con los restaurantes de su marca,
 pide la contraseña dos veces y confirmar con «si». Si el usuario ya existe,
 solo le pone el nombre, el rol y los restaurantes, sin tocar su contraseña.
 
@@ -212,12 +215,15 @@ solo le pone el nombre, el rol y los restaurantes, sin tocar su contraseña.
 8. Para comprobarlo, entra con cada usuario en otra ventana privada: tiene
    que ver sus 2 tarjetas en **Inicio**, y ninguna de la otra marca.
 
-Si antes se creó el usuario único `dennys-pizzahut@grupocomidas.test`,
-desactívalo en `/admin` (botón «Desactivar»): ya no se usa.
+Cualquier otro usuario de restaurante que sobre (por ejemplo, el antiguo
+`dennys-pizzahut@grupocomidas.test` o un «Host» por local) se **desactiva** en
+`/admin` (botón «Desactivar»), no se borra. El administrador y analítica no se
+tocan.
 
-**Dibujar el plano de cada local:** en cada tarjeta, **Modo completo** abre
-el editor sobre la zona vacía «Comedor principal»: arrastra mesas, baños,
-caja, barra, puertas y paredes, y pulsa **Guardar**.
+**Dibujar el plano de cada local:** **Panel** (arriba) o **Modo completo** en
+cada tarjeta abre el editor sobre la zona vacía «Comedor principal»: arrastra
+mesas, baños, caja, barra, puertas y paredes, y pulsa **Guardar** (ver
+«Editar el plano» en el manual).
 
 ### 3.2 Agregar un restaurante o una marca nuevos
 
@@ -247,6 +253,11 @@ Desde **Administración → Marcas y restaurantes**, sin scripts:
 **Entrar**. Llegas a **Inicio**, con una tarjeta por cada uno de tus
 restaurantes y cuántos clientes esperan en cada uno. Pulsa **Modo sencillo**
 en el tuyo. (Si solo tienes uno, entras directo.)
+
+**Acceso directo al Modo sencillo:** arriba, en la barra, **⚡ Modo sencillo**
+te lleva directo, sin pasar por el Panel: si ya estás en un restaurante, al de
+ese restaurante; si tienes varios y no estás en ninguno, te deja elegir. Al
+lado está **Panel**, el modo completo (el editor del plano).
 
 **Cambiar de restaurante:** arriba, junto al logo, está el nombre del
 restaurante en el que estás. Tócalo y elige otro: se abre la misma pantalla
@@ -312,25 +323,88 @@ completa.
 restaurante: en espera, listas y ausentes. Por defecto muestra las de **hoy**;
 **Últimos 7 días** muestra la semana. Filtra por estado o busca por nombre
 (sin importar tildes). Cada carta dice a qué hora llegó, cuánto esperó y
-quién la resolvió. Desde ahí:
+quién la resolvió.
+
+Las cartas de los **datos de demostración** llevan la etiqueta **«Demo»**: no
+son clientes de verdad.
+
+El panel **no tiene X**: se mueve arrastrando su parte de arriba (la rayita,
+el título o los filtros). Arrastrado hacia abajo se queda a media pantalla;
+hacia arriba vuelve a ocupar casi toda. **Bajarlo del todo lo cierra** (también
+Esc o tocar fuera). La lista de cartas se desplaza con el dedo como siempre.
+Desde ahí:
 
 - una carta **en espera** se marca **Listo** o **Ausente**;
 - una **lista o ausente** que fue un error vuelve con **Volver a la espera**
-  (recupera su lugar en la fila).
+  (recupera su lugar en la fila);
+- un cliente anotado por error se quita con **Eliminar**: sale una ventana con
+  su nombre y **Aceptar** / **Cancelar**. Se puede deshacer enseguida con
+  **Deshacer** o Ctrl+Z. Un cliente con una mesa ocupada no se puede eliminar:
+  primero hay que liberar la mesa.
 
 **Si te equivocaste:** pulsa **Deshacer** (la flecha curva) o **Ctrl+Z**.
 Deshace solo la **última** acción del restaurante, en cualquier tablet, y
 hay que hacerlo enseguida. Si pasó mucho rato o alguien hizo otra cosa
 después, ya no se puede: búscala en **Ver todas las cartas** y corrígela ahí.
 
-**Si arriba dice «Sin conexión» o «Reconectando»**
+**Sentar y liberar mesa:** en **Ver todas las cartas**, una carta en espera o
+lista tiene **Sentar**: elige una mesa libre (por zona, con sus lugares y el
+**mesero** que la atiende, con su color). Al sentar, el aviso dice quién lo
+atiende: «Ana se sentó en Mesa 4. **Lo atiende Luis.**». Una carta sentada
+tiene **Liberar Mesa N** cuando el grupo se va. Si otra tablet ocupó esa mesa
+un segundo antes, sale «Esta mesa ya fue asignada»: elige otra.
 
-1. Espera 10 segundos: casi siempre vuelve sola.
-2. Revisa el wifi de la tablet.
-3. Recarga la página.
-4. Si en 2 minutos no vuelve: **pasa a la lista en papel** y avisa al
-   encargado. Cuando vuelva la conexión, pasa a la tablet a los que sigan
-   esperando.
+**Si se va el Internet (modo sin conexión)**
+
+Arriba, junto a «SIGUIENTE EN LA FILA», siempre dice cómo está la conexión:
+🟢 **Conectado**, 🔴 **Sin conexión**, 🟠 **Sincronizando…** o 🟢
+**Sincronizado**, y cuántos **cambios pendientes** hay.
+
+1. **Sigue trabajando.** Sin conexión se puede agregar (uno o varios),
+   marcar listo o ausente, volver a la espera, sentar, liberar mesa y
+   eliminar. Cada cambio se guarda en la tablet y suma un «cambio
+   pendiente». Deshacer (o Ctrl+Z) quita el último que todavía no se envió.
+2. **Se puede recargar o cerrar la pestaña:** al volver a abrir el modo
+   sencillo (en la misma tablet y con el mismo usuario) están la lista y los
+   cambios pendientes. Para eso hay que haber abierto el modo sencillo con
+   Internet al menos una vez en esa tablet.
+3. **Al volver el Internet** se envía todo sola, en orden («Sincronizando…»)
+   y la lista se vuelve a leer del servidor. No hay que hacer nada.
+4. Si otra tablet cambió lo mismo mientras tanto (por ejemplo, ocupó la mesa
+   que elegiste), ese cambio **no se aplica** y sale un aviso en rojo con el
+   motivo. La lista ya muestra lo que hay de verdad; pulsa **Entendido** y
+   corrígelo si hace falta (por ejemplo, sienta al cliente en otra mesa).
+5. **No cierres sesión con cambios pendientes:** se perderían (la app avisa
+   antes). Cerrar sesión borra de la tablet la lista y la cola.
+6. Si pasan muchos minutos sin Internet y la fila crece, la **lista en papel**
+   sigue siendo el respaldo: avisa al encargado.
+
+**Editar el plano (Panel)**
+
+Todo se hace desde **una sola ventana**, arriba del plano:
+
+- **Primera fila:** la **zona** (Comedor principal, Terraza…), **★ Por
+  defecto** (la zona que se abre al entrar; en otra zona sale **Marcar por
+  defecto**), **Guardar**, **Deshacer** (Ctrl+Z) y **Rehacer** (Ctrl+Shift+Z o
+  Ctrl+Y).
+- **Herramientas:** girar el plano entero, **Pegar elemento**, **Copiar plano**
+  (a otro restaurante), zoom, **Meseros activos: 2 | 3** con **Ver meseros**
+  (tiñe cada mesa del color de su mesero) y **Repartir meseros**.
+- **Elemento seleccionado:** al tocar una mesa (o cualquier elemento) aparece,
+  en la misma ventana, su **nombre**, sus **puestos**, su **mesero**, **Girar**,
+  **Copiar elemento**, **Pegar**, **Duplicar** y **Eliminar**. **Listo** (o
+  tocar el plano vacío) quita la selección.
+- **Copiar y pegar:** selecciona una mesa → **Copiar elemento** (o Ctrl+C) →
+  **Pegar** (o Ctrl+V). Sale una copia al lado, con otro nombre («Mesa 9») y
+  las mismas medidas, giro y puestos, **libre** y sin cliente. Se mueve, se
+  gira, se renombra y se elimina como cualquier mesa, y se puede pegar en
+  otra zona. **Deshacer** la quita.
+- **Celular o tablet pequeña:** la ventana empieza **plegada** (solo la
+  primera fila) para ver el plano. **Herramientas** la abre y **Plegar** la
+  cierra; si tocas una mesa, sus herramientas salen igual. En el celular, los
+  elementos para añadir están dentro de **Herramientas**.
+- Nada se guarda hasta pulsar **Guardar**. Una mesa con un cliente sentado no
+  se puede eliminar.
 
 **No compartas la contraseña fuera del equipo del piloto.** Si alguien nuevo
 necesita entrar, el administrador le crea su propio usuario.

@@ -29,6 +29,7 @@ import {
   isSeatableElement,
 } from "@/lib/db/enums";
 import { elementTypes, tables, waitlistEntries } from "@/lib/db/schema";
+import { waiterNameForTableSql } from "@/lib/waiters/configs";
 
 const FREE: TableStatus = "libre";
 const OCCUPIED: TableStatus = "ocupada";
@@ -54,7 +55,13 @@ export type AssignConflict =
   | "cliente_no_existe";
 
 export type AssignResult =
-  | { ok: true; table: TableOccupancy; entryId: string }
+  | {
+      ok: true;
+      table: TableOccupancy;
+      entryId: string;
+      /** Mesero que lo atiende (zona de la mesa en la configuración activa), o null. */
+      waiterName: string | null;
+    }
   | { ok: false; code: AssignConflict; error: string };
 
 export type ReleaseResult =
@@ -131,8 +138,9 @@ export async function assignTable(req: AssignRequest): Promise<AssignResult> {
   //  - El cliente solo pasa a "sentado" si la mesa quedó apuntándole a él.
   // Así, si la primera no cambia nada, la segunda tampoco.
   let claimed: { version: number; layoutId: string }[];
+  let seated: { id: string; waiterName: string | null }[];
   try {
-    [claimed] = await db.batch([
+    [claimed, seated] = await db.batch([
       db
         .update(tables)
         .set({
@@ -157,6 +165,9 @@ export async function assignTable(req: AssignRequest): Promise<AssignResult> {
           seatedAt: now,
           assignedTableId: tableId,
           seatedByUserId: userId,
+          // El mesero de la zona de la mesa en la configuración ACTIVA, en
+          // el mismo UPDATE: es el de este instante (ver `waiterNameForTableSql`).
+          waiterName: waiterNameForTableSql(tableId),
           updatedAt: now,
         })
         .where(
@@ -167,7 +178,7 @@ export async function assignTable(req: AssignRequest): Promise<AssignResult> {
             sql`exists (select 1 from ${tables} where ${tables.id} = ${tableId} and ${tables.currentEntryId} = ${entryId})`,
           ),
         )
-        .returning({ id: waitlistEntries.id }),
+        .returning({ id: waitlistEntries.id, waiterName: waitlistEntries.waiterName }),
     ]);
   } catch (err) {
     // El índice único `tables_current_entry_unique` es la red de seguridad:
@@ -190,6 +201,7 @@ export async function assignTable(req: AssignRequest): Promise<AssignResult> {
   return {
     ok: true,
     entryId,
+    waiterName: seated[0]?.waiterName ?? null,
     table: {
       tableId,
       layoutId: claimed[0].layoutId,

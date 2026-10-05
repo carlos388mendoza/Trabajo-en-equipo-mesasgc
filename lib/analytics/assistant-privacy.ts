@@ -67,6 +67,16 @@ export function buildOpenRouterMessages(
           grupos: customer.groups,
           esperaPromedioMinutos: customer.minutes,
         })),
+        // Meseros con alias: son nombres de personas del equipo y no hace
+        // falta que salgan hacia OpenRouter. La respuesta los recupera en
+        // `restoreCustomerAliases`.
+        meseros: statistics.waiters.map((waiter, index) => ({
+          alias: waiterAlias(index),
+          restaurante: waiter.restaurantName,
+          gruposAtendidos: waiter.groups,
+          personas: waiter.people,
+          esperaPromedioMinutos: waiter.minutes,
+        })),
         llamados: {
           gruposAvisados: statistics.totals.calledGroups,
           promedioMinutosHastaAvisar: statistics.totals.averageCallMinutes,
@@ -76,12 +86,19 @@ export function buildOpenRouterMessages(
   ];
 }
 
+/** Alias de un mesero hacia el modelo. No es «Mesero N»: así se llaman por defecto. */
+export function waiterAlias(index: number): string {
+  return `Mesero R${index + 1}`;
+}
+
 /** Restaura los nombres únicamente en el texto que la pantalla mostrará. */
 export function restoreCustomerAliases(answer: string, statistics: AnalyticsData): string {
-  const aliases = statistics.topCustomers.map((customer, index) => [
-    `Cliente ${index + 1}`,
-    customer.name,
-  ] as const);
+  const aliases = [
+    // Los meseros primero: «Mesero R1» no debe confundirse con nada más corto.
+    ...statistics.waiters.map((waiter, index) => [waiterAlias(index), waiter.name] as const),
+    ...statistics.topCustomers.map((customer, index) => [`Cliente ${index + 1}`, customer.name] as const),
+  ].sort((a, b) => b[0].length - a[0].length);
+  if (aliases.length === 0) return answer;
   const lookup = new Map(aliases.map(([alias, name]) => [alias.toLocaleLowerCase("es-HN"), name]));
   const pattern = new RegExp(aliases.map(([alias]) => escapeRegExp(alias)).join("|"), "giu");
   return answer.replace(pattern, (alias) => lookup.get(alias.toLocaleLowerCase("es-HN")) ?? alias);

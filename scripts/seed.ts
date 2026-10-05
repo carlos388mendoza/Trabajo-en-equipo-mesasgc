@@ -42,8 +42,11 @@ import {
   restaurants,
   tableLayouts,
   tables,
+  user as userTable,
   userRestaurants,
   userRoles,
+  waiterConfigs,
+  waiterZones,
   waitlistEntries,
 } from "../lib/db/schema";
 import { createUserWithPassword, findUserIdByEmail } from "../lib/auth/users";
@@ -51,6 +54,7 @@ import { BASE_BRANDS, BASE_RESTAURANTS } from "../lib/layout/base-restaurants";
 import { upsertElementTypeCatalog } from "../lib/layout/catalog";
 import { copyLayoutToRestaurant, getStructureCounts } from "../lib/layout/copy";
 import { assignTable } from "../lib/tables/assign";
+import { createWaiterConfig, waiterNameForTableSql } from "../lib/waiters/configs";
 import { addCalendarDays, hondurasMidnightUtc, hondurasToday } from "../lib/time/honduras";
 
 // dotenv no lee solo `.env`, y Next usa `.env.local`: se le pasan los dos.
@@ -550,18 +554,15 @@ const TEST_PASSWORD = "12345abc";
 
 const TEST_USERS: { email: string; name: string; roles: Role[]; restaurantIds: string[] }[] = [
   { email: "admin@grupocomidas.test", name: "Administrador", roles: ["admin"], restaurantIds: [] },
-  { email: "centro@grupocomidas.test", name: "Host Centro", roles: ["restaurante"], restaurantIds: ["rest_centro"] },
-  { email: "norte@grupocomidas.test", name: "Host Norte", roles: ["restaurante"], restaurantIds: ["rest_norte"] },
   { email: "analitica@grupocomidas.test", name: "Analista", roles: ["analitica"], restaurantIds: [] },
-  { email: "gerente@grupocomidas.test", name: "Gerente Centro", roles: ["restaurante", "analitica"], restaurantIds: ["rest_centro"] },
-  // Un host por cada uno de los otros 6 restaurantes del mapa.
-  { email: "pizzahut-proceres@grupocomidas.test", name: "Host Pizza Hut Los Próceres", roles: ["restaurante"], restaurantIds: ["rest_tgu_pizza"] },
-  { email: "kfc-morazan@grupocomidas.test", name: "Host KFC Boulevard Morazán", roles: ["restaurante"], restaurantIds: ["rest_tgu_kfc"] },
-  { email: "dennys-lomas@grupocomidas.test", name: "Host Denny's Las Lomas", roles: ["restaurante"], restaurantIds: ["rest_tgu_dennys"] },
-  { email: "chinawok-circunvalacion@grupocomidas.test", name: "Host China Wok Circunvalación", roles: ["restaurante"], restaurantIds: ["rest_sps_chinawok"] },
-  { email: "kfc-riopiedras@grupocomidas.test", name: "Host KFC Río Piedras", roles: ["restaurante"], restaurantIds: ["rest_sps_kfc"] },
-  { email: "dennys-andes@grupocomidas.test", name: "Host Denny's Los Andes", roles: ["restaurante"], restaurantIds: ["rest_sps_dennys"] },
-  // Los del piloto: un usuario por marca, cada uno con sus 2 locales.
+  // Un usuario de restaurante POR MARCA, con los 2 locales de esa marca. Es lo
+  // que se pidió: quien dirige Pizza Hut ve los dos Pizza Hut, no uno solo.
+  {
+    email: "pizzahut@grupocomidas.test",
+    name: "Pizza Hut",
+    roles: ["restaurante"],
+    restaurantIds: ["rest_norte", "rest_tgu_pizza"],
+  },
   {
     email: "dennys@grupocomidas.test",
     name: "Denny's",
@@ -569,11 +570,36 @@ const TEST_USERS: { email: string; name: string; roles: Role[]; restaurantIds: s
     restaurantIds: ["rest_tgu_dennys", "rest_sps_dennys"],
   },
   {
-    email: "pizzahut@grupocomidas.test",
-    name: "Pizza Hut",
+    email: "kfc@grupocomidas.test",
+    name: "KFC",
     roles: ["restaurante"],
-    restaurantIds: ["rest_norte", "rest_tgu_pizza"],
+    restaurantIds: ["rest_tgu_kfc", "rest_sps_kfc"],
   },
+  {
+    email: "chinawok@grupocomidas.test",
+    name: "China Wok",
+    roles: ["restaurante"],
+    restaurantIds: ["rest_centro", "rest_sps_chinawok"],
+  },
+];
+
+// Usuarios de restaurante que el seed creaba antes (un «Host X» por restaurante,
+// `gerente@` y el antiguo `dennys-pizzahut@`) y que ya no corresponden. Son
+// cuentas de PRUEBA de la base local: el seed los quita para que en «Usuarios»
+// queden solo los 6 de ahora. El seed no corre nunca en producción (ver
+// `main`); allí los que sobran se DESACTIVAN desde /admin, no se borran. El
+// administrador y el de analítica no entran nunca en esta lista.
+const RETIRED_TEST_USER_EMAILS = [
+  "centro@grupocomidas.test",
+  "norte@grupocomidas.test",
+  "gerente@grupocomidas.test",
+  "pizzahut-proceres@grupocomidas.test",
+  "kfc-morazan@grupocomidas.test",
+  "dennys-lomas@grupocomidas.test",
+  "chinawok-circunvalacion@grupocomidas.test",
+  "kfc-riopiedras@grupocomidas.test",
+  "dennys-andes@grupocomidas.test",
+  "dennys-pizzahut@grupocomidas.test",
 ];
 
 async function seedTestUsers() {
@@ -604,6 +630,59 @@ async function seedTestUsers() {
     }
   }
   console.log(`  usuarios de prueba: ${created} creados, ${TEST_USERS.length - created} ya existían`);
+
+  // Los de prueba que ya no corresponden se quitan de la base local. Sus
+  // sesiones, cuentas, roles y accesos se van en cascada; la lista de espera
+  // solo los referencia de forma blanda (`seated_by_user_id`,
+  // `resolved_by_user_id`), así que su historia de clientes se queda.
+  const retired = await db
+    .delete(userTable)
+    .where(inArray(userTable.email, RETIRED_TEST_USER_EMAILS))
+    .returning({ email: userTable.email });
+  if (retired.length > 0) {
+    console.log(`  usuarios de prueba retirados de la base local: ${retired.map((r) => r.email).join(", ")}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Zonas de meseros de ejemplo
+//
+// «2 meseros» (activa) y «3 meseros» en los dos restaurantes de ejemplo, con
+// nombres de mesero, para que el plano en vivo salga con colores desde el
+// primer arranque. Solo si el restaurante no tiene ninguna: no pisa las que
+// alguien ya creó.
+// ---------------------------------------------------------------------------
+
+const EXAMPLE_WAITERS: Record<string, Record<number, string[]>> = {
+  rest_centro: { 2: ["Ana", "Luis"], 3: ["Ana", "Luis", "Marta"] },
+  rest_norte: { 2: ["Carlos", "Sofía"], 3: ["Carlos", "Sofía", "Diego"] },
+};
+
+async function seedWaiterConfigs() {
+  let created = 0;
+  for (const [restaurantId, byCount] of Object.entries(EXAMPLE_WAITERS)) {
+    const [existing] = await db
+      .select({ id: waiterConfigs.id })
+      .from(waiterConfigs)
+      .where(eq(waiterConfigs.restaurantId, restaurantId))
+      .limit(1);
+    if (existing) continue;
+    for (const [count, names] of Object.entries(byCount)) {
+      const result = await createWaiterConfig({ restaurantId, waiterCount: Number(count) });
+      if (!result.ok) continue;
+      created += 1;
+      for (const zone of result.config.zones) {
+        const name = names[zone.position - 1];
+        if (name) await db.update(waiterZones).set({ waiterName: name }).where(eq(waiterZones.id, zone.id));
+      }
+    }
+  }
+  // Los sentados de ejemplo que no tienen mesero: el de su mesa ahora.
+  await db
+    .update(waitlistEntries)
+    .set({ waiterName: waiterNameForTableSql(waitlistEntries.assignedTableId) })
+    .where(and(isNull(waitlistEntries.waiterName), sql`${waitlistEntries.assignedTableId} is not null`));
+  console.log(`  configuraciones de meseros: ${created} creadas`);
 }
 
 // ---------------------------------------------------------------------------
@@ -625,6 +704,7 @@ async function main() {
   await seedDemoData();
   await seedWorldMap();
   await seedHistory();
+  await seedWaiterConfigs();
   await seedTestUsers();
 
   // Comprobación de que el catálogo quedó bien: si falta algún tipo, el editor

@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-_Actualizado el 1 de octubre de 2026._
+_Actualizado el 5 de octubre de 2026._
 
 **Table Waitlist:** listas de espera en tiempo real para los restaurantes de
 Grupo Comidas.
@@ -81,8 +81,12 @@ Todo esto está en `testing`. En `main` está todo hasta el #43; la última fila
 | Mapa más rápido | Cámara por `transform` CSS durante el gesto (sin React) y confirmada al soltar; base memoizada; radar y halos animados por el compositor; controles sin `backdrop-blur`. Arrastre 24 → 60 fps y rueda 15 → 60 en computadora; 11 → 54 y 13 → 47 en tablet (CPU 4×). | `components/map/world-map.tsx`, `docs/mapa-honduras.md` | #41 |
 | Aspecto | Estilo de mapa «radar», minimapa, íconos de lucide y temas Claro, Oscuro, Sistema y Personalizado, sin parpadeo. | `lib/theme/`, `/ajustes`, README §13 | #7 |
 | CI | GitHub Actions en cada PR y cada push a `testing` y `main`: typecheck, lint, build y los cuatro `verify`, con Node 22 y `npm ci`. | `.github/workflows/ci.yml` | #10 |
-| Datos de demostración | Lote de datos falsos para probar el mapa, las estadísticas y el asistente: `npm run db:demo` (idempotente) en los 8 restaurantes reales, con una zona demo propia por restaurante, clientes esperando con teléfonos de mentira, mesas demo ocupadas y reservadas y 8 semanas de historial. Marcado estructural con `is_demo` y `demo_batch_id` (migración `0007`, solo aditiva), nunca por nombre. Aviso global discreto que no bloquea el Modo rápido, y borrado desde `/admin/datos-demo` (`BORRAR`), solo admin, reutilizando el mismo `borrarDemoData()` que el CLI. | `lib/demo/`, `scripts/db-demo*.mts`, `app/admin/datos-demo/`, `components/layout/demo-banner.tsx`, README §17 | #45 |
+| Datos de demostración | Lote de datos falsos para probar el mapa, las estadísticas y el asistente: `npm run db:demo` (idempotente) en los 8 restaurantes reales, con una zona demo propia por restaurante, clientes esperando con teléfonos de mentira, mesas demo ocupadas y reservadas y 8 semanas de historial. Marcado estructural con `is_demo` y `demo_batch_id` (migración `0007`, solo aditiva), nunca por nombre. Se borra con `npm run db:demo:borrar` (`borrarDemoData()`). Desde el 5 de octubre, sin interfaz: se quitaron el aviso, el enlace, la sección de `/admin` y `/admin/datos-demo`; queda la etiqueta «Demo» en las cartas. | `lib/demo/`, `scripts/db-demo*.mts`, README §17 | #45, #51 |
 | Despliegue | Comandos de Railway (build, Pre-deploy `db:migrate && db:catalog`, start y healthcheck), `/api/health` público y guía paso a paso. `railway.json` queda como referencia. | `docs/despliegue.md`, `railway.json` | #13, #21 |
+| Del 2 de octubre (#47–#51) | Borrar un cliente desde el modo sencillo con Aceptar/Cancelar y deshacer (#47, #48); panel «Ver todas las cartas» arrastrable y sin X (#49); modo sencillo sin conexión con cola en IndexedDB, `operationId` y conflictos (#50, migración `0008`); borrado de datos demo por restaurante y etiqueta «Demo» (#51). | `components/quick-mode/`, `lib/offline/`, `public/sw.js`, `lib/demo/` | #47–#51 |
+| Zonas de meseros y plano por defecto | Configuraciones por cantidad de meseros con una activa, selector «Meseros activos», reparto por toque, rectángulo o automático, mesero al sentar, estadísticas y asistente por mesero (migración `0009`, solo aditiva). Plano por defecto elegido desde el editor; copiar y pegar elementos. | `lib/waiters/`, `components/waiters/`, `lib/layout/default.ts`, README §18–19 | `feat/zonas-meseros` |
+| Usuarios por marca, sin interfaz demo (5 de octubre) | Un usuario de restaurante por marca (`pizzahut@`, `dennys@`, `kfc@`, `chinawok@`) con todos sus locales; fuera el aviso y la sección de datos demo (los datos se quedan); solo las 4 marcas reales. | `scripts/seed.ts`, README §15 y §17 | #53 |
+| Editor: una sola ventana (5 de octubre) | Panel de control único con el elemento seleccionado dentro, Rehacer, copiar y pegar elementos sin relaciones, plegado automático en el celular, marcador de mesa más grande y «Ajustar» a las mesas. Acceso directo «Modo sencillo» en la cabecera. | `components/editor/`, `lib/layout/clipboard.ts`, `components/layout/restaurant-mode-link.tsx`, README §12 | `feat/editor-panel-unico` |
 | Documentos | Guion de la demo y plan de salida a producción para la dirección. | `docs/demo.md`, `docs/salida-a-produccion.md` | #14 |
 
 Las verificaciones automáticas no usan ningún *runner* de tests: son scripts
@@ -103,6 +107,42 @@ Cifras reales del lote sobre los 8 restaurantes, contadas el 1 de octubre de
 2026: **8 zonas de demostración, 86 mesas, 29 clientes esperando, 29 sentados,
 6 mesas reservadas y 12 251 de historial**; 12 403 filas en total, con 0
 omitidos. Cargarlo otra vez no añade nada (0 en todo).
+
+## Cumplimiento del enunciado
+
+Revisado el 5 de octubre de 2026, requisito por requisito. «Dónde se ve» dice
+la pantalla donde se puede comprobar a mano y la prueba automática que lo
+cubre.
+
+| Requisito del enunciado | ¿Cumple? | Dónde se ve |
+|---|:---:|---|
+| Listas de espera en tiempo real para restaurantes | Sí | Modo sencillo (`/restaurante/[id]/rapido`) en dos tablets a la vez: lo que hace una aparece en la otra. `verify:realtime`. |
+| Estructura de mesas por local: tipo, posición x/y, rotación | Sí | Tablas `table_layouts` y `tables` (`lib/db/schema.ts`); editor (`/restaurante/[id]/editor`). `verify:editor`. |
+| Editor de mesas *drag & drop* | Sí | Editor: arrastrar desde la paleta, mover, redimensionar y girar; Deshacer. README §8 y §12. |
+| Copiar la configuración de mesas a otro restaurante | Sí | Editor → «Copiar plano». Exige `editor:guardar` en los dos. `verify:editor` y `verify:auth`. |
+| Rotación de configuraciones guardadas (galería) | Sí | Varias zonas por restaurante: selector «Zona» del editor y pestañas del plano en vivo; giro del plano completo guardado. README §9 y §12. |
+| Socket.IO con una *room* por restaurante | Sí | Cada restaurante oye solo lo suyo; la sala `overview` lleva solo contadores. `verify:realtime` y `verify:auth`. |
+| Conflictos: bloqueo optimista, el primero gana y al segundo «Esta mesa ya fue asignada» | Sí | Dos tablets sentando en la misma mesa. `lib/tables/assign.ts`; `verify:realtime` (también con la cola sin conexión). |
+| Modo rápido de *check-in*/*check-out* con tarjetas deslizables (listo / ausente) | Sí | Modo sencillo: deslizar la carta o los botones; «Ver todas las cartas». README §11. |
+| Historial de acciones con Deshacer (Ctrl+Z) | Sí | Botón Deshacer y Ctrl+Z en el modo sencillo y en el editor. `verify:realtime`. |
+| Estadísticas: espera promedio, día más rápido y más lento, top de clientes | Sí | `/analiticas`. `verify:auth` (por rol y con filtros). |
+| Asistente de IA en lenguaje natural sobre las estadísticas | Sí | `/analiticas` → «Pregunta sobre tu servicio». Con OpenRouter y respuestas locales sin clave; nombres con alias. `verify:auth`. |
+| Resumen automático de estadísticas | Sí | `/analiticas` → «Resumen de 14 días» (variación, día más lento, mesero que más atendió). |
+| RBAC: administrador, restaurante y analítica, y varios roles por usuario | Sí | Tabla completa en `docs/rbac.md`. `verify:auth`. |
+| Administrador: crea usuarios y entra a todo | Sí | `/admin` → Usuarios. `verify:auth`. |
+| Restaurante: solo su restaurante, modos sencillo y completo | Sí | Cabecera con sus restaurantes; otro restaurante → `/sin-acceso`. `verify:auth`. |
+| Analítica: estadísticas de todos, vista completa o por restaurante | Sí | `/analiticas` con filtros por restaurante, marca y ciudad. `verify:auth`. |
+| Autenticación con Better Auth | Sí | `/login`. `lib/auth/`. `verify:auth`. |
+| Esquema completo de la base de datos y *seed* | Sí | `lib/db/schema.ts`, migraciones en `drizzle/`, `npm run db:seed` (solo desarrollo). |
+| CI/CD: build y pruebas en cada push; despliegue al fusionar a `main` | Sí | GitHub Actions (typecheck, lint, build y los cuatro `verify`); Railway despliega `main` con «Wait for CI». |
+| Flujo de GitHub: ramas desde `testing`, PR, revisión y `testing` → `main` | Sí | Tabla «Ramas y PR» de este documento; protección de `main` y `testing`. |
+| README y documentación | Sí | `README.md` y `docs/`. |
+| **Zonas de meseros**: configuración por cantidad de meseros activa y cambio fácil entre configuraciones | Sí | Plano en vivo → «Meseros activos: 2 \| 3 \| 4», «Editar zonas» (pincel, selección en grupo, reparto automático); editor → «Ver meseros». Llega a todas las tablets en vivo. Al sentar se ve quién atiende; estadísticas y asistente por mesero. README §18. `verify:editor`, `verify:realtime`, `verify:auth` y `verify:demo`. |
+| **Plano por defecto en cada restaurante**, con la estructura actualizada por los usuarios de los restaurantes | Sí | Editor → «★ Por defecto» / «Marcar por defecto»; el editor y el plano en vivo abren esa zona. El rol restaurante edita (mover, añadir, borrar, girar, copiar y pegar) solo en los suyos; analítica no. README §19. `verify:editor` y `verify:auth`. |
+
+Pedidos de la dirección además del enunciado: modo sencillo sin conexión
+(README §11, «Modo sin conexión»), borrar un cliente con Aceptar/Cancelar y
+deshacer, y el panel «Ver todas las cartas» arrastrable.
 
 ## Ramas y PR
 
@@ -151,6 +191,15 @@ omitidos. Cargarlo otra vez no añade nada (0 en todo).
 | #41 | `perf/mapa` (mapa general a 60 fps) | Fusionado con revisión propia. |
 | #42 | `feat/create-user` (`npm run create-user` y el piloto con un usuario por marca) | Fusionado con revisión propia. |
 | #43 | `testing` → `main` (cuarta publicación: #40, #41 y #42, migración `0006`) | Fusionado con revisión propia; desplegado el 1 de octubre. |
+| #44 | `docs/estado-produccion-4` (estado tras la cuarta publicación) | Fusionado con revisión propia. |
+| #45 | `feat/datos-demo` (datos de demostración, migración `0007`) | Fusionado con revisión propia. |
+| #46 | `testing` → `main` (quinta publicación: datos de demostración) | Fusionado con revisión propia; desplegado el 1 de octubre. |
+| #47 | `feat/modo-sencillo-movil` (borrar cliente desde el modo rápido) | Fusionado con revisión propia. |
+| #48 | `fix/borrar-cliente-confirmar` (Aceptar/Cancelar y prueba entre restaurantes) | Fusionado con revisión propia. |
+| #49 | `feat/panel-arrastrable` («Ver todas las cartas» arrastrable) | Fusionado con revisión propia. |
+| #50 | `feat/modo-offline` (modo sencillo sin conexión, migración `0008`) | Fusionado con revisión propia. |
+| #51 | `feat/demo-web` (borrado demo por restaurante y etiqueta «Demo») | Fusionado con revisión propia. |
+| — | `feat/zonas-meseros` (zonas de meseros y plano por defecto, migración `0009`) | En revisión hacia `testing`. |
 
 ### Protección de `main` y `testing`
 
@@ -307,7 +356,7 @@ Pendiente:
       exista.
 - [ ] Probar a restaurar un respaldo de Turso en una base aparte.
 - [ ] **Cargar los datos de demostración en producción** y borrarlos, con
-      `railway run npm run db:demo` y `/admin/datos-demo` (`docs/despliegue.md`,
+      `railway run npm run db:demo` y `railway run npm run db:demo:borrar` (`docs/despliegue.md`,
       sección 3c). Solo después de comprobar que el despliegue publicado está
       bien (log con migraciones, catálogo y healthcheck) y con consultas de solo
       lectura antes. **No** se carga automáticamente: no está en el Pre-deploy.
@@ -355,9 +404,8 @@ estadísticas y datos) y entran después.
 - [ ] Hacer la demo de `docs/demo.md` de principio a fin sobre `testing`, con
       dos pestañas para el tiempo real.
 - [ ] En la misma demo, enseñar el lote de datos de demostración: cargar con
-      `npm run db:demo` para que las estadísticas tengan historia, enseñar el
-      aviso a un host y a analitica, y borrarlo desde `/admin/datos-demo`
-      escribiendo `BORRAR` para que el aviso desaparezca solo.
+      `npm run db:demo` para que las estadísticas tengan historia, enseñar la
+      etiqueta «Demo» de las cartas y borrarlo con `npm run db:demo:borrar`.
 - [ ] El asistente sin `OPENROUTER_API_KEY` no entiende «¿qué semana fue más
       lenta?» (responde el mensaje genérico); con la clave sí la contesta.
       Si se quiere sin clave, hay que añadirla a `localAnswer` (Miembro B).
@@ -368,9 +416,6 @@ estadísticas y datos) y entran después.
 
 ### Más adelante
 
-- **Sentar con mesa desde el modo rápido**, con `assignTable` por el socket
-  (Miembro B). Así «listo» pasa a «sentado» y cuenta en las estadísticas.
-- **«Actividad de hoy» solo de hoy**, el `<main>` anidado y el «Cargando…»
   que no se ve (Miembro B).
 - **Pasar al tema el modo rápido y las estadísticas** (Miembro B).
 - **Guardar el tema por usuario** en la base de datos: hoy vive en el
@@ -385,10 +430,6 @@ estadísticas y datos) y entran después.
   y restablece la de cualquiera desde `/admin` (botón «Contraseña», que
   además cierra las sesiones abiertas). Lo que falta es que un host o una
   analista la cambien sin pedírselo al admin.
-- **Zonas por meseros activos.** Hoy cada host ve las zonas de su restaurante y
-  elige en cuál trabajar. Falta poder decidir cuántas zonas hay según el número
-  de meseros que hay en turno (por ejemplo, una zona mientras haya uno y dos
-  cuando haya dos), para que el plano no enseñe mesas de más.
 - **Que alguna pantalla ponga mesas en «reservada».** El estado existe en el
   esquema y el lote de demostración lo usa, pero no hay ninguna acción ni
   pantalla que lo ponga: hoy una mesa pasa de libre a ocupada y ya.

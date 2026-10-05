@@ -3,10 +3,8 @@
 //   npm run db:demo:borrar
 //   railway run npm run db:demo:borrar   (contra la base de producción)
 //
-// Es el camino de RESPUESTA si no se puede usar la pantalla /admin/datos-demo
-// (p. ej. no hay nadie con rol admin conectado). Hace exactamente lo mismo:
-// llama a `borrarDemoData()` de `lib/demo/`, que es el mismo servicio que usa
-// la web.
+// Es la única forma de borrarlos: la sección de datos demo de /admin se quitó
+// de la interfaz el 5 de octubre. Llama a `borrarDemoData()` de `lib/demo/`.
 //
 // Qué NO borra: marcas, restaurantes, el catálogo de tipos de elemento, usuarios,
 // sesiones, cuentas, roles, asignaciones de restaurante, y cualquier zona, mesa o
@@ -59,6 +57,7 @@ try {
   console.log(`  zonas:                 ${prevision.zonas}`);
   console.log(`  mesas:                 ${prevision.mesas}`);
   console.log(`  clientes:              ${prevision.clientes}`);
+  console.log(`  meseros (configs):     ${prevision.meseros}`);
   console.log("");
   console.log("NO se toca: marcas, restaurantes, catálogo de tipos, usuarios, sesiones,");
   console.log("roles ni ninguna zona, mesa o cliente real.");
@@ -89,6 +88,7 @@ try {
   console.log(`  zonas:    ${resultado.zonas}`);
   console.log(`  mesas:    ${resultado.mesas}`);
   console.log(`  clientes: ${resultado.clientes}`);
+  console.log(`  meseros:  ${resultado.meseros}`);
 
   const despues = await demoSummary();
   console.log("");

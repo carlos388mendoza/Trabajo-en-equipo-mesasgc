@@ -22,8 +22,13 @@ export type Action =
   | "catalogo:gestionar"
   /** Ver el editor de mesas (modo completo). */
   | "editor:ver"
-  /** Guardar o copiar la estructura del local. */
+  /** Guardar o copiar la estructura del local, y elegir su plano por defecto. */
   | "editor:guardar"
+  /**
+   * Crear, editar, borrar y ACTIVAR las configuraciones de zonas de meseros
+   * («2 meseros», «3 meseros»…). Verlas en el plano solo pide `plano:ver`.
+   */
+  | "meseros:gestionar"
   /** Ver el modo rápido (modo sencillo). */
   | "rapido:ver"
   /** Añadir clientes y marcarlos listos o ausentes. */
@@ -41,14 +46,15 @@ export type Action =
   /** Nombre del cliente sentado en cada mesa, dentro del plano en vivo. */
   | "plano:clientes"
   /**
-   * Ver que hay datos de demostración cargados y cuántos son (/admin/datos-demo
-   * y el aviso global). Lo tienen los tres roles.
+   * Ver que hay datos de demostración cargados y cuántos son. Admin y
+   * analítica. Desde el 5 de octubre no hay pantalla ni aviso que la usen (se
+   * quitaron de la interfaz); se conserva para `lib/demo` y sus pruebas.
    */
   | "demo:ver"
   /**
-   * BORRAR los datos de demostración. Solo admin, a propósito: el borrado es
-   * global (no es de un restaurante) y es la única operación de la app que
-   * elimina filas, así que no se delega a nadie más.
+   * BORRAR los datos de demostración (todos, o los de un restaurante). Solo
+   * admin, a propósito: es la operación que más filas elimina de golpe, así
+   * que no se delega a nadie más.
    */
   | "demo:borrar";
 
@@ -57,6 +63,7 @@ export const ALL_ACTIONS: readonly Action[] = [
   "catalogo:gestionar",
   "editor:ver",
   "editor:guardar",
+  "meseros:gestionar",
   "rapido:ver",
   "rapido:modificar",
   "mesas:asignar",
@@ -76,6 +83,7 @@ export const ALL_ACTIONS: readonly Action[] = [
 const RESTAURANT_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   "editor:ver",
   "editor:guardar",
+  "meseros:gestionar",
   "rapido:ver",
   "rapido:modificar",
   "mesas:asignar",
@@ -91,24 +99,26 @@ export function isRestaurantAction(action: Action): boolean {
 export const ROLE_PERMISSIONS: Record<Role, readonly Action[]> = {
   // Todo, en todos los restaurantes.
   [ROLES.ADMIN]: ALL_ACTIONS,
-  // Modo sencillo y completo, solo en SUS restaurantes. `demo:ver` para que vea
-  // el aviso de que lo que tiene delante es de demostración; `demo:borrar` no.
+  // Modo sencillo y completo, solo en SUS restaurantes. Sin `demo:ver`: el host
+  // distingue cada carta de demostración por su etiqueta «Demo» en el modo
+  // sencillo.
   [ROLES.RESTAURANTE]: [
     "editor:ver",
     "editor:guardar",
+    "meseros:gestionar",
     "rapido:ver",
     "rapido:modificar",
     "mesas:asignar",
     "plano:ver",
     "plano:clientes",
-    "demo:ver",
   ],
   // Solo lectura: estadísticas de todos, el asistente y el mapa general. En
   // el plano en vivo ve estados y ocupación, pero NO los nombres de los
   // clientes (`plano:clientes`): son datos personales que no necesita.
   //
-  // `demo:ver` sí lo tiene, para que sepa que los números que está mirando son
-  // de demostración; `demo:borrar` NO: borrar datos es cosa del admin.
+  // `demo:ver` sí lo tiene y `demo:borrar` NO: aunque ya no queda ninguna pantalla
+  // que administer la demostración, ambas acciones se conservan porque el sistema
+  // de datos demo (`lib/demo`) sigue vivo y las usa su comprobación de permisos.
   [ROLES.ANALITICA]: ["analiticas:ver", "asistente:usar", "mapa:ver", "plano:ver", "demo:ver"],
 };
 

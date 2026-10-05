@@ -35,12 +35,22 @@ import type { ElementTypeInfo, LayoutElement } from "@/lib/layout/types";
 
 export const MIN_SCALE = 0.2;
 export const MAX_SCALE = 4;
+/**
+ * Hasta dónde acerca «Ajustar» cuando hay pocas mesas: lo justo para que
+ * cada mesa se vea grande sin que una sola llene la pantalla.
+ */
+const FIT_MAX_SCALE = 1.6;
+/** Margen alrededor de las mesas al encuadrar: sillas, nombre, mesero y cliente. */
+const FIT_PADDING = 70;
 const ZOOM_STEP = 1.2;
 const MIN_SIZE = 24;
 
 // Con dos dedos en pantalla, Konva por defecto deja de detectar qué hay
 // debajo mientras algo se arrastra, y el pellizco no llega a empezar.
 Konva.hitOnDragEnabled = true;
+
+/** Mesero de una mesa en la configuración que se está mirando: color y nombre. */
+export type CanvasWaiterMark = { color: string; label: string };
 
 export type CanvasHandle = {
   zoomIn: () => void;
@@ -94,6 +104,22 @@ type Props = {
    * llamador pasa además `selectedId={null}` y un `onSelect` vacío.
    */
   readOnly?: boolean;
+  /**
+   * Zonas de meseros: mesa → color y nombre del mesero. Las mesas con marca
+   * salen teñidas de ese color y con el nombre encima.
+   */
+  waiterMarks?: Record<string, CanvasWaiterMark>;
+  /**
+   * Toque (clic o tap) sobre un elemento. Lo usa el reparto de meseros para
+   * pintar mesas. No sustituye a `onSelect`, que sigue llegando.
+   */
+  onElementTap?: (id: string) => void;
+  /**
+   * Selección en grupo: con esto, arrastrar sobre el vacío dibuja un
+   * rectángulo (en vez de mover la vista) y al soltar devuelve las mesas
+   * cuyo centro quedó dentro.
+   */
+  onMarquee?: (ids: string[]) => void;
 };
 
 /**
@@ -129,6 +155,9 @@ export function KonvaCanvas({
   onZoomChange,
   controllerRef,
   readOnly = false,
+  waiterMarks,
+  onElementTap,
+  onMarquee,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -142,6 +171,13 @@ export function KonvaCanvas({
   // Mientras un elemento se arrastra, el Stage deja de ser arrastrable para
   // que Konva no mueva los dos a la vez.
   const [dragging, setDragging] = useState(false);
+  // Rectángulo de la selección en grupo, en píxeles del contenedor. El ref
+  // es para los manejadores de Konva, que leen el valor del momento.
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const marqueeRef = useRef(marquee);
+  useEffect(() => {
+    marqueeRef.current = marquee;
+  });
 
   const registerNode = useCallback((id: string, node: Konva.Group | null) => {
     if (node) nodesRef.current.set(id, node);
@@ -319,28 +355,65 @@ export function KonvaCanvas({
     [zoomAround],
   );
 
+  // Los elementos se leen por ref en `resetView`: si fueran dependencia, mover
+  // una mesa en el editor volvería a encuadrar el plano en cada arrastre.
+  const elementsRef = useRef(elements);
+  useEffect(() => {
+    elementsRef.current = elements;
+  });
+
   const resetView = useCallback(() => {
     const stage = stageRef.current;
     const node = containerRef.current;
     if (!stage || !node) return;
 
     const rect = node.getBoundingClientRect();
-    // Girado 90° o 270°, el plano ocupa en pantalla alto × ancho.
-    const sideways = viewRotation % 180 !== 0;
-    const shownWidth = sideways ? height : width;
-    const shownHeight = sideways ? width : height;
     // Lo que tapan los paneles flotantes de arriba no cuenta como hueco.
     const freeHeight = rect.height - topInset;
-    // "Ajustar" en vez de volver a 100%: si la zona no cabe, se ve entera.
+
+    // Qué se encuadra: las MESAS que hay (con un margen para sus sillas y
+    // etiquetas), no la zona entera. Si un local usa una esquina de un lienzo
+    // grande, sus mesas se ven grandes y legibles. Sin elementos, la zona.
+    const items = elementsRef.current;
+    let box = { minX: 0, minY: 0, maxX: width, maxY: height };
+    let maxFit = 1;
+    if (items.length > 0) {
+      box = {
+        minX: Math.max(0, Math.min(...items.map((e) => e.x)) - FIT_PADDING),
+        minY: Math.max(0, Math.min(...items.map((e) => e.y)) - FIT_PADDING),
+        maxX: Math.min(width, Math.max(...items.map((e) => e.x + e.width)) + FIT_PADDING),
+        maxY: Math.min(height, Math.max(...items.map((e) => e.y + e.height)) + FIT_PADDING),
+      };
+      maxFit = FIT_MAX_SCALE;
+    }
+    // El contenido gira alrededor del centro del plano: se giran las cuatro
+    // esquinas de la caja y se encuadra la caja que resulta en pantalla.
+    const rad = (viewRotation * Math.PI) / 180;
+    const cos = Math.round(Math.cos(rad));
+    const sin = Math.round(Math.sin(rad));
+    const cx = width / 2;
+    const cy = height / 2;
+    const corners = [
+      [box.minX, box.minY],
+      [box.maxX, box.minY],
+      [box.maxX, box.maxY],
+      [box.minX, box.maxY],
+    ].map(([px, py]) => ({
+      x: cx + (px - cx) * cos - (py - cy) * sin,
+      y: cy + (px - cx) * sin + (py - cy) * cos,
+    }));
+    const left = Math.min(...corners.map((p) => p.x));
+    const right = Math.max(...corners.map((p) => p.x));
+    const top = Math.min(...corners.map((p) => p.y));
+    const bottom = Math.max(...corners.map((p) => p.y));
+
     // El margen deja ver el borde del plano y su brillo.
-    const fit = Math.min((rect.width - 40) / shownWidth, (freeHeight - 40) / shownHeight, 1);
-    const scale = clamp(fit, MIN_SCALE, 1);
+    const fit = Math.min((rect.width - 40) / (right - left), (freeHeight - 40) / (bottom - top), maxFit);
+    const scale = clamp(fit, MIN_SCALE, maxFit);
     stage.scale({ x: scale, y: scale });
-    // El plano gira alrededor de su centro, así que basta con llevar ese
-    // centro al del hueco libre, gire como gire.
     stage.position({
-      x: rect.width / 2 - (width / 2) * scale,
-      y: topInset + freeHeight / 2 - (height / 2) * scale,
+      x: rect.width / 2 - ((left + right) / 2) * scale,
+      y: topInset + freeHeight / 2 - ((top + bottom) / 2) * scale,
     });
     onZoomChange(Math.round(scale * 100));
     emitView();
@@ -499,7 +572,48 @@ export function KonvaCanvas({
   const deselectOnEmpty = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
     // Toque en el vacío: deseleccionar. Se comprueba que el objetivo sea el
     // propio Stage y no un elemento.
-    if (e.target === e.target.getStage()) onSelect(null);
+    if (e.target === e.target.getStage()) {
+      onSelect(null);
+      // Selección en grupo: el rectángulo empieza en el vacío.
+      const pos = onMarquee ? e.target.getStage()?.getPointerPosition() : null;
+      if (pos) {
+        const box = { x0: pos.x, y0: pos.y, x1: pos.x, y1: pos.y };
+        marqueeRef.current = box;
+        setMarquee(box);
+      }
+    }
+  };
+
+  const moveMarquee = () => {
+    const pos = marqueeRef.current ? stageRef.current?.getPointerPosition() : null;
+    if (!pos || !marqueeRef.current) return;
+    const box = { ...marqueeRef.current, x1: pos.x, y1: pos.y };
+    marqueeRef.current = box;
+    setMarquee(box);
+  };
+
+  const endMarquee = () => {
+    const box = marqueeRef.current;
+    const content = contentRef.current;
+    marqueeRef.current = null;
+    setMarquee(null);
+    if (!box || !content || !onMarquee) return;
+    const left = Math.min(box.x0, box.x1);
+    const right = Math.max(box.x0, box.x1);
+    const top = Math.min(box.y0, box.y1);
+    const bottom = Math.max(box.y0, box.y1);
+    // Un toque sin arrastrar no selecciona nada.
+    if (right - left < 6 && bottom - top < 6) return;
+    // El centro de cada elemento, pasado a pantalla con la transformación
+    // real del contenido (zoom, paneo y giro de la vista incluidos).
+    const transform = content.getAbsoluteTransform();
+    const ids = elements
+      .filter((el) => {
+        const p = transform.point({ x: el.x + el.width / 2, y: el.y + el.height / 2 });
+        return p.x >= left && p.x <= right && p.y >= top && p.y <= bottom;
+      })
+      .map((el) => el.id);
+    onMarquee(ids);
   };
 
   return (
@@ -514,17 +628,23 @@ export function KonvaCanvas({
           ref={stageRef}
           width={size.width}
           height={size.height}
-          draggable={!dragging}
+          draggable={!dragging && !onMarquee}
           onWheel={handleWheel}
           onMouseDown={deselectOnEmpty}
           onTouchStart={deselectOnEmpty}
-          onTouchMove={handleTouchMove}
+          onTouchMove={(e) => {
+            if (marqueeRef.current) moveMarquee();
+            else handleTouchMove(e);
+          }}
+          onMouseMove={moveMarquee}
+          onMouseUp={endMarquee}
           onDragMove={(e) => {
             // Solo el paneo del Stage mueve la vista; arrastrar una mesa no.
             if (e.target === e.target.getStage()) emitView();
           }}
           onTouchEnd={() => {
             pinchRef.current = null;
+            endMarquee();
           }}
         >
           <Layer listening={false}>
@@ -573,6 +693,8 @@ export function KonvaCanvas({
                     minutes={minutesSeated(element, now)}
                     pulse={pulses[element.id] ?? 0}
                     onSelect={onSelect}
+                    onTap={onElementTap}
+                    waiter={waiterMarks?.[element.id] ?? null}
                     draggable={!readOnly}
                     onDragStart={() => {
                       onEditStart();
@@ -601,7 +723,9 @@ export function KonvaCanvas({
         </Stage>
       ) : null}
 
-      <div className="pointer-events-none absolute bottom-3 left-3">
+      {/* En un celular en vertical el minimapa taparía media sala: el plano ya
+          cabe entero en la pantalla, así que no hace falta. */}
+      <div className="pointer-events-none absolute bottom-3 left-3 hidden sm:block">
         <div className="pointer-events-auto">
           <Minimap
             width={width}
@@ -616,6 +740,19 @@ export function KonvaCanvas({
           />
         </div>
       </div>
+
+      {marquee ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute rounded-md border-2 border-dashed border-accent bg-accent/15"
+          style={{
+            left: Math.min(marquee.x0, marquee.x1),
+            top: Math.min(marquee.y0, marquee.y1),
+            width: Math.abs(marquee.x1 - marquee.x0),
+            height: Math.abs(marquee.y1 - marquee.y0),
+          }}
+        />
+      ) : null}
 
       <StatusLegend theme={theme} />
     </div>

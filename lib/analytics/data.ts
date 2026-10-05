@@ -36,6 +36,21 @@ export type RestaurantStat = {
   minutes: number;
 };
 
+/**
+ * Clientes atendidos por cada mesero (zonas de meseros): los grupos sentados
+ * en el período cuyo `waiter_name` es ese, por restaurante. El mismo nombre
+ * en dos restaurantes son dos meseros distintos.
+ */
+export type WaiterStat = {
+  name: string;
+  restaurantId: string;
+  restaurantName: string;
+  groups: number;
+  /** Personas (suma de `party_size`). */
+  people: number;
+  minutes: number;
+};
+
 export type CustomerStat = {
   name: string;
   groups: number;
@@ -61,6 +76,7 @@ export type AnalyticsData = {
   daily: DailyStat[];
   restaurants: RestaurantStat[];
   topCustomers: CustomerStat[];
+  waiters: WaiterStat[];
   summary: string;
 };
 
@@ -181,6 +197,29 @@ export async function getAnalytics(
     .sort((a, b) => b.groups - a.groups || a.name.localeCompare(b.name, "es-HN"))
     .slice(0, 10);
 
+  const restaurantNames = new Map(restaurantsWithBrand.map((r) => [r.id, r.name]));
+  const byWaiter = new Map<string, WaiterStat & { totalMinutes: number }>();
+  for (const entry of currentRows) {
+    if (!entry.waiterName) continue;
+    const key = `${entry.restaurantId}\u0000${entry.waiterName}`;
+    const current = byWaiter.get(key) ?? {
+      name: entry.waiterName,
+      restaurantId: entry.restaurantId,
+      restaurantName: restaurantNames.get(entry.restaurantId) ?? entry.restaurantId,
+      groups: 0,
+      people: 0,
+      minutes: 0,
+      totalMinutes: 0,
+    };
+    current.groups += 1;
+    current.people += entry.partySize;
+    current.totalMinutes += waitMinutes(entry.arrivedAt, entry.seatedAt!);
+    byWaiter.set(key, current);
+  }
+  const waiters: WaiterStat[] = [...byWaiter.values()]
+    .map(({ totalMinutes, ...w }) => ({ ...w, minutes: Math.round(totalMinutes / w.groups) }))
+    .sort((a, b) => b.groups - a.groups || a.restaurantName.localeCompare(b.restaurantName, "es-HN") || a.name.localeCompare(b.name, "es-HN"));
+
   const averageCallMinutes = average(calledRows.map((entry) => waitMinutes(entry.arrivedAt, entry.calledAt!)));
   const summary = [
     currentRows.length
@@ -188,6 +227,9 @@ export async function getAnalytics(
       : "Todavía no hay grupos sentados en los últimos 14 días.",
     slowestDay ? `El día más lento fue ${slowestDay.day}, con ${minuteCount(slowestDay.minutes)} de espera.` : "",
     topCustomers[0] ? `El cliente con más grupos acumuló ${topCustomers[0].groups} ${topCustomers[0].groups === 1 ? "grupo" : "grupos"}.` : "",
+    waiters[0]
+      ? `El mesero que más grupos atendió fue ${waiters[0].name} (${waiters[0].restaurantName}), con ${waiters[0].groups} ${waiters[0].groups === 1 ? "grupo" : "grupos"}.`
+      : "",
     calledRows.length
       ? `Se avisó a ${calledRows.length} ${calledRows.length === 1 ? "grupo" : "grupos"} después de un promedio de ${minuteCount(averageCallMinutes)} desde su llegada.`
       : "Todavía no hay avisos registrados en los últimos 14 días.",
@@ -212,6 +254,7 @@ export async function getAnalytics(
     daily,
     restaurants: restaurantsStats,
     topCustomers,
+    waiters,
     summary,
   };
 }

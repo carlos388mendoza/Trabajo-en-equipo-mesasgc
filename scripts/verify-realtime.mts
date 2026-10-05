@@ -618,6 +618,136 @@ section("Ver todas las cartas: volver a la espera");
 }
 
 // ---------------------------------------------------------------------------
+// «Ver todas las cartas»: eliminar un cliente de la fila
+// ---------------------------------------------------------------------------
+
+section("Eliminar un cliente de la lista");
+
+{
+  await db.insert(waitlistEntries).values([
+    cliente("borrar-espera"),
+    cliente("borrar-oculto"),
+    { ...cliente("borrar-demo"), isDemo: true, demoBatchId: "demo_test" },
+    { ...cliente("borrar-ajeno"), restaurantId: REST_2 },
+    { ...cliente("borrar-sentado"), status: "sentado" },
+  ]);
+  await db.update(tables).set({ currentEntryId: "borrar-sentado", status: "ocupada" }).where(eq(tables.id, "m3"));
+
+  type DelAck = AnyAck & {
+    entry?: { id: string; customerName: string; status: string };
+    actionId?: string;
+    action?: string;
+  };
+  const changesA = counter(hostA, "waitlist:changed");
+  const changesB = counter(hostB, "waitlist:changed");
+  const changesOtro = counter(otro, "waitlist:changed");
+  const undoStates = counter(hostA, "waitlist:undo-state");
+  await settle();
+  const before = { a: changesA.length, b: changesB.length, otro: changesOtro.length };
+
+  const bad = await ask(hostA, "waitlist:delete", { entryId: "" });
+  check("waitlist:delete rechaza un payload inválido con Zod", !bad.ok && /no válidos/.test(bad.error ?? ""), bad.error);
+
+  const seated = await ask(hostA, "waitlist:delete", { entryId: "borrar-sentado" });
+  check("un cliente con mesa ocupada no se elimina", !seated.ok && /mesa ocupada/.test(seated.error ?? ""), seated.error);
+  check("  y sigue sentado, con su mesa", (await entryRow("borrar-sentado"))?.status === "sentado" && (await tableRow("m3"))?.currentEntryId === "borrar-sentado");
+  check("  la mesa no se toca", (await tableRow("m3"))?.status === "ocupada", (await tableRow("m3"))?.status);
+
+  // `borrar-ajeno` es de REST_2 y `hostA` está en la room de REST: el borrado
+  // va siempre al restaurante del socket, así que ni lo ve.
+  const fromOther = await ask(hostA, "waitlist:delete", { entryId: "borrar-ajeno" });
+  check(
+    "waitlist:delete no toca un cliente de otro restaurante",
+    !fromOther.ok && (await db.query.waitlistEntries.findFirst({ where: eq(waitlistEntries.id, "borrar-ajeno") })) !== undefined,
+    fromOther.error,
+  );
+
+  // El host de OTRO restaurante (está en la room de REST_2) manda el id de un
+  // cliente de REST: se busca en su restaurante, no lo encuentra y no borra.
+  const fromOtherHost = await ask(otro, "waitlist:delete", { entryId: "borrar-espera" });
+  check(
+    "el host de otro restaurante no puede borrar un cliente ajeno",
+    !fromOtherHost.ok && (await entryRow("borrar-espera")) !== undefined,
+    fromOtherHost.error,
+  );
+  check("  y nadie recibe un aviso de borrado", changesA.length === before.a && changesB.length === before.b && changesOtro.length === before.otro);
+
+  const fromAnalitica = await ask(analitica, "waitlist:delete", { entryId: "borrar-espera" });
+  check("analítica no puede eliminar a nadie", !fromAnalitica.ok && (await entryRow("borrar-espera")) !== undefined, fromAnalitica.error);
+
+  const missing = await ask(hostA, "waitlist:delete", { entryId: "no-existe" });
+  check("un cliente que no existe 'no existe'", !missing.ok && /no existe/.test(missing.error ?? ""), missing.error);
+
+  // Un cliente de DEMOSTRACIÓN se borra como cualquier otro: a veces hay que
+  // limpiar una carta de mentira. Y al deshacer vuelve con su lote intacto,
+  // que es justo lo que no puede pasar en producción. Se borra y se deshace
+  // aquí seguido porque el «deshacer» es de una sola acción a la vez: el
+  // borrado siguiente taparía el registro.
+  const demo = (await ask(hostA, "waitlist:delete", { entryId: "borrar-demo" })) as DelAck;
+  await settle();
+  check("un cliente de demostración también se elimina", demo.ok && (await entryRow("borrar-demo")) === undefined, demo.error);
+  const undoneDemo = (await ask(hostA, "waitlist:undo", { actionId: demo.actionId })) as DelAck;
+  await settle();
+  const backDemo = await entryRow("borrar-demo");
+  check(
+    "  y al deshacer vuelve con su is_demo y su lote intactos: el lote demo sigue valiendo",
+    undoneDemo.ok && undoneDemo.action === "restored" && backDemo?.isDemo === true && backDemo?.demoBatchId === "demo_test",
+    JSON.stringify(backDemo),
+  );
+
+  const done = (await ask(hostB, "waitlist:delete", { entryId: "borrar-espera" })) as DelAck;
+  await settle();
+  check(
+    "waitlist:delete quita al cliente y devuelve actionId",
+    done.ok && done.entry?.id === "borrar-espera" && Boolean(done.actionId) && (await entryRow("borrar-espera")) === undefined,
+    done.error,
+  );
+  check(
+    "  lo avisa a las dos tablets como «removed», que es lo que ya saben quitar de la pantalla",
+    changesA.length === before.a + 3 && changesB.length === before.b + 3 && (changesB.at(-1) as { action?: string })?.action === "removed",
+    `A=${changesA.length} B=${changesB.length}`,
+  );
+  check("  y no a otra room", changesOtro.length === before.otro);
+  check("  y se puede deshacer, con el nombre del cliente", /borrar-espera/.test((undoStates.at(-1) as { label?: string } | null)?.label ?? ""), JSON.stringify(undoStates.at(-1)));
+
+  const undone = (await ask(hostA, "waitlist:undo", { actionId: done.actionId })) as DelAck;
+  await settle();
+  const back = await entryRow("borrar-espera");
+  check(
+    "deshacer «eliminar» lo devuelve entero a la lista",
+    undone.ok && undone.action === "restored" && undone.entry?.id === "borrar-espera" && back !== undefined,
+    undone.error,
+  );
+  check("  con sus mismos datos", back?.customerName === "borrar-espera" && back?.partySize === 2 && back?.status === "esperando", JSON.stringify(back));
+
+  const again = await ask(hostA, "waitlist:undo", { actionId: done.actionId });
+  check("la misma eliminación no se puede deshacer dos veces", !again.ok, again.error);
+
+  // Un cliente marcado «listo» en otra tablet SÍ se puede borrar: el borrado
+  // no depende del estado. La carrera de verdad (la fila cambia entre leerla
+  // y borrarla) no se puede provocar desde fuera, así que lo que se comprueba
+  // aquí es que un cambio de estado previo no estorba.
+  await resolveViaDb("borrar-oculto");
+  const afterResolve = (await ask(hostA, "waitlist:delete", { entryId: "borrar-oculto" })) as DelAck;
+  await settle();
+  check(
+    "un cliente ya resuelto también se elimina",
+    afterResolve.ok && (await entryRow("borrar-oculto")) === undefined,
+    afterResolve.error,
+  );
+
+  // El permiso se mira en cada evento, también aquí.
+  const sessionB = await getAuth().api.getSession({ headers: new Headers({ cookie: cookieB }) });
+  await setUserAccess(sessionB!.user.id, ["analitica"], []);
+  const revoked = await ask(hostB, "waitlist:delete", { entryId: "borrar-espera" });
+  check("waitlist:delete exige permiso actualizado", !revoked.ok && /permiso/.test(revoked.error ?? ""), revoked.error);
+  check("  y no se borra nada", (await entryRow("borrar-espera")) !== undefined);
+  await setUserAccess(sessionB!.user.id, ["restaurante"], [REST]);
+  await db.delete(waitlistEntries).where(inArray(waitlistEntries.id, ["borrar-espera", "borrar-oculto", "borrar-demo", "borrar-ajeno", "borrar-sentado"]));
+  await db.update(tables).set({ currentEntryId: null, status: "libre" }).where(eq(tables.id, "m3"));
+}
+
+// ---------------------------------------------------------------------------
 // Agregar varios clientes de una vez
 // ---------------------------------------------------------------------------
 
@@ -824,6 +954,157 @@ async function resolveViaDb(id: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Modo offline: la cola de una tablet sin conexión
+// ---------------------------------------------------------------------------
+
+section("Modo offline: cola, reenvíos y conflictos entre dispositivos");
+
+{
+  const { runOnce, findOperation, purgeOldOperations, OPERATION_TTL_MS } = await import("@/lib/offline/operations");
+  const { offlineOperations } = await import("@/lib/db/schema");
+  const { clampArrival, MAX_OFFLINE_ARRIVAL_MS } = await import("@/lib/waitlist/quick-actions");
+  const { listSeatableTables } = await import("@/lib/tables/list");
+  const uuid = () => crypto.randomUUID();
+
+  // Las dos «tablets» del mismo restaurante: A (admin) y B (host de REST).
+  check("A y B entran en REST", (await ask(hostA, "restaurant:join", { restaurantId: REST })).ok && (await ask(hostB, "restaurant:join", { restaurantId: REST })).ok);
+  await db.insert(tables).values([mesa("m-off-1"), mesa("m-off-2")]);
+  await db.insert(waitlistEntries).values([cliente("off-listo"), cliente("off-sentar-a"), cliente("off-sentar-b")]);
+  const changesB = counter(hostB, "waitlist:changed");
+  const assignedB = counter(hostB, "table:assigned");
+  const changesOtro = counter(otro, "waitlist:changed");
+  type OpAck = AnyAck & { entry?: { id: string; customerName: string; arrivedAt: number; status: string }; actionId?: string };
+
+  // 1. Un alta hecha sin conexión: id y hora de la tablet. El ack se «pierde»
+  //    y la tablet la reenvía con el MISMO operationId: no hay dos clientes.
+  const entryId = uuid();
+  const addOp = uuid();
+  const arrivedAt = Date.now() - 20 * 60_000;
+  const add = { customerName: "Cola sin red", partySize: 3, notes: "", entryId, arrivedAt, operationId: addOp };
+  const first = (await ask(hostA, "waitlist:add", add)) as OpAck;
+  const again = (await ask(hostA, "waitlist:add", add)) as OpAck;
+  await settle();
+  const rows = await db.select().from(waitlistEntries).where(eq(waitlistEntries.customerName, "Cola sin red"));
+  check("alta sin conexión: entra con el id que eligió la tablet", first.ok && first.entry?.id === entryId && rows.length === 1, first.error);
+  check("  con su hora de llegada real (no la de la sincronización)", rows[0]?.arrivedAt.getTime() === arrivedAt, String(rows[0]?.arrivedAt.getTime()));
+  check("  el reenvío del mismo operationId devuelve la misma respuesta", again.ok && JSON.stringify(again) === JSON.stringify(first));
+  check("  y no crea un segundo cliente", rows.length === 1);
+  check("  la room recibe UN aviso, no dos", changesB.filter((c) => (c as { entry: { id: string } }).entry.id === entryId).length === 1);
+  check("  queda registrada la operación", (await findOperation(addOp, REST))?.ok === true);
+  // Un alta con el mismo id de cliente pero OTRO operationId (dos pestañas): tampoco duplica.
+  const sameEntry = (await ask(hostA, "waitlist:add", { ...add, operationId: uuid() })) as OpAck;
+  check("  el mismo id de cliente con otra operación tampoco duplica", sameEntry.ok && (await db.select().from(waitlistEntries).where(eq(waitlistEntries.id, entryId))).length === 1);
+
+  // 2. Marcar listo desde la cola, reenviado: la segunda vez NO dice
+  //    «ya fue atendido» (sería un conflicto falso), devuelve lo mismo.
+  const resolveOp = uuid();
+  const r1 = (await ask(hostA, "waitlist:resolve", { entryId: "off-listo", status: "listo", operationId: resolveOp })) as OpAck;
+  const r2 = (await ask(hostA, "waitlist:resolve", { entryId: "off-listo", status: "listo", operationId: resolveOp })) as OpAck;
+  check("listo sin conexión, reenviado: las dos respuestas son el mismo éxito", r1.ok && r2.ok && JSON.stringify(r1) === JSON.stringify(r2), r2.error);
+  check("  y no un «ya fue atendido» falso", !/atendido/.test(r2.error ?? ""));
+
+  // 3. CONFLICTO entre dispositivos: A (sin conexión) cree que m-off-1 está
+  //    libre y deja en cola sentar ahí a off-sentar-a. Mientras, B (en línea)
+  //    sienta a off-sentar-b en m-off-1. A vuelve y manda su cola.
+  const byB = await ask(hostB, "table:assign", { tableId: "m-off-1", entryId: "off-sentar-b" });
+  check("B, en línea, ocupa la mesa", byB.ok, byB.error);
+  const assignOp = uuid();
+  const byA = await ask(hostA, "table:assign", { tableId: "m-off-1", entryId: "off-sentar-a", operationId: assignOp });
+  await settle();
+  check("la cola de A NO pisa lo que hizo B: «Esta mesa ya fue asignada.»", !byA.ok && byA.error === "Esta mesa ya fue asignada.", byA.error);
+  check("  la mesa sigue con el cliente de B", (await tableRow("m-off-1"))?.currentEntryId === "off-sentar-b");
+  check("  y el cliente de A sigue esperando (sin mesa)", (await entryRow("off-sentar-a"))?.status === "esperando" && (await entryRow("off-sentar-a"))?.assignedTableId === null);
+  const replayA = await ask(hostA, "table:assign", { tableId: "m-off-1", entryId: "off-sentar-a", operationId: assignOp });
+  check("  reenviar ese rechazo da el mismo rechazo (no se reintenta a ciegas)", !replayA.ok && replayA.error === byA.error);
+  check("  y la room solo vio la asignación de B", assignedB.length === 1);
+  // A puede sentarlo en la otra mesa: la que de verdad está libre.
+  const okA = await ask(hostA, "table:assign", { tableId: "m-off-2", entryId: "off-sentar-a", operationId: uuid() });
+  check("A lo sienta después en una mesa libre", okA.ok, okA.error);
+
+  // 4. Liberar desde la cola: el reenvío no da «la mesa cambió».
+  const releaseOp = uuid();
+  const rel1 = await ask(hostA, "table:release", { tableId: "m-off-2", entryId: "off-sentar-a", operationId: releaseOp });
+  const rel2 = await ask(hostA, "table:release", { tableId: "m-off-2", entryId: "off-sentar-a", operationId: releaseOp });
+  check("liberar sin conexión, reenviado: dos veces el mismo éxito", rel1.ok && rel2.ok, rel2.error);
+  // Y si mientras tanto otro dispositivo volvió a ocupar la mesa, liberar con
+  // el cliente viejo NO deja sin mesa al nuevo.
+  await ask(hostB, "table:assign", { tableId: "m-off-2", entryId: "off-listo" });
+  const stale = await ask(hostA, "table:release", { tableId: "m-off-2", entryId: "off-sentar-a", operationId: uuid() });
+  check("liberar con un cliente que ya no está ahí se rechaza («la mesa cambió»)", !stale.ok && /cambió/.test(stale.error ?? ""), stale.error);
+  check("  y la mesa sigue con el cliente nuevo", (await tableRow("m-off-2"))?.currentEntryId === "off-listo");
+
+  // 5. Un operationId de OTRO restaurante no sirve para leer su respuesta.
+  const stolen = (await ask(otro, "waitlist:add", { ...add, operationId: addOp })) as OpAck;
+  check("un operationId de otro restaurante se rechaza", !stolen.ok && !stolen.entry, stolen.error);
+  check("  y no avisa a nadie de su room", changesOtro.length === 0);
+
+  // 6. Validación: el id de operación tiene que ser un UUID.
+  const badId = await ask(hostA, "waitlist:resolve", { entryId: "off-listo", status: "ausente", operationId: "no-es-uuid" });
+  check("un operationId que no es UUID se rechaza con Zod", !badId.ok);
+
+  // 7. La hora de llegada de la tablet no sirve para colarse.
+  const t = new Date("2026-10-02T12:00:00Z");
+  check("hora de llegada: más de 24 h atrás se recorta a 24 h", clampArrival(t.getTime() - 3 * MAX_OFFLINE_ARRIVAL_MS, t).getTime() === t.getTime() - MAX_OFFLINE_ARRIVAL_MS);
+  check("  en el futuro se recorta a ahora", clampArrival(t.getTime() + 60_000, t).getTime() === t.getTime());
+  check("  sin hora, ahora", clampArrival(undefined, t).getTime() === t.getTime());
+
+  // 8. Sin operationId (en línea) todo sigue como antes: se aplica sin registrar.
+  const before = (await db.select().from(offlineOperations)).length;
+  const plain = await runOnce({ restaurantId: REST, userId: null, action: "x" }, async () => ({ ok: true as const }));
+  check("sin operationId se ejecuta y no se registra nada", plain.kind === "nueva" && (await db.select().from(offlineOperations)).length === before);
+
+  // 9. Las operaciones viejas se olvidan solas.
+  await db.update(offlineOperations).set({ createdAt: new Date(Date.now() - OPERATION_TTL_MS - 1000) }).where(eq(offlineOperations.operationId, addOp));
+  check("las operaciones de hace más de 7 días se purgan", (await purgeOldOperations()) >= 1 && (await findOperation(addOp, REST)) === null);
+
+  // 10. La lista de mesas para «Sentar»: solo las que admiten clientes, con su zona.
+  const seatable = await listSeatableTables(REST);
+  check("mesas para sentar: solo mesas (no baños), de este restaurante", seatable.length > 0 && seatable.every((x) => x.id !== "bano-1") && !seatable.some((x) => x.id === "m-ajena"));
+  check("  con su zona y su ocupación", seatable.find((x) => x.id === "m-off-1")?.layoutName === "Comedor" && seatable.find((x) => x.id === "m-off-1")?.currentEntryId === "off-sentar-b");
+
+  // Limpieza: lo de esta sección no tiene que mover los contadores de la siguiente.
+  await db.update(tables).set({ currentEntryId: null, status: "libre" }).where(inArray(tables.id, ["m-off-1", "m-off-2"]));
+  await db.delete(tables).where(inArray(tables.id, ["m-off-1", "m-off-2"]));
+  await db.delete(waitlistEntries).where(inArray(waitlistEntries.id, ["off-listo", "off-sentar-a", "off-sentar-b", entryId]));
+  await ask(hostA, "restaurant:join", { restaurantId: REST_2 });
+}
+
+{
+  // La pantalla sin conexión: «servidor + cola». Funciones puras.
+  const { applyOperations } = await import("@/lib/offline/apply");
+  const base = {
+    entries: [
+      { id: "e1", customerName: "Uno", partySize: 2, notes: null, status: "esperando" as const, arrivedAt: 1, calledAt: null, seatedAt: null, resolvedAt: null, resolvedByName: null, assignedTableId: null, isDemo: false, updatedAt: 1 },
+      { id: "e2", customerName: "Dos", partySize: 4, notes: null, status: "esperando" as const, arrivedAt: 2, calledAt: null, seatedAt: null, resolvedAt: null, resolvedByName: null, assignedTableId: null, isDemo: false, updatedAt: 2 },
+    ],
+    tables: [
+      { id: "t1", label: "Mesa 1", capacity: 4, status: "libre" as const, currentEntryId: null, version: 1, layoutId: "l", layoutName: "Comedor" },
+      { id: "t2", label: "Mesa 2", capacity: 4, status: "ocupada" as const, currentEntryId: "otro", version: 3, layoutId: "l", layoutName: "Comedor" },
+    ],
+  };
+  let seq = 0;
+  const op = (data: object) => ({ operationId: `op${++seq}`, userId: "u", restaurantId: "r", targetId: "x", label: "x", sequence: seq, createdAt: 100 + seq, state: "pendiente" as const, attempts: 0, ...data });
+  const ops = [
+    op({ action: "waitlist:add", data: { customerName: "Nuevo", partySize: 2, notes: "", entryId: "e3", arrivedAt: 3 } }),
+    op({ action: "waitlist:resolve", data: { entryId: "e1", status: "listo" } }),
+    op({ action: "table:assign", data: { tableId: "t1", entryId: "e2" } }),
+    // Esta mesa ya está ocupada por otro: NO se pinta como suya.
+    op({ action: "table:assign", data: { tableId: "t2", entryId: "e3" } }),
+    op({ action: "waitlist:delete", data: { entryId: "e3" } }),
+  ] as Parameters<typeof applyOperations>[1];
+  const v = applyOperations(base, ops, 500);
+  const byId = (id: string) => v.entries.find((e) => e.id === id);
+  check("la cola se aplica en orden: alta, listo, sentar y eliminar", byId("e1")?.status === "listo" && byId("e2")?.status === "sentado" && byId("e3") === undefined);
+  check("  sentar ocupa la mesa en pantalla", v.tables.find((x) => x.id === "t1")?.currentEntryId === "e2");
+  check("  una mesa que ya tiene a otro NO se pinta como ocupada por el de la cola (sin pantalla falsa)", v.tables.find((x) => x.id === "t2")?.currentEntryId === "otro");
+  check("  los datos base no se modifican", base.entries[0].status === "esperando" && base.tables[0].currentEntryId === null);
+  const withConflict = applyOperations(base, [{ ...ops[1], state: "conflicto" }], 500);
+  check("  una operación rechazada deja de aplicarse", withConflict.entries.find((e) => e.id === "e1")?.status === "esperando");
+  const undone = applyOperations(base, ops.slice(0, 1), 500);
+  check("  deshacer sin conexión = quitar la última de la cola", undone.entries.length === 3 && undone.entries.find((e) => e.id === "e1")?.status === "esperando");
+}
+
+// ---------------------------------------------------------------------------
 // Sala overview (mapa general)
 // ---------------------------------------------------------------------------
 
@@ -872,7 +1153,8 @@ section("Sala overview: contadores del mapa general");
   check("analitica NO entra en la room de un restaurante (vería nombres)", !bad.ok);
 }
 
-const COUNTER_KEYS = ["averageArrivedAt", "restaurantId", "tablesOccupied", "tablesReserved", "tablesTotal", "waiting"];
+// `waitersKey` no es de ningún cliente: id y versión de la configuración de meseros activa.
+const COUNTER_KEYS = ["averageArrivedAt", "restaurantId", "tablesOccupied", "tablesReserved", "tablesTotal", "waitersKey", "waiting"];
 
 {
   const joinAnalitica = (await ask(analitica, "overview:join", {})) as AnyAck & { counters?: unknown[] };
@@ -985,6 +1267,97 @@ const COUNTER_KEYS = ["averageArrivedAt", "restaurantId", "tablesOccupied", "tab
     () => true,
   );
   check("un usuario desactivado ya no conecta", rejected);
+}
+
+// ---------------------------------------------------------------------------
+// Zonas de meseros en tiempo real
+// ---------------------------------------------------------------------------
+
+section("Zonas de meseros: quién atiende al sentar, y el cambio de configuración");
+
+{
+  const { activateWaiterConfig, createWaiterConfig, listWaiterConfigs, saveWaiterConfig } = await import("@/lib/waiters/configs");
+  const { listSeatableTables } = await import("@/lib/tables/list");
+  const { waiterConfigs } = await import("@/lib/db/schema");
+  const { and } = await import("drizzle-orm");
+
+  // Mesas y clientes propios: las de antes pueden estar ocupadas.
+  await db.insert(tables).values([mesa("w-1"), mesa("w-2"), mesa("w-3"), mesa("w-4")]);
+  await db.insert(waitlistEntries).values([cliente("mesero-a"), cliente("mesero-b"), cliente("mesero-c")]);
+  await ask(hostA, "restaurant:join", { restaurantId: REST });
+  await ask(hostB, "restaurant:join", { restaurantId: REST });
+
+  const sinConfig = await getRestaurantCounters(REST);
+  check("sin configuración, los contadores no traen meseros", sinConfig.waitersKey === null);
+
+  const dos = await createWaiterConfig({ restaurantId: REST, waiterCount: 2 });
+  const tres = await createWaiterConfig({ restaurantId: REST, waiterCount: 3 });
+  check("se crean «2 meseros» (activa) y «3 meseros»", dos.ok && tres.ok && dos.config.isActive && !tres.config.isActive);
+  if (dos.ok && tres.ok) {
+    const conDos = await getRestaurantCounters(REST);
+    check("  los contadores dicen cuál está activa (para el plano de analítica)", conDos.waitersKey === `${dos.config.id}:${dos.config.version}`, String(conDos.waitersKey));
+    check("  la otra configuración no toca a REST_2", (await getRestaurantCounters(REST_2)).waitersKey === null);
+
+    const libres = (await listSeatableTables(REST)).filter((t) => t.id.startsWith("w-"));
+    check("cada mesa trae el mesero de la configuración activa", libres.every((t) => t.waiterName?.startsWith("Mesero ") && t.waiterColor?.startsWith("#")), JSON.stringify(libres.map((t) => t.waiterName)));
+
+    const avisos = counter(hostA, "table:assigned");
+    const mesaA = libres[0];
+    const ack = (await ask(hostB, "table:assign", { tableId: mesaA.id, entryId: "mesero-a" })) as AnyAck & { waiterName?: string | null };
+    await settle();
+    check("al sentar, el ack trae el mesero que lo atiende", ack.ok && ack.waiterName === mesaA.waiterName, JSON.stringify(ack));
+    const aviso = avisos.at(-1) as { waiterName?: string | null } | undefined;
+    check("  y el aviso a toda la room también", aviso?.waiterName === mesaA.waiterName, JSON.stringify(aviso));
+    const [filaA] = await db.select({ waiterName: waitlistEntries.waiterName }).from(waitlistEntries).where(eq(waitlistEntries.id, "mesero-a"));
+    check("  y queda guardado en el cliente", filaA?.waiterName === mesaA.waiterName);
+
+    // Un reenvío de la cola offline devuelve el MISMO mesero sin volver a sentar.
+    const operationId = crypto.randomUUID();
+    const mesaB = libres[1];
+    const primero = (await ask(hostB, "table:assign", { tableId: mesaB.id, entryId: "mesero-b", operationId })) as AnyAck & { waiterName?: string | null };
+    const repetido = (await ask(hostB, "table:assign", { tableId: mesaB.id, entryId: "mesero-b", operationId })) as AnyAck & { waiterName?: string | null };
+    check("un reenvío offline responde lo mismo, mesero incluido", primero.ok && repetido.ok && repetido.waiterName === primero.waiterName);
+
+    // Cambio de configuración: los clientes nuevos se apuntan al mesero nuevo.
+    const cambios = counter(hostA, "waiters:changed");
+    const activada = await activateWaiterConfig({ restaurantId: REST, configId: tres.config.id });
+    emitToRestaurant(REST, "waiters:changed", { activeConfigId: tres.config.id });
+    await settle();
+    check("se activa «3 meseros» con una llamada", activada.ok && (await listWaiterConfigs(REST)).find((c) => c.isActive)?.id === tres.config.id);
+    check("  la room recibe «waiters:changed» con la activa", (cambios.at(-1) as { activeConfigId?: string } | undefined)?.activeConfigId === tres.config.id);
+    check("  y los contadores cambian de clave", (await getRestaurantCounters(REST)).waitersKey === `${tres.config.id}:${tres.config.version}`);
+    const zonaNueva = tres.config.zones.find((z) => z.tableIds.includes(libres[2].id));
+    const ackC = (await ask(hostB, "table:assign", { tableId: libres[2].id, entryId: "mesero-c" })) as AnyAck & { waiterName?: string | null };
+    check("  el siguiente cliente se apunta al mesero de la configuración nueva", ackC.ok && ackC.waiterName === zonaNueva?.waiterName, `${ackC.waiterName} vs ${zonaNueva?.waiterName}`);
+    const [filaA2] = await db.select({ waiterName: waitlistEntries.waiterName }).from(waitlistEntries).where(eq(waitlistEntries.id, "mesero-a"));
+    check("  y el que ya estaba sentado conserva el suyo", filaA2?.waiterName === mesaA.waiterName);
+
+    // Conflictos: dos tablets a la vez.
+    await Promise.all([
+      activateWaiterConfig({ restaurantId: REST, configId: dos.config.id }),
+      activateWaiterConfig({ restaurantId: REST, configId: tres.config.id }),
+    ]);
+    const activas = await db.select({ id: waiterConfigs.id }).from(waiterConfigs).where(and(eq(waiterConfigs.restaurantId, REST), eq(waiterConfigs.isActive, true)));
+    check("dos activaciones a la vez dejan UNA sola activa", activas.length === 1, `${activas.length}`);
+
+    const base = (await listWaiterConfigs(REST)).find((c) => c.id === dos.config.id)!;
+    const guardar = (nombre: string) =>
+      saveWaiterConfig({
+        restaurantId: REST,
+        configId: base.id,
+        version: base.version,
+        name: base.name,
+        zones: base.zones.map((z) => ({ id: z.id, waiterName: nombre, color: z.color })),
+        assignments: base.zones.flatMap((z) => z.tableIds.map((tableId) => ({ tableId, zoneId: z.id }))),
+      });
+    const [g1, g2] = await Promise.all([guardar("Tablet 1"), guardar("Tablet 2")]);
+    check("dos guardados con la misma versión: gana uno y el otro recibe el aviso", [g1, g2].filter((g) => g.ok).length === 1 && [g1, g2].some((g) => !g.ok && g.error.includes("Otro dispositivo")), JSON.stringify([g1, g2]));
+
+    // Liberar las mesas de la prueba.
+    for (const [tableId, entryId] of [[mesaA.id, "mesero-a"], [mesaB.id, "mesero-b"], [libres[2].id, "mesero-c"]]) {
+      await ask(hostB, "table:release", { tableId, entryId });
+    }
+  }
 }
 
 hostA.close();
