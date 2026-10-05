@@ -1256,6 +1256,54 @@ section("Zonas de meseros");
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Copiar y pegar elementos
+// ---------------------------------------------------------------------------
+
+section("Copiar y pegar elementos");
+
+{
+  const { pastedCopy, PASTE_OFFSET } = await import("@/lib/layout/clipboard");
+  const { eq } = await import("drizzle-orm");
+  const R = "rest-pegar";
+  await db.insert(restaurants).values({ id: R, name: "Pegar", slug: "pegar" });
+  await db.insert(tableLayouts).values({ id: "lay-pegar", restaurantId: R, name: "Comedor", width: 600, height: 400, isDefault: true, version: 1 });
+  await db.insert(tables).values({
+    id: "pg-1", restaurantId: R, layoutId: "lay-pegar", elementTypeId: TYPES.mesa, label: "Mesa 1",
+    x: 100, y: 50, width: 90, height: 70, rotation: 45, capacity: 6, status: "ocupada", currentEntryId: "cliente-pg",
+  });
+  const zona = await getLayout("lay-pegar", R);
+  const original = zona!.elements.find((e) => e.id === "pg-1")!;
+  check("la mesa original está ocupada (para ver que eso NO se copia)", original.status === "ocupada" && original.currentEntryId === "cliente-pg");
+
+  const copia = pastedCopy(original, { id: "pg-copia", typeKey: "mesa-sillas", labelsOfType: ["Mesa 1"], zoneWidth: 600, zoneHeight: 400 });
+  check("la copia tiene un id nuevo y el siguiente nombre", copia.id === "pg-copia" && copia.label === "Mesa 2");
+  check("  y las mismas propiedades visuales (tipo, tamaño, giro, puestos)",
+    copia.elementTypeId === original.elementTypeId && copia.width === 90 && copia.height === 70 && copia.rotation === 45 && copia.capacity === 6);
+  check("  desplazada para que se vean las dos", copia.x === original.x + PASTE_OFFSET && copia.y === original.y + PASTE_OFFSET);
+  check("  y NO copia las relaciones: nace libre, sin cliente", copia.status === "libre" && copia.currentEntryId === null && copia.occupantName === null && copia.seatedAt === null);
+  const enElBorde = pastedCopy({ ...original, x: 590, y: 390 }, { id: "x", typeKey: "mesa-sillas", labelsOfType: [], zoneWidth: 600, zoneHeight: 400 });
+  check("  pegada junto al borde, no se sale de la zona", enElBorde.x === 600 - 90 && enElBorde.y === 400 - 70);
+  const junto = pastedCopy(original, { id: "y", typeKey: "mesa-sillas", labelsOfType: [], anchor: { x: 10, y: 20 }, zoneWidth: 600, zoneHeight: 400 });
+  check("  y se puede pegar junto a otro elemento", junto.x === 10 + PASTE_OFFSET && junto.y === 20 + PASTE_OFFSET);
+
+  // Guardar la copia (después de «modificarla»: otro nombre y girada) es un
+  // guardado normal: entra como elemento nuevo y libre, y la original sigue
+  // ocupada con su cliente.
+  const modificada = { ...copia, label: "Mesa terraza", rotation: 90 };
+  const payload = [original, modificada].map(({ id, elementTypeId, label, x, y, width, height, rotation, capacity }) => ({ id, elementTypeId, label, x, y, width, height, rotation, capacity }));
+  const guardado = await applyLayoutStructure({ layoutId: "lay-pegar", restaurantId: R, width: 600, height: 400, elements: payload });
+  check("la copia se guarda como cualquier elemento", guardado.ok);
+  const [filaCopia] = await db.select().from(tables).where(eq(tables.id, "pg-copia"));
+  check("  en la base: libre, sin cliente, con su nombre y su giro", filaCopia?.status === "libre" && filaCopia.currentEntryId === null && filaCopia.label === "Mesa terraza" && filaCopia.rotation === 90);
+  const [filaOriginal] = await db.select().from(tables).where(eq(tables.id, "pg-1"));
+  check("  y la original sigue ocupada con su cliente", filaOriginal?.status === "ocupada" && filaOriginal.currentEntryId === "cliente-pg");
+  const sinCopia = await applyLayoutStructure({ layoutId: "lay-pegar", restaurantId: R, width: 600, height: 400, elements: payload.slice(0, 1) });
+  check("eliminar la copia y guardar la quita", sinCopia.ok && (await db.select().from(tables).where(eq(tables.id, "pg-copia"))).length === 0);
+}
+
+// ---------------------------------------------------------------------------
+
 // El cliente de libSQL sigue con la conexión abierta (el proxy de `lib/db` es
 // perezoso y no se cierra solo), así que en Windows el fichero está pillado y
 // `rmSync` da EPERM. No es un fallo del test: se borra al principio de la

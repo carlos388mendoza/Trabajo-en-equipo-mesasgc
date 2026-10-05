@@ -35,6 +35,13 @@ import type { ElementTypeInfo, LayoutElement } from "@/lib/layout/types";
 
 export const MIN_SCALE = 0.2;
 export const MAX_SCALE = 4;
+/**
+ * Hasta dónde acerca «Ajustar» cuando hay pocas mesas: lo justo para que
+ * cada mesa se vea grande sin que una sola llene la pantalla.
+ */
+const FIT_MAX_SCALE = 1.6;
+/** Margen alrededor de las mesas al encuadrar: sillas, nombre, mesero y cliente. */
+const FIT_PADDING = 70;
 const ZOOM_STEP = 1.2;
 const MIN_SIZE = 24;
 
@@ -348,28 +355,65 @@ export function KonvaCanvas({
     [zoomAround],
   );
 
+  // Los elementos se leen por ref en `resetView`: si fueran dependencia, mover
+  // una mesa en el editor volvería a encuadrar el plano en cada arrastre.
+  const elementsRef = useRef(elements);
+  useEffect(() => {
+    elementsRef.current = elements;
+  });
+
   const resetView = useCallback(() => {
     const stage = stageRef.current;
     const node = containerRef.current;
     if (!stage || !node) return;
 
     const rect = node.getBoundingClientRect();
-    // Girado 90° o 270°, el plano ocupa en pantalla alto × ancho.
-    const sideways = viewRotation % 180 !== 0;
-    const shownWidth = sideways ? height : width;
-    const shownHeight = sideways ? width : height;
     // Lo que tapan los paneles flotantes de arriba no cuenta como hueco.
     const freeHeight = rect.height - topInset;
-    // "Ajustar" en vez de volver a 100%: si la zona no cabe, se ve entera.
+
+    // Qué se encuadra: las MESAS que hay (con un margen para sus sillas y
+    // etiquetas), no la zona entera. Si un local usa una esquina de un lienzo
+    // grande, sus mesas se ven grandes y legibles. Sin elementos, la zona.
+    const items = elementsRef.current;
+    let box = { minX: 0, minY: 0, maxX: width, maxY: height };
+    let maxFit = 1;
+    if (items.length > 0) {
+      box = {
+        minX: Math.max(0, Math.min(...items.map((e) => e.x)) - FIT_PADDING),
+        minY: Math.max(0, Math.min(...items.map((e) => e.y)) - FIT_PADDING),
+        maxX: Math.min(width, Math.max(...items.map((e) => e.x + e.width)) + FIT_PADDING),
+        maxY: Math.min(height, Math.max(...items.map((e) => e.y + e.height)) + FIT_PADDING),
+      };
+      maxFit = FIT_MAX_SCALE;
+    }
+    // El contenido gira alrededor del centro del plano: se giran las cuatro
+    // esquinas de la caja y se encuadra la caja que resulta en pantalla.
+    const rad = (viewRotation * Math.PI) / 180;
+    const cos = Math.round(Math.cos(rad));
+    const sin = Math.round(Math.sin(rad));
+    const cx = width / 2;
+    const cy = height / 2;
+    const corners = [
+      [box.minX, box.minY],
+      [box.maxX, box.minY],
+      [box.maxX, box.maxY],
+      [box.minX, box.maxY],
+    ].map(([px, py]) => ({
+      x: cx + (px - cx) * cos - (py - cy) * sin,
+      y: cy + (px - cx) * sin + (py - cy) * cos,
+    }));
+    const left = Math.min(...corners.map((p) => p.x));
+    const right = Math.max(...corners.map((p) => p.x));
+    const top = Math.min(...corners.map((p) => p.y));
+    const bottom = Math.max(...corners.map((p) => p.y));
+
     // El margen deja ver el borde del plano y su brillo.
-    const fit = Math.min((rect.width - 40) / shownWidth, (freeHeight - 40) / shownHeight, 1);
-    const scale = clamp(fit, MIN_SCALE, 1);
+    const fit = Math.min((rect.width - 40) / (right - left), (freeHeight - 40) / (bottom - top), maxFit);
+    const scale = clamp(fit, MIN_SCALE, maxFit);
     stage.scale({ x: scale, y: scale });
-    // El plano gira alrededor de su centro, así que basta con llevar ese
-    // centro al del hueco libre, gire como gire.
     stage.position({
-      x: rect.width / 2 - (width / 2) * scale,
-      y: topInset + freeHeight / 2 - (height / 2) * scale,
+      x: rect.width / 2 - ((left + right) / 2) * scale,
+      y: topInset + freeHeight / 2 - ((top + bottom) / 2) * scale,
     });
     onZoomChange(Math.round(scale * 100));
     emitView();
@@ -679,7 +723,9 @@ export function KonvaCanvas({
         </Stage>
       ) : null}
 
-      <div className="pointer-events-none absolute bottom-3 left-3">
+      {/* En un celular en vertical el minimapa taparía media sala: el plano ya
+          cabe entero en la pantalla, así que no hace falta. */}
+      <div className="pointer-events-none absolute bottom-3 left-3 hidden sm:block">
         <div className="pointer-events-auto">
           <Minimap
             width={width}
