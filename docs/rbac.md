@@ -33,8 +33,6 @@ Qué significa cada marca:
 | `/analiticas` (vista global y por restaurante) | Sí | — | Sí |
 | `/mapa` (mapa general, todas las marcas) | Sí | — | Sí (solo lectura) |
 | `/restaurante/[id]/mapa` (plano en vivo, solo lectura) | Sí | Suyos | Sí, sin nombres |
-| `/admin` → «Datos de demostración» (conteos por restaurante y borrado) | Sí, y borra | — | — |
-| `/admin/datos-demo` (los mismos conteos, solo lectura) | Sí, y borra | — | Sí, sin borrar |
 
 ## Acciones
 
@@ -53,8 +51,8 @@ Qué significa cada marca:
 | `mapa:ver` | `/mapa`, la action `loadOverviewCounters` y la sala `overview` de Socket.IO | Sí | — | Sí |
 | `plano:ver` | `/restaurante/[id]/mapa` y la action `loadLivePlan` (estados y ocupación) | Sí | Suyos | Sí |
 | `plano:clientes` | Nombre del cliente de cada mesa en el plano en vivo | Sí | Suyos | — |
-| `demo:ver` | Ver que hay datos de demostración y cuántos son: el aviso global y `/admin/datos-demo` | Sí | — | Sí |
-| `demo:borrar` | **Borrarlos**, todos o los de un restaurante: la action `deleteDemoDataAction` (`app/admin/demo-actions.ts`) | Sí | — | — |
+| `demo:ver` | Ver que hay datos de demostración y cuántos son. Sin pantalla desde el 5 de octubre: se conserva para `lib/demo` | Sí | — | Sí |
+| `demo:borrar` | Borrarlos. Sin pantalla desde el 5 de octubre: se borran con `npm run db:demo:borrar` | Sí | — | — |
 
 Las dos últimas son globales, no de un restaurante. `demo:ver` es de admin y
 analítica: quien mira el mapa o las estadísticas tiene derecho a saber si los
@@ -85,37 +83,24 @@ Cinco casos que vale la pena tener presentes:
 - **Entrar en la room de Socket.IO de un restaurante** exige `editor:ver` o
   `rapido:ver` en él. Por eso analitica no entra en ninguna: no edita nada en
   vivo, y en esas rooms viajan los ids de los clientes.
-- **Borrar los datos de demostración es cosa del admin**, también el botón
-  «Borrar demo de este restaurante»: un host no puede ni en sus propios
-  restaurantes (`demo:borrar` no es una acción de restaurante). El host
-  distingue las cartas de demostración por su etiqueta «Demo».
+- **Borrar los datos de demostración** ya no se hace desde la web: solo con
+  `npm run db:demo:borrar` en la terminal. El host distingue las cartas de
+  demostración por su etiqueta «Demo».
 
 ## Datos de demostración
 
-Si hay un lote de demostración cargado (`npm run db:demo`), una franja discreta
-lo avisa a quien tiene `demo:ver`, con un enlace a la sección.
+Desde el 5 de octubre (pedido de la dirección) **la interfaz de datos demo ya
+no existe**: ni el aviso «Hay datos de demostración cargados», ni el enlace
+«Datos demo», ni la sección de `/admin`, ni `/admin/datos-demo` (da 404), ni
+su server action. Los datos se quedan, con `is_demo` y `demo_batch_id`, y se
+cargan y borran desde la terminal (`npm run db:demo` y `npm run db:demo:borrar`,
+o con `railway run` en producción).
 
-| Quién | Ve el aviso | Sección de `/admin` | `/admin/datos-demo` | Borra | Etiqueta «Demo» en las cartas |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Administrador | Sí → `/admin#datos-demo` | Sí | Sí | **Sí** (todo o por restaurante) | Sí |
-| Restaurante | — | — | — (`/sin-acceso`) | — | Sí |
-| Analítica | Sí → `/admin/datos-demo` | — | Sí (solo lectura) | — | — (no opera) |
-| Sin sesión | No (va a `/login`) | No | No | — | — |
-
-- El aviso **no bloquea nada**, y en particular **no bloquea el Modo rápido**.
-- Para borrar hay que escribir `BORRAR`: el botón no se habilita hasta
-  entonces, y la server action lo vuelve a comprobar en el servidor, porque un
-  POST a mano no pasa por la página.
-- El botón escondido **no protege**: quien no tiene `demo:borrar` recibe
-  «No tienes permiso» aunque mande la palabra. Sin sesión, el proxy lo manda a
-  `/login`.
-- Borra **solo** lo marcado `is_demo`: nunca un cliente, una mesa o una zona
-  reales, ni restaurantes, marcas o usuarios. Con un restaurante, solo el demo
-  de ese restaurante.
-- Las pruebas están repartidas: `verify:demo` comprueba la matriz de `can()`,
-  el desglose y el borrado por restaurante, y `verify:auth` lo hace por HTTP
-  contra la app real (un cliente real sobrevive a los dos borrados; solo el
-  admin puede).
+- En el modo sencillo cada carta de demostración sigue llevando la etiqueta
+  **«Demo»**.
+- `demo:ver` y `demo:borrar` siguen en `lib/auth/rbac.ts`: `verify:demo`
+  comprueba su matriz, y `verify:auth` que no queda ningún rastro de la
+  interfaz y que los datos siguen ahí.
 
 ## Zonas de meseros y plano por defecto
 

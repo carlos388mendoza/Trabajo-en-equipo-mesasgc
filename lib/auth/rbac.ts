@@ -46,8 +46,9 @@ export type Action =
   /** Nombre del cliente sentado en cada mesa, dentro del plano en vivo. */
   | "plano:clientes"
   /**
-   * Ver que hay datos de demostración cargados y cuántos son (/admin/datos-demo
-   * y el aviso global). Admin y analítica.
+   * Ver que hay datos de demostración cargados y cuántos son. Admin y
+   * analítica. Desde el 5 de octubre no hay pantalla ni aviso que la usen (se
+   * quitaron de la interfaz); se conserva para `lib/demo` y sus pruebas.
    */
   | "demo:ver"
   /**
@@ -98,10 +99,9 @@ export function isRestaurantAction(action: Action): boolean {
 export const ROLE_PERMISSIONS: Record<Role, readonly Action[]> = {
   // Todo, en todos los restaurantes.
   [ROLES.ADMIN]: ALL_ACTIONS,
-  // Modo sencillo y completo, solo en SUS restaurantes. Sin `demo:ver` (desde
-  // el 2 de octubre, pedido de la dirección): el aviso de datos demo es para
-  // admin y analítica; el host distingue cada carta de demostración por su
-  // etiqueta «Demo» en el modo sencillo.
+  // Modo sencillo y completo, solo en SUS restaurantes. Sin `demo:ver`: el host
+  // distingue cada carta de demostración por su etiqueta «Demo» en el modo
+  // sencillo.
   [ROLES.RESTAURANTE]: [
     "editor:ver",
     "editor:guardar",

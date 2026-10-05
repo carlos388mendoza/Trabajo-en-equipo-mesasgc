@@ -334,8 +334,7 @@ export async function loadDemoData(
 /**
  * Cuántos datos de demostración hay ahora mismo, y de qué tipo.
  *
- * Lo usan el aviso global de la app, la pantalla /admin/datos-demo y los
- * scripts. Solo cuenta filas con `is_demo`: las reales no se ven aquí.
+ * Lo usan los scripts (`db:demo`, `db:demo:borrar`) y las pruebas. Solo cuenta filas con `is_demo`: las reales no se ven aquí.
  */
 export async function demoSummary() {
   const [zonasRows, mesasRows, clientesRows, meserosRows] = await Promise.all([

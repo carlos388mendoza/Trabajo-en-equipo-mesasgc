@@ -31,9 +31,8 @@ Los tiempos son orientativos: suman unos 10 minutos.
   | Correo | Rol | Adónde entra |
   |---|---|---|
   | `admin@grupocomidas.test` | admin | Mapa general, `/admin`, todo |
-  | `centro@grupocomidas.test` | restaurante (`rest_centro`) | Su modo sencillo y su plano |
+  | `chinawok@grupocomidas.test` | restaurante (los 2 China Wok) | Sus dos locales: modo sencillo y plano |
   | `analitica@grupocomidas.test` | analitica | Estadísticas y mapa, solo lectura |
-  | `gerente@grupocomidas.test` | restaurante + analitica | Elige entre su restaurante y las estadísticas |
 
 - **Haz:** entra como **admin**. Llega directo a `/mapa`.
 
@@ -114,8 +113,9 @@ marcador de China Wok Centro cambia sin recargar.
 
 ### 2.5 Modo rápido (compañero, 1,5 min)
 
-**Usuario:** cierra sesión y entra como `centro@grupocomidas.test`. Llega a
-`/restaurante/rest_centro/rapido`.
+**Usuario:** cierra sesión y entra como `chinawok@grupocomidas.test`. En
+`/inicio` elige **China Wok Centro** (o usa «Modo sencillo» de la cabecera) y
+llega a `/restaurante/rest_centro/rapido`.
 
 - **Agregar:** un cliente con nombre, personas y una nota.
 - **Tarjetas tipo Tinder:** desliza la tarjeta de arriba **a la derecha
@@ -143,10 +143,11 @@ a `/analiticas`.
 
 ### 2.7 Permisos (Carlos, 1 min)
 
-**Usuario:** entra como `centro@grupocomidas.test`.
+**Usuario:** entra como `chinawok@grupocomidas.test`.
 
-- **Enseña:** en el encabezado, «Mapa» lleva a **su** plano en vivo
-  (`/restaurante/rest_centro/mapa`), no al mapa general.
+- **Enseña:** en el encabezado solo salen **sus** dos restaurantes (el
+  selector) y no hay «Mapa» general: el plano en vivo de cada local está en la
+  navegación del restaurante (`/restaurante/rest_centro/mapa`).
 - **Escribe a mano en la barra de direcciones:**
   - `/mapa` → va a **`/sin-acceso`**;
   - `/restaurante/rest_norte/mapa` → **`/sin-acceso`**;
@@ -197,10 +198,9 @@ a `/analiticas`.
    npm run db:demo
    ```
 
-   Pide escribir «si». Avisa de que hay datos falsos arriba, en todas las
-   pantallas, y eso es parte de la demostración: enseña el aviso, enséñale a
-   un host o a analitica que lo ven, y luego bórralos desde
-   `/admin/datos-demo` escribiendo `BORRAR` para que el aviso desaparezca solo.
+   Pide escribir «si». En el modo sencillo las cartas de demostración llevan
+   la etiqueta «Demo». Al terminar, bórralos con `npm run db:demo:borrar`
+   (pide escribir `BORRAR`).
    Si prefieres la demo limpia, sáltate este paso (pero entonces las
    estadísticas salen casi vacías).
 6. Pasa las comprobaciones, para no llevarte sorpresas:
@@ -288,8 +288,8 @@ activo, así que Railway tampoco despliega nada con el CI en rojo.
 **Otras que pueden salir:**
 
 - **¿Y si quieren datos de mentira para probar?** Hay un lote que se carga con
-  `npm run db:demo` y se borra desde `/admin/datos-demo` escribiendo `BORRAR` (o
-  con `npm run db:demo:borrar`). Cada fila que inserta lleva `is_demo` y
+  `npm run db:demo` y se borra con `npm run db:demo:borrar` (escribiendo
+  `BORRAR`). Cada fila que inserta lleva `is_demo` y
   `demo_batch_id`, dos columnas de una migración que solo añade cosas
   (`0007`). El borrado usa esas columnas y **nunca el nombre**, así que
   renombrar una zona de demostración no la salva ni renombrar una real la mete

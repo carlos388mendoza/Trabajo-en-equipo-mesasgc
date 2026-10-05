@@ -48,7 +48,7 @@ export const DEMO_NOTE = "Cliente de demostración: no es una persona real.";
 /**
  * Palabra que hay que escribir para BORRAR el lote desde la web.
  *
- * Vive aquí y no en `app/admin/demo-actions.ts` porque un archivo `"use server"`
+ * Vive aquí (y no en una server action) porque un archivo `"use server"`
  * solo puede exportar funciones async: si la constante saliera de ahí, el build
  * de Next la rechazaría. La usan el botón (para habilitarse) y la action (para
  * comprobarlo), y por eso están en el mismo sitio.
