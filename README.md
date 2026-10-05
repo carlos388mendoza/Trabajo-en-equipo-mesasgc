@@ -50,7 +50,7 @@ La guía paso a paso para desplegar en Railway está en [`docs/despliegue.md`](d
 | Rol | Acceso |
 |---|---|
 | **Administrador** | Crea usuarios, accede a todos los restaurantes y a todas las estadísticas |
-| **Usuario de restaurante** | Accede solo a su restaurante, modos sencillo y completo |
+| **Usuario de restaurante** | Accede solo a su restaurante, modos sencillo y completo; edita la estructura de sus mesas, elige su plano por defecto y gestiona sus zonas de meseros |
 | **Usuario de analíticas** | Ve estadísticas de todos los restaurantes/marcas, vista completa o filtrada por restaurante |
 
 Un usuario puede tener varios roles a la vez. Cómo está hecho: sección 14 y
@@ -1188,3 +1188,128 @@ conteos y botones, `/admin/datos-demo` según el rol, analitica, un host y quien
 no tiene sesión **no borran** ni con la palabra puesta, admin borra el demo de
 **un** restaurante (los demás siguen igual) y luego todo, un **cliente real**
 sigue ahí después de los dos borrados, y el aviso desaparece solo.
+
+---
+
+## 18. Zonas de meseros (requisito del enunciado)
+
+> «Manejo de zonas de meseros, guardar configuración por cantidad de meseros
+> activa y la opción de cambiar entre configuración de zonas fácilmente.»
+
+Cada restaurante guarda varias **configuraciones de meseros** («2 meseros»,
+«3 meseros», «4 meseros»…) y **una está activa**. Cada configuración reparte
+las mesas del restaurante entre N meseros, cada uno con su **nombre** (o
+número) y su **color**. Se cambia de una a otra con **un toque**.
+
+### Qué se ve
+
+- **Plano en vivo** (`/restaurante/[id]/mapa`): el selector **«Meseros
+  activos: 2 | 3 | 4»** arriba, y cada mesa teñida del color de su mesero
+  con su nombre encima. Debajo, la leyenda: cada mesero con sus mesas y
+  cuántas quedan «sin mesero».
+- **Editar zonas** (botón del plano en vivo, o «Repartir mesas entre meseros»
+  desde el editor, que abre `?meseros=editar`): nombre de la configuración,
+  nombre y color de cada mesero, y un **pincel**: se elige un mesero y se
+  tocan sus mesas (tocar otra vez se la quita). **«Selección en grupo»**
+  cambia el arrastre por un rectángulo que asigna todas las mesas que atrapa.
+  **«Repartir automáticamente»** reparte en bloques de mesas vecinas, con el
+  mismo número de mesas por mesero (como mucho una de diferencia).
+  **«Nueva con N meseros»** crea una configuración ya repartida.
+- **Editor** (`/restaurante/[id]/editor`): el mismo selector, **«Ver
+  meseros»** para teñir las mesas como en el plano en vivo, y el enlace para
+  repartirlas. El reparto se edita en el plano en vivo a propósito: allí un
+  toque no mueve la mesa.
+- **Modo sencillo**: al **sentar**, cada mesa del selector dice su mesero, y
+  el aviso dice «Ana se sentó en Mesa 4. **Lo atiende Luis.**». En «Ver todas
+  las cartas», los sentados dicen quién los atiende.
+- **Estadísticas**: «Clientes atendidos por mesero» (grupos y personas de los
+  últimos 14 días) y el asistente contesta «¿cuántos clientes atendió cada
+  mesero?». Hacia OpenRouter los meseros viajan con alias («Mesero R1»…).
+
+### Tiempo real
+
+Activar, guardar o borrar una configuración emite **`waiters:changed`** a la
+room del restaurante: todas sus tablets (editor y plano en vivo) se repintan
+al instante. Analítica, que no entra en las rooms, se entera por la sala
+`overview`: los contadores llevan `waitersKey` (id y versión de la activa; no
+dice nada de ningún cliente), y su plano se recarga cuando cambia.
+
+### Cómo está hecho
+
+| Pieza | Qué hace |
+| --- | --- |
+| Migración `0009` (solo aditiva) | Tablas `waiter_configs` (con `is_active`, `version`, `save_token`, `is_demo`), `waiter_zones` (mesero y color) y `waiter_zone_tables` (mesa → zona, una por configuración), y la columna `waitlist_entries.waiter_name`. |
+| `lib/waiters/configs.ts` | Listar, crear (ya repartida), guardar, activar y borrar. Comprueba que la configuración, las zonas y las mesas sean de **ese** restaurante, y que las mesas admitan clientes. |
+| `lib/waiters/balance.ts` | `autoBalance` (puro) y la paleta de colores. Lo usan el servidor y el navegador. |
+| `app/restaurante/[id]/meseros/actions.ts` | Server actions: Zod → `meseros:gestionar` → `lib/waiters` → `waiters:changed`. |
+| `components/waiters/waiter-zones.tsx` | Selector, leyenda y panel de edición. |
+| `lib/tables/assign.ts` | Al sentar, apunta en `waiter_name` el mesero de la mesa en la configuración activa, **en el mismo UPDATE** que sienta al cliente. |
+
+### Decisiones que conviene no deshacer sin pensarlo
+
+- **Una sola activa por restaurante**, garantizado por un índice único
+  parcial (`waiter_configs_one_active_idx`). Activar desmarca y marca en un
+  batch.
+- **Se guarda el nombre del mesero en el cliente**, no un id: las
+  estadísticas siguen valiendo aunque luego se cambie o se borre la
+  configuración.
+- **Guardar es un solo batch con bloqueo optimista.** La primera sentencia
+  sube la versión solo si sigue siendo la del navegador y deja su marca
+  (`save_token`); las demás solo actúan con esa marca. Dos tablets que
+  guardan a la vez: gana una y la otra recibe «Otro dispositivo cambió esta
+  configuración». Con transacciones interactivas, la segunda se bloqueaba.
+- **El reparto no toca `tables`**: ni la estructura ni la ocupación. Si el
+  editor borra una mesa, sale de su zona sola (`ON DELETE CASCADE`).
+
+### Permisos
+
+Crear, editar, borrar y activar: **`meseros:gestionar`**, del admin (todos)
+y del rol restaurante (los suyos). Analítica las **ve** (selector, colores y
+leyenda) pero no las cambia. Tabla completa en `docs/rbac.md`.
+
+### Seed y datos de demostración
+
+- `npm run db:seed` crea «2 meseros» (activa) y «3 meseros» en `rest_centro`
+  (Ana, Luis, Marta) y `rest_norte` (Carlos, Sofía, Diego), solo si no tienen
+  ninguna.
+- `npm run db:demo` crea «2 meseros» y «3 meseros» de ejemplo, marcadas
+  `is_demo`, en los restaurantes que **no** tengan ya una, y apunta mesero
+  al historial demo. Las borra «Borrar datos de demostración» (si la borrada
+  era la activa, pasa a activa la siguiente que quede).
+
+### Qué lo comprueba
+
+- `verify:editor`: reparto automático, Zod, crear, activar (una sola),
+  guardar con sus reglas (otra mesa, un baño, mesa repetida, zona ajena,
+  versión vieja), que el reparto no toca las mesas y que borrar una mesa la
+  saca de su zona.
+- `verify:realtime`: el mesero en el ack y en el aviso al sentar, el reenvío
+  offline, `waiters:changed`, `waitersKey`, dos activaciones a la vez y dos
+  guardados a la vez.
+- `verify:auth`: quién ve y quién cambia (por página y por server action),
+  y que el cambio llega a la otra tablet por el socket.
+- `verify:demo`: configuraciones de ejemplo, mesero en el historial y borrado.
+
+---
+
+## 19. Plano por defecto y estructura de cada restaurante (requisito del enunciado)
+
+> «La configuración de las mesas por defecto en cada restaurante, las
+> actualizaciones de la estructura de las mesas las hacen los usuarios de
+> los restaurantes.»
+
+- **Cada restaurante tiene un plano por defecto**: la zona que se abre al
+  entrar en el editor y en el plano en vivo. Un restaurante nuevo nace con su
+  «Comedor principal» por defecto; si unos datos viejos no tuvieran ninguna,
+  `ensureDefaultLayout` marca la primera al abrir el editor o el plano.
+- **El editor la marca**: «★ Por defecto» en la zona que lo es, y
+  **«Marcar por defecto»** en las demás (`setDefaultLayoutAction`). Una sola
+  por restaurante (índice único parcial `table_layouts_one_default_idx`).
+- **La estructura la editan los usuarios del restaurante**: mover, añadir,
+  borrar, girar, **copiar y pegar** (Ctrl+C / Ctrl+V, o «Copiar», «Pegar» y
+  «Duplicar», también entre zonas) y elegir el plano por defecto. Todo con
+  `editor:guardar`: el rol restaurante en **los suyos** y el admin en todos;
+  analítica no.
+- Lo comprueban `verify:editor` (una sola por defecto, zona de otro
+  restaurante, `ensureDefaultLayout`) y `verify:auth` (centro elige la suya,
+  norte y analítica no, y el editor abre la nueva).
