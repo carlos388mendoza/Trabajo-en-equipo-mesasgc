@@ -33,6 +33,7 @@ const FORWARDED = [
   "table:released",
   "layout:updated",
   "structure:changed",
+  "waiters:changed",
 ] as const satisfies readonly (keyof ServerToClientEvents)[];
 
 const ACK_TIMEOUT_MS = 5_000;

@@ -43,7 +43,8 @@ Qué significa cada marca:
 | `usuarios:gestionar` | Crear, editar, restablecer contraseña y desactivar usuarios (`app/admin/actions.ts`) | Sí | — | — |
 | `catalogo:gestionar` | Crear, editar y desactivar marcas y restaurantes (`app/admin/catalog-actions.ts`) | Sí | — | — |
 | `editor:ver` | Ver el plano; nombre del cliente en vivo | Sí | Suyos | — |
-| `editor:guardar` | Guardar y copiar la estructura (server actions del editor) | Sí | Suyos | — |
+| `editor:guardar` | Guardar, copiar y pegar la estructura, y **elegir el plano por defecto** (`setDefaultLayoutAction`) | Sí | Suyos | — |
+| `meseros:gestionar` | Crear, editar, borrar y **activar** configuraciones de zonas de meseros (`app/restaurante/[id]/meseros/actions.ts`). Verlas solo pide `plano:ver` | Sí | Suyos | — |
 | `rapido:ver` | `GET /api/restaurante/[id]/clientes` | Sí | Suyos | — |
 | `rapido:modificar` | `POST …/clientes` y `PATCH …/clientes/[clienteId]` | Sí | Suyos | — |
 | `mesas:asignar` | Socket.IO `table:assign` y `table:release` | Sí | Suyos | — |
@@ -116,6 +117,36 @@ lo avisa a quien tiene `demo:ver`, con un enlace a la sección.
   contra la app real (un cliente real sobrevive a los dos borrados; solo el
   admin puede).
 
+## Zonas de meseros y plano por defecto
+
+Dos requisitos del enunciado: «manejo de zonas de meseros, guardar
+configuración por cantidad de meseros activa y la opción de cambiar entre
+configuración de zonas fácilmente» y «la configuración de las mesas por
+defecto en cada restaurante, las actualizaciones de la estructura de las mesas
+las hacen los usuarios de los restaurantes».
+
+| Qué | admin | restaurante | analitica |
+|---|:---:|:---:|:---:|
+| Ver el selector «Meseros activos», los colores y la leyenda en el plano en vivo | Sí | Suyos | Sí (solo lectura) |
+| Cambiar la configuración activa (un toque) | Sí | Suyos | — |
+| Crear, editar (nombres, colores, reparto) y borrar configuraciones | Sí | Suyos | — |
+| Ver quién atiende al sentar (modo sencillo) | Sí | Suyos | — (no opera) |
+| Estadísticas por mesero y preguntarle al asistente | Sí | — | Sí |
+| Editar la estructura (mover, añadir, borrar, girar, copiar y pegar) | Sí | Suyos | — |
+| Elegir el plano por defecto | Sí | Suyos | — |
+
+- **Se comprueba en el servidor**, como todo lo demás: cada server action
+  vuelve a pedir el permiso con el `restaurantId` del payload, y además
+  `lib/waiters/configs.ts` comprueba que la configuración, sus zonas y sus
+  mesas sean de **ese** restaurante (no vale mandar una configuración ajena
+  con el id de un restaurante propio).
+- **Tiempo real:** `waiters:changed` va a la room del restaurante. Analítica
+  no entra en las rooms: su plano se recarga cuando cambia `waitersKey` en
+  los contadores de la sala overview (id y versión de la configuración activa,
+  sin datos de clientes).
+- Lo prueban `verify:auth` (páginas, server actions por HTTP y el aviso por
+  socket a otra tablet), `verify:editor` y `verify:realtime`.
+
 ## Mapa general y plano en vivo
 
 - **Analitica no ve nombres de clientes.** En el plano en vivo ve el estado de
@@ -184,7 +215,8 @@ El enlace «Mapa» del encabezado lleva a `/mapa` a quien tiene `mapa:ver`, y a
 > los restaurantes/marcas, vista completa y opción de ver por restaurante.»
 
 Revisado el 1 de octubre de 2026 contra la app real en local, con los
-usuarios del seed. Todas las pruebas están en `npm run verify:auth` (329/329):
+usuarios del seed, y ampliado el 5 de octubre con las zonas de meseros y el
+plano por defecto. Todas las pruebas están en `npm run verify:auth` (392/392):
 levanta la app y hace peticiones HTTP y de Socket.IO de verdad con la cookie
 de cada usuario.
 
@@ -206,3 +238,5 @@ de cada usuario.
 | **Analítica no ve `/admin`** | Sí | `/admin` → `/sin-acceso`, y `createUserAction` → «No tienes permiso». |
 | **Múltiples roles: el gerente** (restaurante + analitica) tiene la suma y nada más | Sí | Tiene `rapido` y `editor` de `rest_centro`, `/analiticas`, `/mapa`, el asistente, la room de `rest_centro` y la sala overview. **No** tiene `rest_norte` (páginas, API GET/POST y socket), ni `/admin`, ni `createUserAction`. |
 | **Protecciones en el servidor**, no solo botones escondidos | Sí | Todo lo de arriba se prueba **sin la interfaz**: peticiones directas a páginas, API routes, server actions y eventos de Socket.IO con la cookie de cada rol. `can()` (`lib/auth/rbac.ts`) se comprueba en cada página, action, API y evento de socket. `proxy.ts` solo mira si hay cookie. |
+| **Zonas de meseros**: varias configuraciones por restaurante, una activa, cambio con un toque | Sí | «Zonas de meseros y plano por defecto»: el host de `rest_centro` activa «3 meseros» por la server action y la otra tablet recibe `waiters:changed`; analítica y norte reciben «No tienes permiso» al activar, guardar, crear o borrar, y una configuración de `rest_centro` no se activa con el id de `rest_norte`. Al sentar, el ack, el aviso y el cliente guardan el mesero. |
+| **Plano por defecto**, y la estructura la actualizan los usuarios de su restaurante | Sí | Mismo bloque: centro marca la Terraza como plano por defecto y el editor la abre; norte y analítica no pueden; una zona de otro restaurante no se puede marcar; el admin también puede. Guardar, copiar y pegar la estructura pide `editor:guardar` («Server actions del editor»). |

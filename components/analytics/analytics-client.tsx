@@ -276,13 +276,37 @@ export function AnalyticsClient() {
           </section>
 
           <section className="mt-5 rounded-2xl border border-app-border bg-panel p-5 text-panel-text shadow-sm sm:p-6">
+            <div className="flex items-center gap-2">
+              <ChartNoAxesCombined aria-hidden size={19} className="text-accent" />
+              <h2 className="font-bold">Clientes atendidos por mesero</h2>
+            </div>
+            <p className="mt-1 text-sm text-panel-muted">Grupos sentados en la zona de cada mesero (la configuración activa al sentarlos)</p>
+            {analytics.waiters.length ? (
+              <ol className="mt-4 grid gap-2 sm:grid-cols-2">
+                {analytics.waiters.map((waiter) => (
+                  <li key={`${waiter.restaurantId}-${waiter.name}`} className="flex items-center justify-between gap-3 rounded-xl border border-app-border px-3 py-2.5 text-sm">
+                    <span className="min-w-0 truncate">
+                      {waiter.name}
+                      <span className="ml-1.5 text-xs text-panel-muted">{waiter.restaurantName}</span>
+                    </span>
+                    <span className="shrink-0 font-semibold">
+                      {waiter.groups} {waiter.groups === 1 ? "grupo" : "grupos"}
+                      <span className="ml-1 font-normal text-panel-muted">· {waiter.people} pers.</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            ) : <p className="mt-4 text-sm text-panel-muted">Todavía no hay grupos sentados con mesero en estos 14 días.</p>}
+          </section>
+
+          <section className="mt-5 rounded-2xl border border-app-border bg-panel p-5 text-panel-text shadow-sm sm:p-6">
             <div className="grid gap-5 md:grid-cols-[.8fr_1.2fr] md:items-start">
               <div>
                 <span className="inline-flex items-center gap-2 rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
                   <Sparkles aria-hidden size={14} /> ASISTENTE IA
                 </span>
                 <h2 className="mt-3 text-xl font-bold">Pregunta sobre tu servicio</h2>
-                <p className="mt-1 text-sm leading-6 text-panel-muted">Consulta el día más lento, tus clientes frecuentes o compara restaurantes con los filtros actuales.</p>
+                <p className="mt-1 text-sm leading-6 text-panel-muted">Consulta el día más lento, tus clientes frecuentes, cuántos clientes atendió cada mesero o compara restaurantes con los filtros actuales.</p>
                 <div className="mt-5 rounded-xl border border-app-border bg-app-bg p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-app-muted">Resumen de 14 días</p>
                   <p className="mt-2 text-sm leading-6">{analytics.summary}</p>

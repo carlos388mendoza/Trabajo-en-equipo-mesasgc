@@ -11,7 +11,7 @@ import { and, avg, count, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { ACTIVE_WAITLIST_STATUSES, SEATABLE_ELEMENT_KEYS } from "@/lib/db/enums";
-import { elementTypes, tables, waitlistEntries } from "@/lib/db/schema";
+import { elementTypes, tables, waiterConfigs, waitlistEntries } from "@/lib/db/schema";
 
 export type { RestaurantCounters } from "@/lib/realtime/events";
 import type { RestaurantCounters } from "@/lib/realtime/events";
@@ -45,6 +45,7 @@ function empty(restaurantId: string): RestaurantCounters {
     tablesReserved: 0,
     waiting: 0,
     averageArrivedAt: null,
+    waitersKey: null,
   };
 }
 
@@ -87,6 +88,11 @@ export async function getCounters(ids?: string[]): Promise<RestaurantCounters[]>
     )
     .groupBy(waitlistEntries.restaurantId);
 
+  const waiterRows = await db
+    .select({ restaurantId: waiterConfigs.restaurantId, id: waiterConfigs.id, version: waiterConfigs.version })
+    .from(waiterConfigs)
+    .where(and(eq(waiterConfigs.isActive, true), ids ? inArray(waiterConfigs.restaurantId, ids) : undefined));
+
   const byId = new Map<string, RestaurantCounters>();
   const get = (id: string) => {
     let row = byId.get(id);
@@ -105,6 +111,11 @@ export async function getCounters(ids?: string[]): Promise<RestaurantCounters[]>
     row.waiting = Number(r.waiting);
     // `avg` de SQLite devuelve texto con decimales: se redondea al ms.
     row.averageArrivedAt = r.averageArrivedAt === null ? null : Math.round(Number(r.averageArrivedAt));
+  }
+  for (const r of waiterRows) {
+    // Solo restaurantes que ya salen (con mesas o clientes, o pedidos por id).
+    const row = byId.get(r.restaurantId);
+    if (row) row.waitersKey = `${r.id}:${r.version}`;
   }
   return [...byId.values()];
 }

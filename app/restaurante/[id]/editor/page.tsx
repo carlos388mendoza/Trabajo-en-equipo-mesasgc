@@ -1,8 +1,10 @@
 import { EditorClient } from "@/components/editor/editor-client";
-import { restaurantsAllowed } from "@/lib/auth/rbac";
+import { can, restaurantsAllowed } from "@/lib/auth/rbac";
 import { requirePage } from "@/lib/auth/session";
 import { getElementTypes, getLayout, getLayoutsForRestaurant, restaurantExists } from "@/lib/db/queries/layouts";
 import { getRestaurantsWithoutLayout } from "@/lib/layout/copy";
+import { ensureDefaultLayout } from "@/lib/layout/default";
+import { listWaiterConfigs } from "@/lib/waiters/configs";
 
 // Es una Server Component a propósito: la zona, el catálogo de tipos y los
 // elementos llegan desde la base de datos y se pasan ya resueltos al editor.
@@ -24,11 +26,15 @@ export default async function EditorPage({
   // plano (redirige a /login o /sin-acceso).
   const user = await requirePage(`/restaurante/${id}/editor`, "editor:ver", id);
 
-  const [exists, layouts, types, allTargets] = await Promise.all([
+  // Cada restaurante tiene un plano por defecto: si los datos son viejos y
+  // ninguno lo es, se marca el primero antes de leer las zonas.
+  await ensureDefaultLayout(id);
+  const [exists, layouts, types, allTargets, waiterConfigs] = await Promise.all([
     restaurantExists(id),
     getLayoutsForRestaurant(id),
     getElementTypes(),
     getRestaurantsWithoutLayout(id),
+    listWaiterConfigs(id),
   ]);
   // Solo se ofrece copiar a los restaurantes que este usuario puede editar.
   const copyTargets = restaurantsAllowed(user, "editor:guardar", allTargets);
@@ -83,6 +89,8 @@ export default async function EditorPage({
         types={types}
         layouts={layouts}
         copyTargets={copyTargets}
+        waiterConfigs={waiterConfigs}
+        canManageWaiters={can(user, "meseros:gestionar", id)}
       />
     </div>
   );

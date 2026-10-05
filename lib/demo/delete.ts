@@ -47,10 +47,10 @@
 // ANTES de borrar la mesa: si no, en la tabla `tables` puede quedar un id que
 // ya no existe.
 
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { tableLayouts, tables, waitlistEntries } from "@/lib/db/schema";
+import { tableLayouts, tables, waiterConfigs, waitlistEntries } from "@/lib/db/schema";
 
 export type DemoDeleteResult = {
   ok: true;
@@ -58,6 +58,8 @@ export type DemoDeleteResult = {
   clientes: number;
   mesas: number;
   zonas: number;
+  /** Configuraciones de meseros de ejemplo. */
+  meseros: number;
   /** Filas demo que no se borraron, con el motivo. */
   omitidos: { clientes: number; mesas: number };
 };
@@ -88,6 +90,7 @@ export async function borrarDemoData(
   const inEntries = restaurantId ? eq(waitlistEntries.restaurantId, restaurantId) : undefined;
   const inTables = restaurantId ? eq(tables.restaurantId, restaurantId) : undefined;
   const inLayouts = restaurantId ? eq(tableLayouts.restaurantId, restaurantId) : undefined;
+  const inWaiters = restaurantId ? eq(waiterConfigs.restaurantId, restaurantId) : undefined;
 
   // --- (3) Comprobaciones ANTES de escribir nada -------------------------
   // Clientes reales sentados en mesas demo: borrarlas les dejaría sin mesa.
@@ -137,22 +140,24 @@ export async function borrarDemoData(
   }
 
   // --- Conteo previo (lo que se va a borrar) ---------------------------
-  const [clientesDemo, mesasDemo, zonasDemo] = await Promise.all([
+  const [clientesDemo, mesasDemo, zonasDemo, meserosDemo] = await Promise.all([
     db.select({ n: sql<number>`count(*)` }).from(waitlistEntries).where(and(eq(waitlistEntries.isDemo, true), inEntries)),
     db.select({ n: sql<number>`count(*)` }).from(tables).where(and(eq(tables.isDemo, true), inTables)),
     db.select({ n: sql<number>`count(*)` }).from(tableLayouts).where(and(eq(tableLayouts.isDemo, true), inLayouts)),
+    db.select({ n: sql<number>`count(*)` }).from(waiterConfigs).where(and(eq(waiterConfigs.isDemo, true), inWaiters)),
   ]);
   const clientes = Number(clientesDemo[0].n);
   const mesas = Number(mesasDemo[0].n);
   const zonas = Number(zonasDemo[0].n);
+  const meseros = Number(meserosDemo[0].n);
 
   if (options.dryRun) {
-    return { ok: true, clientes, mesas, zonas, omitidos: { clientes: 0, mesas: 0 } };
+    return { ok: true, clientes, mesas, zonas, meseros, omitidos: { clientes: 0, mesas: 0 } };
   }
 
-  if (clientes === 0 && mesas === 0 && zonas === 0) {
+  if (clientes === 0 && mesas === 0 && zonas === 0 && meseros === 0) {
     // Nada que borrar. Es el estado normal si se corrió dos veces.
-    return { ok: true, clientes: 0, mesas: 0, zonas: 0, omitidos: { clientes: 0, mesas: 0 } };
+    return { ok: true, clientes: 0, mesas: 0, zonas: 0, meseros: 0, omitidos: { clientes: 0, mesas: 0 } };
   }
 
   // --- (2) Todo o nada --------------------------------------------------
@@ -183,10 +188,32 @@ export async function borrarDemoData(
       .where(and(eq(tableLayouts.isDemo, true), inLayouts))
       .returning({ id: tableLayouts.id });
 
+    // 4. Las configuraciones de meseros de ejemplo (sus zonas y su reparto
+    //    se van en cascada). Si alguna era la activa, pasa a activa la
+    //    primera que le quede al restaurante: así un restaurante que ya tenía
+    //    las suyas no se queda sin meseros por borrar el demo.
+    const meserosBorrados = await tx
+      .delete(waiterConfigs)
+      .where(and(eq(waiterConfigs.isDemo, true), inWaiters))
+      .returning({ restaurantId: waiterConfigs.restaurantId, isActive: waiterConfigs.isActive });
+    const sinActiva = [...new Set(meserosBorrados.filter((c) => c.isActive).map((c) => c.restaurantId))];
+    if (sinActiva.length > 0) {
+      const quedan = await tx
+        .select({ id: waiterConfigs.id, restaurantId: waiterConfigs.restaurantId })
+        .from(waiterConfigs)
+        .where(inArray(waiterConfigs.restaurantId, sinActiva))
+        .orderBy(asc(waiterConfigs.waiterCount), asc(waiterConfigs.sortOrder));
+      for (const id of sinActiva) {
+        const next = quedan.find((c) => c.restaurantId === id);
+        if (next) await tx.update(waiterConfigs).set({ isActive: true }).where(eq(waiterConfigs.id, next.id));
+      }
+    }
+
     return {
       clientes: clientesBorrados.length,
       mesas: mesasBorradas.length,
       zonas: zonasBorradas.length,
+      meseros: meserosBorrados.length,
     };
   });
 

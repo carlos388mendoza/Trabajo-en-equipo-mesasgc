@@ -26,6 +26,8 @@ export type WaitlistEntrySnapshot = {
   assignedTableId: string | null;
   /** Cliente de los datos de demostración (etiqueta «Demo»). */
   isDemo: boolean;
+  /** Mesero que lo atendió (zona de su mesa al sentarlo), o null. */
+  waiterName: string | null;
   updatedAt: number;
 };
 
@@ -80,6 +82,7 @@ export function snapshot(
     resolvedByName: entry.resolvedByUserId ? resolvedByName : null,
     assignedTableId: entry.assignedTableId,
     isDemo: entry.isDemo,
+    waiterName: entry.waiterName,
     updatedAt: entry.updatedAt.getTime(),
   };
 }

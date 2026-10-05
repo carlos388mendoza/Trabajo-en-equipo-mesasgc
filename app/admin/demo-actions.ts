@@ -83,7 +83,7 @@ export async function deleteDemoDataAction(
       ok: true,
       message:
         `Datos de demostración borrados${restaurantId ? " de ese restaurante" : ""}: ${result.zonas} zona(s), ` +
-        `${result.mesas} mesa(s) y ${result.clientes} cliente(s).`,
+        `${result.mesas} mesa(s), ${result.clientes} cliente(s) y ${result.meseros} configuración(es) de meseros.`,
     };
   } catch (error) {
     console.error("[admin] error borrando los datos de demostración", error);

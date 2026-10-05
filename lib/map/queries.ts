@@ -11,6 +11,7 @@ import { getElementTypes, getLayout, getLayoutsForRestaurant } from "@/lib/db/qu
 import { brands, restaurants } from "@/lib/db/schema";
 import type { ElementTypeInfo, LayoutPayload } from "@/lib/layout/types";
 import { restaurantPosition } from "@/lib/map/projection";
+import { type WaiterConfig, listWaiterConfigs } from "@/lib/waiters/configs";
 
 export type BrandInfo = { id: string; name: string; accentColor: string };
 
@@ -96,6 +97,13 @@ export type LivePlan = {
   showNames: boolean;
   types: ElementTypeInfo[];
   zones: LayoutPayload[];
+  /** Zona del plano por defecto del restaurante: la que se abre al entrar. */
+  defaultZoneId: string | null;
+  /**
+   * Zonas de meseros del restaurante (la activa marcada). Nombres de meseros
+   * y colores: no son datos de clientes, así que salen también para analítica.
+   */
+  waiterConfigs: WaiterConfig[];
 };
 
 /**
@@ -108,7 +116,11 @@ export async function getLivePlan(restaurantId: string, withNames: boolean): Pro
   const restaurant = await getMapRestaurant(restaurantId);
   if (!restaurant) return null;
 
-  const [summaries, types] = await Promise.all([getLayoutsForRestaurant(restaurantId), getElementTypes()]);
+  const [summaries, types, waiterConfigs] = await Promise.all([
+    getLayoutsForRestaurant(restaurantId),
+    getElementTypes(),
+    listWaiterConfigs(restaurantId),
+  ]);
   const loaded = await Promise.all(summaries.map((z) => getLayout(z.id, restaurantId)));
   const zones = loaded
     .filter((z): z is LayoutPayload => z !== null)
@@ -126,5 +138,6 @@ export async function getLivePlan(restaurantId: string, withNames: boolean): Pro
           },
     );
 
-  return { restaurant, showNames: withNames, types, zones };
+  const defaultZoneId = summaries.find((z) => z.isDefault)?.id ?? null;
+  return { restaurant, showNames: withNames, types, zones, defaultZoneId, waiterConfigs };
 }

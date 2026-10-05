@@ -129,6 +129,16 @@ function localAnswer(question: string, statistics: AnalyticsData): string {
   const asksSlow = /más lento|mayor espera|espera más larga|tardó más|peor espera/.test(normalized);
   const asksFast = /más rápido|menor espera|menos espera|espera más corta|tardó menos/.test(normalized);
 
+  if (/meser|camarer|zona de mes/.test(normalized)) {
+    if (!statistics.waiters.length) {
+      return "Todavía no hay grupos sentados con mesero en el período seleccionado. Se apuntan al sentar a un cliente en una mesa que tenga zona de mesero.";
+    }
+    const top = statistics.waiters.slice(0, 8)
+      .map((waiter) => `${waiter.name} (${waiter.restaurantName}): ${groupCount(waiter.groups)}, ${waiter.people} personas`)
+      .join("; ");
+    return `Clientes atendidos por mesero en los últimos 14 días: ${top}.`;
+  }
+
   if (/avis|llamar|notificar|tiempo.*listo|listo.*tiempo/.test(normalized)) {
     if (!statistics.totals.calledGroups) return "No hay clientes avisados en el período seleccionado para calcular el tiempo hasta avisar.";
     const groups = statistics.totals.calledGroups;

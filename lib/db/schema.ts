@@ -336,6 +336,13 @@ export const waitlistEntries = sqliteTable(
      */
     seatedByUserId: text("seated_by_user_id"),
     /**
+     * Mesero que lo atendió: el de la zona de su mesa en la configuración de
+     * meseros ACTIVA en el momento de sentarlo (`assignTable`). Se guarda el
+     * nombre, no un id: así las estadísticas por mesero siguen valiendo
+     * aunque luego se cambie o se borre la configuración.
+     */
+    waiterName: text("waiter_name"),
+    /**
      * Cuándo y quién lo marcó listo o ausente en el modo rápido. Lo muestra
      * «Ver todas las cartas» («esperó 12 min, lo resolvió Ana»). Se vacían al
      * volverlo a la espera. Sin FK, por lo mismo que `seatedByUserId`.
@@ -530,6 +537,94 @@ export const userRestaurants = sqliteTable(
     primaryKey({ columns: [t.userId, t.restaurantId] }),
     // "¿Quién trabaja en este restaurante?", la pregunta de /admin.
     index("user_restaurants_restaurant_idx").on(t.restaurantId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Zonas de meseros (requisito del enunciado)
+//
+// Una configuración reparte las mesas de un restaurante entre N meseros
+// («2 meseros», «3 meseros»…). Cada restaurante guarda varias y UNA está
+// activa: la que se usa ahora (cambiar de una a otra es un toque). Cada zona
+// tiene un mesero (nombre o número) y un color; cada mesa está, como mucho,
+// en una zona de cada configuración.
+//
+// Lo crean y cambian el admin y el propio restaurante (`meseros:gestionar`);
+// analítica solo lo ve en el plano en vivo.
+// ---------------------------------------------------------------------------
+
+export const waiterConfigs = sqliteTable(
+  "waiter_configs",
+  {
+    id: text("id").primaryKey(),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    waiterCount: integer("waiter_count").notNull(),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    /** Bloqueo optimista: dos tablets editando la misma configuración. */
+    version: integer("version").notNull().default(1),
+    /**
+     * Marca del último guardado (un UUID). El guardado va en un solo batch y
+     * cada sentencia comprueba que la marca sea la SUYA: si otra tablet ganó
+     * la versión, las sentencias del que perdió no tocan nada.
+     */
+    saveToken: text("save_token"),
+    /** Configuraciones de ejemplo de los datos de demostración. */
+    isDemo: integer("is_demo", { mode: "boolean" }).notNull().default(false),
+    demoBatchId: text("demo_batch_id"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => [
+    index("waiter_configs_restaurant_idx").on(t.restaurantId),
+    // Una sola activa por restaurante, como la zona por defecto.
+    uniqueIndex("waiter_configs_one_active_idx")
+      .on(t.restaurantId)
+      .where(sql`${t.isActive} = 1`),
+  ],
+);
+
+export const waiterZones = sqliteTable(
+  "waiter_zones",
+  {
+    id: text("id").primaryKey(),
+    configId: text("config_id")
+      .notNull()
+      .references(() => waiterConfigs.id, { onDelete: "cascade" }),
+    /** 1..N: el orden de los meseros en la configuración. */
+    position: integer("position").notNull(),
+    waiterName: text("waiter_name").notNull(),
+    /** Color de la zona en el plano (#rrggbb). */
+    color: text("color").notNull(),
+  },
+  (t) => [index("waiter_zones_config_idx").on(t.configId)],
+);
+
+export const waiterZoneTables = sqliteTable(
+  "waiter_zone_tables",
+  {
+    configId: text("config_id")
+      .notNull()
+      .references(() => waiterConfigs.id, { onDelete: "cascade" }),
+    // Si se borra la mesa (editor), sale de las zonas sola.
+    tableId: text("table_id")
+      .notNull()
+      .references(() => tables.id, { onDelete: "cascade" }),
+    zoneId: text("zone_id")
+      .notNull()
+      .references(() => waiterZones.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    // Una mesa, una zona por configuración.
+    primaryKey({ columns: [t.configId, t.tableId] }),
+    index("waiter_zone_tables_zone_idx").on(t.zoneId),
   ],
 );
 

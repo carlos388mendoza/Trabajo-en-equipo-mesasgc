@@ -486,6 +486,12 @@ function CardRow({ entry, now, disabled, busy, table, onResolve, onReopen, onDel
             Resuelta por {entry.resolvedByName}
           </p>
         )}
+        {entry.waiterName && (
+          <p className="flex items-center gap-1.5">
+            <Armchair aria-hidden size={15} />
+            {table ? `${table.label} · ` : ""}Lo atiende {entry.waiterName}
+          </p>
+        )}
       </div>
       {entry.notes && <p className="mt-2 line-clamp-2 rounded-lg bg-app-bg px-3 py-1.5 text-sm text-panel-muted">{entry.notes}</p>}
       <div className="mt-auto pt-3">

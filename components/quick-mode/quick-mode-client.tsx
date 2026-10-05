@@ -600,7 +600,17 @@ export function QuickModeClient({ restaurantId, userId }: { restaurantId: string
         void loadTables();
         return false;
       }
-      showNotice(result.kind === "ack" ? `${name} se sentó en ${label}.` : `${name} se sentó en ${label} (sin conexión, se enviará al volver).`, 2800);
+      // Quién lo atiende: lo que dijo el servidor al sentarlo (la configuración
+      // activa en ESE momento) o, sin conexión, lo último que se sabía de la mesa.
+      const fromAck = result.kind === "ack" ? (result.ack as { waiterName?: string | null }).waiterName : undefined;
+      const waiter = fromAck ?? view.tables.find((table) => table.id === tableId)?.waiterName ?? null;
+      const servedBy = waiter ? ` Lo atiende ${waiter}.` : "";
+      showNotice(
+        result.kind === "ack"
+          ? `${name} se sentó en ${label}.${servedBy}`
+          : `${name} se sentó en ${label}.${servedBy} (Sin conexión: se enviará al volver.)`,
+        3600,
+      );
       return true;
     } finally {
       setSeating(false);

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { RestaurantLivePlan } from "@/components/map/restaurant-live-plan";
 import { can } from "@/lib/auth/rbac";
 import { requirePage } from "@/lib/auth/session";
+import { ensureDefaultLayout } from "@/lib/layout/default";
 import { getLivePlan } from "@/lib/map/queries";
 
 // Plano en vivo de UN restaurante, con el mismo estilo radar del mapa.
@@ -13,10 +14,18 @@ import { getLivePlan } from "@/lib/map/queries";
 
 export const metadata = { title: "Plano en vivo · Table Waitlist" };
 
-export default async function PlanoEnVivoPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default async function PlanoEnVivoPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ meseros?: string }>;
+}) {
+  const [{ id }, { meseros }] = await Promise.all([params, searchParams]);
   const user = await requirePage(`/restaurante/${id}/mapa`, "plano:ver", id);
 
+  // Al entrar se abre el plano por defecto (ver `ensureDefaultLayout`).
+  await ensureDefaultLayout(id);
   const plan = await getLivePlan(id, can(user, "plano:clientes", id));
   if (!plan) notFound();
 
@@ -31,11 +40,19 @@ export default async function PlanoEnVivoPage({ params }: { params: Promise<{ id
         <p className="text-sm text-app-muted">
           Plano en vivo{plan.restaurant.brand ? ` · ${plan.restaurant.brand.name}` : ""}
           {plan.restaurant.city ? ` · ${plan.restaurant.city}` : ""}. Solo lectura: las mesas se sientan
-          desde el editor o el modo sencillo.
+          desde el modo sencillo. Cada mesa lleva el color y el nombre de su mesero.
         </p>
       </div>
       <div className="min-h-0 flex-1">
-        <RestaurantLivePlan key={id} restaurantId={id} initialPlan={plan} live={live} />
+        <RestaurantLivePlan
+          key={id}
+          restaurantId={id}
+          initialPlan={plan}
+          live={live}
+          // Analítica ve las zonas de meseros, pero no las cambia.
+          canManageWaiters={can(user, "meseros:gestionar", id)}
+          startEditingWaiters={meseros === "editar"}
+        />
       </div>
     </div>
   );

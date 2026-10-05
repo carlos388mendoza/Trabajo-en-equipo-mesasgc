@@ -33,8 +33,9 @@ import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { SEATABLE_ELEMENT_KEYS } from "@/lib/db/enums";
-import { elementTypes, restaurants, tableLayouts, tables, waitlistEntries } from "@/lib/db/schema";
+import { elementTypes, restaurants, tableLayouts, tables, waiterConfigs, waitlistEntries } from "@/lib/db/schema";
 import { assignTable } from "@/lib/tables/assign";
+import { createWaiterConfig, waiterNameForTableSql } from "@/lib/waiters/configs";
 
 import {
   DEMO_BATCH_ID,
@@ -55,6 +56,8 @@ export type DemoLoadResult = {
   esperando: number;
   sentados: number;
   reservadas: number;
+  /** Configuraciones de meseros de ejemplo creadas en esta carga. */
+  meseros: number;
   historial: number;
   /** Restaurantes del plan que no existen en la base. */
   omitidos: string[];
@@ -116,6 +119,7 @@ export async function loadDemoData(
   let esperando = 0;
   let sentados = 0;
   let reservadas = 0;
+  let meseros = 0;
 
   for (const plan of plans) {
     // --- Zona demo -------------------------------------------------------
@@ -219,6 +223,23 @@ export async function loadDemoData(
       });
     }
 
+    // --- Zonas de meseros de ejemplo ---------------------------------------
+    // «2 meseros» (activa) y «3 meseros», marcadas como demo. Solo si el
+    // restaurante no tiene ninguna: nunca se mezclan con las que ya creó el
+    // restaurante, y repetir la carga no las duplica. Van ANTES de sentar a
+    // nadie para que los sentados del demo tengan mesero.
+    const [hasConfigs] = await db
+      .select({ id: waiterConfigs.id })
+      .from(waiterConfigs)
+      .where(eq(waiterConfigs.restaurantId, plan.restaurantId))
+      .limit(1);
+    if (!hasConfigs) {
+      for (const count of [2, 3]) {
+        const created = await createWaiterConfig({ restaurantId: plan.restaurantId, waiterCount: count, demoBatchId: batchId });
+        if (created.ok) meseros += 1;
+      }
+    }
+
     // --- Ocupar mesas con `assignTable` ----------------------------------
     // Se usa el camino de verdad (el mismo que un host), para que el estado
     // "ocupada", el `current_entry_id` y el "sentado" del cliente queden
@@ -289,6 +310,14 @@ export async function loadDemoData(
   const historial = await loadDemoHistory(batchId);
   if (omitidos.length > 0) omitidos.push(...historial.skipped);
 
+  // El historial demo se inserta ya sentado: se le apunta el mesero de su
+  // mesa en la configuración activa, para que las estadísticas por mesero
+  // tengan datos. Solo filas demo sin mesero (repetir la carga no cambia nada).
+  await db
+    .update(waitlistEntries)
+    .set({ waiterName: waiterNameForTableSql(waitlistEntries.assignedTableId) })
+    .where(and(eq(waitlistEntries.isDemo, true), isNull(waitlistEntries.waiterName), sql`${waitlistEntries.assignedTableId} is not null`));
+
   return {
     batchId,
     zonas,
@@ -296,6 +325,7 @@ export async function loadDemoData(
     esperando,
     sentados,
     reservadas,
+    meseros,
     historial: historial.inserted,
     omitidos: [...new Set(omitidos)],
   };
@@ -308,19 +338,23 @@ export async function loadDemoData(
  * scripts. Solo cuenta filas con `is_demo`: las reales no se ven aquí.
  */
 export async function demoSummary() {
-  const [zonasRows, mesasRows, clientesRows] = await Promise.all([
+  const [zonasRows, mesasRows, clientesRows, meserosRows] = await Promise.all([
     db.select({ total: sql<number>`count(*)` }).from(tableLayouts).where(eq(tableLayouts.isDemo, true)),
     db.select({ total: sql<number>`count(*)` }).from(tables).where(eq(tables.isDemo, true)),
     db.select({ total: sql<number>`count(*)` }).from(waitlistEntries).where(eq(waitlistEntries.isDemo, true)),
+    db.select({ total: sql<number>`count(*)` }).from(waiterConfigs).where(eq(waiterConfigs.isDemo, true)),
   ]);
   const zonas = zonasRows[0]?.total ?? 0;
   const mesas = mesasRows[0]?.total ?? 0;
   const clientes = clientesRows[0]?.total ?? 0;
-  const total = Number(zonas) + Number(mesas) + Number(clientes);
+  const meseros = Number(meserosRows[0]?.total ?? 0);
+  const total = Number(zonas) + Number(mesas) + Number(clientes) + meseros;
   return {
     zonas: Number(zonas),
     mesas: Number(mesas),
     clientes: Number(clientes),
+    /** Configuraciones de zonas de meseros de ejemplo. */
+    meseros,
     total,
     /** Con esto se decide si aparece el aviso en la app. */
     activo: total > 0,

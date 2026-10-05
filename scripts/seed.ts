@@ -44,6 +44,8 @@ import {
   tables,
   userRestaurants,
   userRoles,
+  waiterConfigs,
+  waiterZones,
   waitlistEntries,
 } from "../lib/db/schema";
 import { createUserWithPassword, findUserIdByEmail } from "../lib/auth/users";
@@ -51,6 +53,7 @@ import { BASE_BRANDS, BASE_RESTAURANTS } from "../lib/layout/base-restaurants";
 import { upsertElementTypeCatalog } from "../lib/layout/catalog";
 import { copyLayoutToRestaurant, getStructureCounts } from "../lib/layout/copy";
 import { assignTable } from "../lib/tables/assign";
+import { createWaiterConfig, waiterNameForTableSql } from "../lib/waiters/configs";
 import { addCalendarDays, hondurasMidnightUtc, hondurasToday } from "../lib/time/honduras";
 
 // dotenv no lee solo `.env`, y Next usa `.env.local`: se le pasan los dos.
@@ -607,6 +610,47 @@ async function seedTestUsers() {
 }
 
 // ---------------------------------------------------------------------------
+// Zonas de meseros de ejemplo
+//
+// «2 meseros» (activa) y «3 meseros» en los dos restaurantes de ejemplo, con
+// nombres de mesero, para que el plano en vivo salga con colores desde el
+// primer arranque. Solo si el restaurante no tiene ninguna: no pisa las que
+// alguien ya creó.
+// ---------------------------------------------------------------------------
+
+const EXAMPLE_WAITERS: Record<string, Record<number, string[]>> = {
+  rest_centro: { 2: ["Ana", "Luis"], 3: ["Ana", "Luis", "Marta"] },
+  rest_norte: { 2: ["Carlos", "Sofía"], 3: ["Carlos", "Sofía", "Diego"] },
+};
+
+async function seedWaiterConfigs() {
+  let created = 0;
+  for (const [restaurantId, byCount] of Object.entries(EXAMPLE_WAITERS)) {
+    const [existing] = await db
+      .select({ id: waiterConfigs.id })
+      .from(waiterConfigs)
+      .where(eq(waiterConfigs.restaurantId, restaurantId))
+      .limit(1);
+    if (existing) continue;
+    for (const [count, names] of Object.entries(byCount)) {
+      const result = await createWaiterConfig({ restaurantId, waiterCount: Number(count) });
+      if (!result.ok) continue;
+      created += 1;
+      for (const zone of result.config.zones) {
+        const name = names[zone.position - 1];
+        if (name) await db.update(waiterZones).set({ waiterName: name }).where(eq(waiterZones.id, zone.id));
+      }
+    }
+  }
+  // Los sentados de ejemplo que no tienen mesero: el de su mesa ahora.
+  await db
+    .update(waitlistEntries)
+    .set({ waiterName: waiterNameForTableSql(waitlistEntries.assignedTableId) })
+    .where(and(isNull(waitlistEntries.waiterName), sql`${waitlistEntries.assignedTableId} is not null`));
+  console.log(`  configuraciones de meseros: ${created} creadas`);
+}
+
+// ---------------------------------------------------------------------------
 
 async function main() {
   const reset = process.argv.includes("--reset");
@@ -625,6 +669,7 @@ async function main() {
   await seedDemoData();
   await seedWorldMap();
   await seedHistory();
+  await seedWaiterConfigs();
   await seedTestUsers();
 
   // Comprobación de que el catálogo quedó bien: si falta algún tipo, el editor

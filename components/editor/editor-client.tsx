@@ -14,6 +14,12 @@
 //    lo remonta y el estado local empieza limpio, sin efectos ni cascadas.
 //  - El handle del canvas se pasa por prop en vez de por `ref`, para no
 //    depender de que `next/dynamic` reenvíe los refs.
+//  - Copiar y pegar (Ctrl+C / Ctrl+V, o «Duplicar») usa un portapapeles del
+//    módulo, no del componente: sobrevive al cambio de zona (que remonta el
+//    editor), así que una mesa se puede copiar de la terraza al comedor.
+//  - Zonas de meseros: el selector «Meseros activos» y «Ver meseros» tiñen
+//    las mesas como en el plano en vivo. El reparto se edita en el plano en
+//    vivo, que no deja mover nada (aquí un toque mueve la mesa).
 //
 // Pensado para tablet: todos los botones miden al menos 44 px y llevan ícono y
 // texto, porque en una pantalla táctil no hay "hover" que explique un ícono.
@@ -25,8 +31,14 @@ import type { LucideIcon } from "lucide-react";
 import {
   CircleAlert,
   CircleCheck,
+  ClipboardPaste,
   Copy,
+  CopyPlus,
+  Eye,
+  EyeOff,
+  Paintbrush,
   Radio,
+  Star,
   RefreshCw,
   RotateCcw,
   RotateCw,
@@ -45,6 +57,10 @@ import { CopyLayoutDialog } from "./copy-layout-dialog";
 import { KonvaCanvas } from "./lazy-konva-canvas";
 import { ICON_STROKE } from "./icons";
 import { useRestaurantSocket } from "@/components/realtime/use-restaurant-socket";
+import { WaiterSelector, useWaiterZones } from "@/components/waiters/waiter-zones";
+import { setDefaultLayoutAction } from "@/app/restaurante/[id]/editor/actions";
+import { isSeatableElement } from "@/lib/db/enums";
+import type { WaiterConfig } from "@/lib/waiters/configs";
 import { type LayoutRotation, type TableStatus, asLayoutRotation } from "@/lib/db/enums";
 import { nextLabel } from "@/lib/layout/element-style";
 import type { ElementTypeInfo, LayoutElement, LayoutSummary } from "@/lib/layout/types";
@@ -77,7 +93,13 @@ type Props = {
   layouts: LayoutSummary[];
   /** A quién se le puede copiar la estructura. Lo carga la page. */
   copyTargets: RestaurantOption[];
+  waiterConfigs: WaiterConfig[];
+  /** `meseros:gestionar`: puede cambiar la configuración activa. */
+  canManageWaiters: boolean;
 };
+
+/** Portapapeles del editor (ver cabecera): el último elemento copiado. */
+let clipboard: LayoutElement | null = null;
 
 type Feedback =
   | { kind: "idle" }
@@ -121,6 +143,8 @@ export function EditorClient({
   types,
   layouts,
   copyTargets,
+  waiterConfigs,
+  canManageWaiters,
 }: Props) {
   const router = useRouter();
   const controllerRef = useRef<CanvasHandle | null>(null);
@@ -314,6 +338,9 @@ export function EditorClient({
       setRemoteVersion((v) => Math.max(v, update.version));
     },
     "structure:changed": () => setStructureChanged(true),
+    // Otra tablet cambió las zonas de meseros: se vuelven a pedir (la page
+    // las relee). No toca los elementos que se están editando.
+    "waiters:changed": () => router.refresh(),
   });
 
   // El aviso de nuestro propio guardado puede llegar antes que la respuesta
@@ -370,6 +397,41 @@ export function EditorClient({
     [addElement, height, width],
   );
 
+  /**
+   * Pega una copia de un elemento: id nuevo, nombre siguiente de su tipo y
+   * un poco desplazada para que se vea que hay dos. Nace libre.
+   */
+  const pasteElement = useCallback(
+    (source: LayoutElement) => {
+      const type = typesById.get(source.elementTypeId);
+      if (!type) return;
+      const id = crypto.randomUUID();
+      const labelsOfType = elements.filter((e) => e.elementTypeId === type.id).map((e) => e.label);
+      const element: LayoutElement = {
+        ...source,
+        id,
+        label: nextLabel(type.key, labelsOfType),
+        x: Math.round(Math.min(Math.max(source.x + 32, 0), width - source.width)),
+        y: Math.round(Math.min(Math.max(source.y + 32, 0), height - source.height)),
+        status: "libre" satisfies TableStatus,
+        currentEntryId: null,
+        occupantName: null,
+        seatedAt: null,
+      };
+      recordEdit();
+      setElements((prev) => [...prev, element]);
+      setSelectedId(id);
+      markDirty();
+    },
+    [elements, height, markDirty, recordEdit, typesById, width],
+  );
+
+  const [canPaste, setCanPaste] = useState(() => clipboard !== null);
+  const copySelected = useCallback((element: LayoutElement) => {
+    clipboard = element;
+    setCanPaste(true);
+  }, []);
+
   const removeElement = useCallback(
     (id: string) => {
       recordEdit();
@@ -410,6 +472,21 @@ export function EditorClient({
         undo();
         return;
       }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+        const current = elements.find((el) => el.id === selectedId);
+        if (current) {
+          e.preventDefault();
+          copySelected(current);
+        }
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+        if (clipboard) {
+          e.preventDefault();
+          pasteElement(clipboard);
+        }
+        return;
+      }
       if (e.key !== "Delete" && e.key !== "Backspace") return;
       if (!selectedId) return;
       e.preventDefault();
@@ -418,7 +495,39 @@ export function EditorClient({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [removeElement, selectedId, undo]);
+  }, [copySelected, elements, pasteElement, removeElement, selectedId, undo]);
+
+  // --- Plano por defecto --------------------------------------------------
+  const [defaultId, setDefaultId] = useState(() => layouts.find((l) => l.isDefault)?.id ?? null);
+  const [settingDefault, setSettingDefault] = useState(false);
+  const makeDefault = useCallback(async () => {
+    setSettingDefault(true);
+    const result = await setDefaultLayoutAction({ restaurantId, layoutId });
+    setSettingDefault(false);
+    if (result.ok) {
+      setDefaultId(layoutId);
+      setFeedback({ kind: "saved", text: result.message ?? "Plano por defecto actualizado." });
+    } else {
+      setFeedback({ kind: "error", text: result.error });
+    }
+  }, [layoutId, restaurantId]);
+
+  // --- Zonas de meseros (solo verlas y cambiar la activa) ----------------
+  const [showWaiters, setShowWaiters] = useState(false);
+  const seatableHere = useMemo(
+    () =>
+      elements
+        .filter((e) => isSeatableElement(typesById.get(e.elementTypeId)?.key ?? ""))
+        .map((e) => ({ id: e.id, layoutId, x: e.x, y: e.y })),
+    [elements, layoutId, typesById],
+  );
+  const waiters = useWaiterZones({
+    restaurantId,
+    configs: waiterConfigs,
+    canManage: canManageWaiters,
+    tables: seatableHere,
+    layoutOrder: [layoutId],
+  });
 
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
@@ -524,6 +633,7 @@ export function EditorClient({
           onChange={markDirty}
           onZoomChange={setZoom}
           controllerRef={controllerRef}
+          waiterMarks={showWaiters ? waiters.marks : undefined}
         />
 
         {/* Pila de paneles de arriba. El contenedor deja pasar los toques al
@@ -550,10 +660,25 @@ export function EditorClient({
                 {layouts.map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.name}
+                    {l.id === defaultId ? " (por defecto)" : ""}
                   </option>
                 ))}
               </select>
             </label>
+            {defaultId === layoutId ? (
+              <span className="mr-1 flex h-11 items-center gap-1 rounded-xl px-2 text-xs font-semibold text-accent" title="Se abre al entrar en el editor y en el plano en vivo">
+                <Star aria-hidden size={16} strokeWidth={2} fill="currentColor" />
+                Por defecto
+              </span>
+            ) : (
+              <ToolButton
+                icon={Star}
+                label={settingDefault ? "Marcando…" : "Marcar por defecto"}
+                onClick={makeDefault}
+                disabled={settingDefault}
+                title="Abrir esta zona al entrar en el editor y en el plano en vivo"
+              />
+            )}
 
             <ToolButton
               icon={Save}
@@ -584,6 +709,13 @@ export function EditorClient({
               label="Girar ↻"
               onClick={() => rotateLayout(VIEW_STEP)}
               title="Girar el plano completo 90° a la derecha (se guarda con Guardar)"
+            />
+            <ToolButton
+              icon={ClipboardPaste}
+              label="Pegar"
+              onClick={() => clipboard && pasteElement(clipboard)}
+              disabled={!canPaste}
+              title={canPaste ? "Pegar el elemento copiado (Ctrl+V)" : "Copia antes un elemento (Ctrl+C)"}
             />
             <ToolButton
               icon={Copy}
@@ -620,6 +752,31 @@ export function EditorClient({
             />
 
             <LiveIndicator status={realtime.status} error={realtime.joinError} />
+          </div>
+
+          {/* Zonas de meseros: ver y cambiar la configuración activa */}
+          <div className="pointer-events-auto flex flex-wrap items-center gap-2">
+            <WaiterSelector state={waiters} />
+            {waiters.configs.length > 0 ? (
+              <ToolButton
+                icon={showWaiters ? EyeOff : Eye}
+                label={showWaiters ? "Ocultar meseros" : "Ver meseros"}
+                onClick={() => setShowWaiters((v) => !v)}
+                title="Teñir cada mesa con el color de su mesero"
+              />
+            ) : null}
+            {canManageWaiters ? (
+              <a
+                href={`/restaurante/${restaurantId}/mapa?meseros=editar`}
+                className={`flex h-11 items-center gap-1.5 px-3 text-sm font-medium hover:bg-app-border/60 ${FLOATING}`}
+              >
+                <Paintbrush aria-hidden size={16} strokeWidth={2} />
+                Repartir mesas entre meseros
+              </a>
+            ) : null}
+            {waiters.message ? (
+              <span role="status" className={`px-3 py-2 text-sm ${FLOATING}`}>{waiters.message.text}</span>
+            ) : null}
           </div>
 
           {/* Otro dispositivo cambió la estructura que se ve aquí */}
@@ -707,6 +864,18 @@ export function EditorClient({
                 label="Girar ↻"
                 onClick={() => rotateSelected(ELEMENT_STEP)}
                 title={`Girar el elemento ${ELEMENT_STEP}° a la derecha`}
+              />
+              <ToolButton
+                icon={Copy}
+                label="Copiar"
+                onClick={() => copySelected(selected)}
+                title="Copiar este elemento (Ctrl+C). Se puede pegar en otra zona."
+              />
+              <ToolButton
+                icon={CopyPlus}
+                label="Duplicar"
+                onClick={() => pasteElement(selected)}
+                title="Crear una copia al lado"
               />
               <ToolButton
                 icon={Trash2}

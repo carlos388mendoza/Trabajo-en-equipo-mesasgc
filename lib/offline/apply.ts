@@ -92,6 +92,7 @@ function newEntry(data: NewGuestPayload, now: number): WaitlistEntrySnapshot {
     resolvedByName: null,
     assignedTableId: null,
     isDemo: false,
+    waiterName: null,
     updatedAt: now,
   };
 }
@@ -150,7 +151,9 @@ export function applyOperations(
         const entry = entries.get(op.data.entryId);
         if (!table || !entry || table.currentEntryId !== null || !active(entry.status)) break;
         tables.set(table.id, { ...table, currentEntryId: entry.id, status: "ocupada" as TableStatus });
-        set(entry.id, { status: "sentado", seatedAt: op.createdAt, assignedTableId: table.id });
+        // El mesero provisional es el que se sabía de la mesa; el de verdad lo
+        // apunta el servidor al sincronizar.
+        set(entry.id, { status: "sentado", seatedAt: op.createdAt, assignedTableId: table.id, waiterName: table.waiterName ?? null });
         break;
       }
       case "table:release": {
