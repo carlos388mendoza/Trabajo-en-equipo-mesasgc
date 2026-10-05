@@ -29,7 +29,10 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
+  ChevronDown,
+  ChevronUp,
   CircleAlert,
+  Check,
   CircleCheck,
   ClipboardPaste,
   Copy,
@@ -40,6 +43,7 @@ import {
   Radio,
   Star,
   RefreshCw,
+  Redo2,
   RotateCcw,
   RotateCw,
   Save,
@@ -55,13 +59,14 @@ import type { CanvasHandle } from "./konva-canvas";
 import { DND_MIME, ElementPalette } from "./element-palette";
 import { CopyLayoutDialog } from "./copy-layout-dialog";
 import { KonvaCanvas } from "./lazy-konva-canvas";
-import { ICON_STROKE } from "./icons";
+import { ICON_STROKE, typeIcon } from "./icons";
 import { useRestaurantSocket } from "@/components/realtime/use-restaurant-socket";
 import { WaiterSelector, useWaiterZones } from "@/components/waiters/waiter-zones";
 import { setDefaultLayoutAction } from "@/app/restaurante/[id]/editor/actions";
 import { isSeatableElement } from "@/lib/db/enums";
 import type { WaiterConfig } from "@/lib/waiters/configs";
 import { type LayoutRotation, type TableStatus, asLayoutRotation } from "@/lib/db/enums";
+import { pastedCopy } from "@/lib/layout/clipboard";
 import { nextLabel } from "@/lib/layout/element-style";
 import type { ElementTypeInfo, LayoutElement, LayoutSummary } from "@/lib/layout/types";
 // La action vive en la ruta (convención de Next para "use server"), y el
@@ -182,12 +187,36 @@ export function EditorClient({
     return () => observer.disconnect();
   }, []);
 
+  // Panel plegado a una sola línea (zona, Guardar, Deshacer y Rehacer, más lo
+  // del elemento elegido). `null` = automático: plegado en un celular, donde
+  // el panel abierto se comería el plano, y abierto desde tablet. Lo decide
+  // CSS (`md:`), así el HTML del servidor y el del navegador coinciden. Al
+  // tocar el botón pasa a ser lo que el usuario eligió.
+  const [panelPref, setPanelPref] = useState<boolean | null>(null);
+  const togglePanel = useCallback(() => {
+    // Abierto de entrada = el CSS de abajo: desde 768 px y sin ser un celular
+    // en horizontal (`movil-horizontal`, donde lo que falta es alto).
+    const abiertoDeEntrada = () =>
+      window.matchMedia("(min-width: 768px)").matches &&
+      !window.matchMedia("(orientation: landscape) and (max-width: 1023px)").matches;
+    setPanelPref((v) => (v === null ? !abiertoDeEntrada() : !v));
+  }, []);
+  useEffect(() => {
+    // Un frame de margen: el alto del panel cambia y el ajuste necesita ver el
+    // tamaño nuevo del hueco.
+    const id = requestAnimationFrame(() => controllerRef.current?.resetView());
+    return () => cancelAnimationFrame(id);
+  }, [panelPref]);
+
   // --- Deshacer ------------------------------------------------------------
   //
   // Una pila de fotos de `elements` tomadas JUSTO ANTES de cada cambio. Es
   // solo del editor: no toca el guardado, y deshacer deja "cambios sin
   // guardar" como cualquier otra edición.
   const [history, setHistory] = useState<LayoutElement[][]>([]);
+  // Lo que se puede volver a hacer: lo que se deshizo. Editar de nuevo la deja
+  // vacía, como en cualquier programa.
+  const [future, setFuture] = useState<LayoutElement[][]>([]);
   // Los handlers leen la foto del último render; un ref evita recrearlos en
   // cada cambio de `elements`.
   const elementsRef = useRef(elements);
@@ -205,6 +234,7 @@ export function EditorClient({
     lastEditKeyRef.current = coalesceKey;
     const snapshot = elementsRef.current;
     setHistory((prev) => [...prev.slice(-(HISTORY_LIMIT - 1)), snapshot]);
+    setFuture([]);
   }, []);
 
   const typesById = useMemo(
@@ -247,14 +277,10 @@ export function EditorClient({
     [],
   );
 
-  const undo = useCallback(() => {
-    if (history.length === 0) return;
-    const snapshot = history[history.length - 1];
-    setHistory(history.slice(0, -1));
-    lastEditKeyRef.current = null;
-
-    // La ocupación no se deshace: es lo que pasa en el local AHORA, no una
-    // edición de este usuario. Se conserva la de pantalla.
+  // Volver a una foto anterior conserva de la de pantalla lo que no es una
+  // edición suya: la ocupación (lo que pasa en el local AHORA). Lo comparten
+  // Deshacer y Rehacer, por eso está fuera de los dos.
+  const restore = useCallback((snapshot: LayoutElement[]) => {
     const live = new Map(elementsRef.current.map((e) => [e.id, e]));
     const restored = snapshot.map((e) => {
       const now = live.get(e.id);
@@ -277,7 +303,26 @@ export function EditorClient({
         viewRotationRef.current !== savedRotationRef.current,
     );
     setFeedback({ kind: "idle" });
-  }, [history]);
+  }, []);
+
+  const undo = useCallback(() => {
+    if (history.length === 0) return;
+    const snapshot = history[history.length - 1];
+    setHistory(history.slice(0, -1));
+    // Lo que hay ahora es justo lo que se podría rehacer después.
+    setFuture((prev) => [...prev, elementsRef.current].slice(-HISTORY_LIMIT));
+    lastEditKeyRef.current = null;
+    restore(snapshot);
+  }, [history, restore]);
+
+  const redo = useCallback(() => {
+    if (future.length === 0) return;
+    const snapshot = future[future.length - 1];
+    setFuture(future.slice(0, -1));
+    setHistory((prev) => [...prev, elementsRef.current].slice(-HISTORY_LIMIT));
+    lastEditKeyRef.current = null;
+    restore(snapshot);
+  }, [future, restore]);
 
   // Un contador por mesa: cada evento en vivo lo sube y la mesa hace su pulso.
   const [pulses, setPulses] = useState<Record<string, number>>({});
@@ -399,25 +444,24 @@ export function EditorClient({
 
   /**
    * Pega una copia de un elemento: id nuevo, nombre siguiente de su tipo y
-   * un poco desplazada para que se vea que hay dos. Nace libre.
+   * un poco desplazada (respecto a `anchor`, o al original) para que se vea
+   * que hay dos. Copia lo visual (tipo, tamaño, giro, puestos) y NADA de lo
+   * que es del local ahora: nace libre, sin cliente ni reserva. Entra en
+   * Deshacer y Rehacer como cualquier otra edición, y se guarda con Guardar.
    */
   const pasteElement = useCallback(
-    (source: LayoutElement) => {
+    (source: LayoutElement, anchor: LayoutElement = source) => {
       const type = typesById.get(source.elementTypeId);
       if (!type) return;
       const id = crypto.randomUUID();
-      const labelsOfType = elements.filter((e) => e.elementTypeId === type.id).map((e) => e.label);
-      const element: LayoutElement = {
-        ...source,
+      const element = pastedCopy(source, {
         id,
-        label: nextLabel(type.key, labelsOfType),
-        x: Math.round(Math.min(Math.max(source.x + 32, 0), width - source.width)),
-        y: Math.round(Math.min(Math.max(source.y + 32, 0), height - source.height)),
-        status: "libre" satisfies TableStatus,
-        currentEntryId: null,
-        occupantName: null,
-        seatedAt: null,
-      };
+        typeKey: type.key,
+        labelsOfType: elements.filter((e) => e.elementTypeId === type.id).map((e) => e.label),
+        anchor,
+        zoneWidth: width,
+        zoneHeight: height,
+      });
       recordEdit();
       setElements((prev) => [...prev, element]);
       setSelectedId(id);
@@ -467,9 +511,16 @@ export function EditorClient({
       ) {
         return;
       }
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
-        undo();
+        // Ctrl+Z deshace; Ctrl+Shift+Z (o Ctrl+Y) rehace.
+        if (e.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        redo();
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
@@ -495,7 +546,7 @@ export function EditorClient({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [copySelected, elements, pasteElement, removeElement, selectedId, undo]);
+  }, [copySelected, elements, pasteElement, redo, removeElement, selectedId, undo]);
 
   // --- Plano por defecto --------------------------------------------------
   const [defaultId, setDefaultId] = useState(() => layouts.find((l) => l.isDefault)?.id ?? null);
@@ -528,6 +579,9 @@ export function EditorClient({
     tables: seatableHere,
     layoutOrder: [layoutId],
   });
+  // Mesero del elemento elegido en la configuración activa (si es una mesa).
+  const selectedSeatable = selected ? isSeatableElement(typesById.get(selected.elementTypeId)?.key ?? "") : false;
+  const selectedWaiter = selected && waiters.active ? (waiters.marks[selected.id] ?? null) : null;
 
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
@@ -598,9 +652,11 @@ export function EditorClient({
     // contenido", y como el contenido era el propio lienzo, medía cero. Con
     // esta altura, la paleta y el mapa tienen contra qué dimensionarse y el
     // `ResizeObserver` de Konva recibe algo real.
-    <div className="flex h-[74vh] min-h-[560px] overflow-hidden rounded-2xl border border-app-border bg-panel text-panel-text shadow-sm">
+    <div className="flex h-[74vh] min-h-[420px] overflow-hidden rounded-2xl border border-app-border bg-panel text-panel-text shadow-sm md:min-h-[560px] movil-horizontal:!h-[calc(100vh-1rem)] movil-horizontal:!min-h-[300px]">
       {/* Paleta */}
-      <aside className="w-60 shrink-0 overflow-y-auto border-r border-app-border bg-panel p-3">
+      {/* En tablet y computadora, a la izquierda. En un celular no cabe al lado
+          del plano: va dentro del panel de control, como una fila más. */}
+      <aside className="hidden w-60 shrink-0 overflow-y-auto border-r border-app-border bg-panel p-3 md:block movil-horizontal:!hidden">
         <ElementPalette types={types} onAddClick={addAtCenter} />
       </aside>
 
@@ -636,149 +692,326 @@ export function EditorClient({
           waiterMarks={showWaiters ? waiters.marks : undefined}
         />
 
-        {/* Pila de paneles de arriba. El contenedor deja pasar los toques al
-            mapa; solo los paneles los reciben. */}
+        {/* UNA sola ventana de control arriba: la de la zona, las herramientas
+            del plano, el zoom, las zonas de meseros y —solo si hay algo
+            elegido— las del elemento. Todo en el mismo panel flotante, en filas
+            que se apilan solas; antes esto eran tres ventanas sueltas y las
+            herramientas del elemento salían en otra que tapaba el mapa.
+
+            El botón de la derecha pliega el panel a una sola línea (zona, Guardar
+            y el chevron) para ver el plano entero en una pantalla pequeña; al
+            plegarlo o abrirlo, el plano se reencuadra solo.
+
+            El contenedor deja pasar los toques al mapa; solo el panel los
+            recibe. */}
         <div className="pointer-events-none absolute inset-x-3 top-3 flex flex-col items-start gap-2">
-          {/* Barra de herramientas */}
           <div
             ref={toolbarRef}
-            className={`pointer-events-auto flex w-full flex-wrap items-center gap-x-1 gap-y-2 px-3 py-2 ${FLOATING}`}
+            className={`pointer-events-auto flex max-h-[60vh] w-full flex-col gap-2 overflow-y-auto px-3 py-2 md:max-h-[85vh] ${FLOATING}`}
           >
-            <label className="mr-2 flex flex-col text-[11px] font-medium text-panel-muted">
-              Zona
-              <select
-                value={layoutId}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  if (next === layoutId) return;
-                  router.push(
-                    `/restaurante/${restaurantId}/editor?zona=${encodeURIComponent(next)}`,
+            <div className="flex flex-wrap items-center gap-x-1 gap-y-2">
+              <label className="mr-1 flex items-center">
+                <span className="sr-only">Zona</span>
+                <select
+                  value={layoutId}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (next === layoutId) return;
+                    router.push(
+                      `/restaurante/${restaurantId}/editor?zona=${encodeURIComponent(next)}`,
+                    );
+                  }}
+                  className="h-11 max-w-[14rem] rounded-xl border border-app-border bg-panel px-3 text-sm font-normal text-panel-text"
+                >
+                  {layouts.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                      {l.id === defaultId ? " (por defecto)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {defaultId === layoutId ? (
+                <span className="mr-1 flex h-11 items-center gap-1 rounded-xl px-2 text-xs font-semibold text-accent" title="Se abre al entrar en el editor y en el plano en vivo">
+                  <Star aria-hidden size={16} strokeWidth={2} fill="currentColor" />
+                  Por defecto
+                </span>
+              ) : (
+                <ToolButton
+                  icon={Star}
+                  label={settingDefault ? "Marcando…" : "Marcar por defecto"}
+                  onClick={makeDefault}
+                  disabled={settingDefault}
+                  title="Abrir esta zona al entrar en el editor y en el plano en vivo"
+                />
+              )}
+              {/* Guardar, Deshacer y Rehacer van en la primera fila: siguen a la
+                  vista con el panel plegado. */}
+              <div className="ml-auto flex items-center gap-1">
+                <ToolButton
+                  icon={Save}
+                  label={saving ? "Guardando…" : dirty ? "Guardar" : "Guardado"}
+                  onClick={handleSave}
+                  disabled={saving || !dirty}
+                  title={dirty ? "Guardar los cambios" : "No hay cambios que guardar"}
+                  primary
+                />
+                <ToolButton
+                  icon={Undo2}
+                  label="Deshacer"
+                  onClick={undo}
+                  disabled={history.length === 0}
+                  title="Deshacer el último cambio (Ctrl+Z)"
+                />
+                <ToolButton
+                  icon={Redo2}
+                  label="Rehacer"
+                  onClick={redo}
+                  disabled={future.length === 0}
+                  title="Volver a rehacer lo deshecho (Ctrl+Shift+Z o Ctrl+Y)"
+                />
+                {/* En automático hay dos botones y CSS enseña el que toca. */}
+                {panelPref !== false ? (
+                  <ToolButton
+                    icon={ChevronUp}
+                    label="Plegar"
+                    onClick={togglePanel}
+                    title="Plegar el panel para ver más plano"
+                    className={panelPref === null ? "hidden md:flex movil-horizontal:!hidden" : ""}
+                  />
+                ) : null}
+                {panelPref !== true ? (
+                  <ToolButton
+                    icon={ChevronDown}
+                    label="Herramientas"
+                    onClick={togglePanel}
+                    title="Mostrar todas las herramientas"
+                    className={panelPref === null ? "md:hidden movil-horizontal:!flex" : ""}
+                  />
+                ) : null}
+              </div>
+            </div>
+
+            {panelPref !== false ? (
+              <div className={`flex-col gap-2 ${panelPref === null ? "hidden md:flex movil-horizontal:!hidden" : "flex"}`}>
+              <div className="flex flex-wrap items-center gap-x-1 gap-y-2">
+                <ToolButton
+                  icon={RotateCcw}
+                  label="Girar ↺"
+                  onClick={() => rotateLayout(-VIEW_STEP)}
+                  title="Girar el plano completo 90° a la izquierda (se guarda con Guardar)"
+                />
+                <ToolButton
+                  icon={RotateCw}
+                  label="Girar ↻"
+                  onClick={() => rotateLayout(VIEW_STEP)}
+                  title="Girar el plano completo 90° a la derecha (se guarda con Guardar)"
+                />
+                <ToolButton
+                  icon={ClipboardPaste}
+                  label="Pegar elemento"
+                  onClick={() => clipboard && pasteElement(clipboard)}
+                  disabled={!canPaste}
+                  title={canPaste ? "Pegar el elemento copiado (Ctrl+V); también en otra zona" : "Copia antes un elemento (Ctrl+C)"}
+                />
+                <ToolButton
+                  icon={Copy}
+                  label="Copiar plano"
+                  onClick={() => setCopyOpen(true)}
+                  disabled={dirty}
+                  title={
+                    dirty
+                      ? "Guarda los cambios antes de copiar, para no copiar una versión vieja"
+                      : "Copiar zonas y mesas a otro restaurante"
+                  }
+                />
+
+                <Divider />
+
+                <ToolButton
+                  icon={ZoomOut}
+                  label="Alejar"
+                  onClick={() => controllerRef.current?.zoomOut()}
+                />
+                <span className="w-12 text-center text-sm tabular-nums text-panel-muted">
+                  {zoom}%
+                </span>
+                <ToolButton
+                  icon={ZoomIn}
+                  label="Acercar"
+                  onClick={() => controllerRef.current?.zoomIn()}
+                />
+                <ToolButton
+                  icon={Scan}
+                  label="Ajustar"
+                  onClick={() => controllerRef.current?.resetView()}
+                  title="Encuadrar la zona entera en la pantalla"
+                />
+
+                <Divider />
+                {/* Zonas de meseros, en la misma fila: ver y cambiar la activa */}
+                  <WaiterSelector state={waiters} />
+                  {waiters.configs.length > 0 ? (
+                    <ToolButton
+                      icon={showWaiters ? EyeOff : Eye}
+                      label={showWaiters ? "Ocultar meseros" : "Ver meseros"}
+                      onClick={() => setShowWaiters((v) => !v)}
+                      title="Teñir cada mesa con el color de su mesero"
+                    />
+                  ) : null}
+                  {canManageWaiters ? (
+                    <a
+                      href={`/restaurante/${restaurantId}/mapa?meseros=editar`}
+                      className="flex h-11 items-center gap-1.5 px-3 text-sm font-medium hover:bg-app-border/60"
+                    >
+                      <Paintbrush aria-hidden size={16} strokeWidth={2} />
+                      Repartir meseros
+                    </a>
+                  ) : null}
+                  {waiters.message ? (
+                    <span role="status" className="text-sm text-panel-muted">{waiters.message.text}</span>
+                  ) : null}
+                <LiveIndicator status={realtime.status} error={realtime.joinError} />
+              </div>
+
+              {/* Paleta en pantallas pequeñas: tocar añade el elemento en el
+                  centro de lo que se ve. */}
+              <div className="flex gap-1.5 overflow-x-auto md:hidden movil-horizontal:!flex" role="group" aria-label="Añadir elemento">
+                {types.map((type) => {
+                  const TypeIcon = typeIcon(type.key).component;
+                  return (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => addAtCenter(type)}
+                      className="flex h-14 min-w-16 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border border-app-border px-2 text-[11px] font-medium text-panel-text hover:bg-app-border/60"
+                      title={`Añadir ${type.label}`}
+                    >
+                      <TypeIcon aria-hidden size={20} strokeWidth={ICON_STROKE} style={{ color: type.color }} />
+                      <span className="whitespace-nowrap">{type.label}</span>
+                    </button>
                   );
-                }}
-                className="mt-0.5 h-11 rounded-xl border border-app-border bg-panel px-3 text-sm font-normal text-panel-text"
-              >
-                {layouts.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                    {l.id === defaultId ? " (por defecto)" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {defaultId === layoutId ? (
-              <span className="mr-1 flex h-11 items-center gap-1 rounded-xl px-2 text-xs font-semibold text-accent" title="Se abre al entrar en el editor y en el plano en vivo">
-                <Star aria-hidden size={16} strokeWidth={2} fill="currentColor" />
-                Por defecto
-              </span>
-            ) : (
-              <ToolButton
-                icon={Star}
-                label={settingDefault ? "Marcando…" : "Marcar por defecto"}
-                onClick={makeDefault}
-                disabled={settingDefault}
-                title="Abrir esta zona al entrar en el editor y en el plano en vivo"
-              />
-            )}
+                })}
+              </div>
 
-            <ToolButton
-              icon={Save}
-              label={saving ? "Guardando…" : dirty ? "Guardar" : "Guardado"}
-              onClick={handleSave}
-              disabled={saving || !dirty}
-              title={dirty ? "Guardar los cambios" : "No hay cambios que guardar"}
-              primary
-            />
-            <ToolButton
-              icon={Undo2}
-              label="Deshacer"
-              onClick={undo}
-              disabled={history.length === 0}
-              title="Deshacer el último cambio (Ctrl+Z)"
-            />
 
-            <Divider />
-
-            <ToolButton
-              icon={RotateCcw}
-              label="Girar ↺"
-              onClick={() => rotateLayout(-VIEW_STEP)}
-              title="Girar el plano completo 90° a la izquierda (se guarda con Guardar)"
-            />
-            <ToolButton
-              icon={RotateCw}
-              label="Girar ↻"
-              onClick={() => rotateLayout(VIEW_STEP)}
-              title="Girar el plano completo 90° a la derecha (se guarda con Guardar)"
-            />
-            <ToolButton
-              icon={ClipboardPaste}
-              label="Pegar"
-              onClick={() => clipboard && pasteElement(clipboard)}
-              disabled={!canPaste}
-              title={canPaste ? "Pegar el elemento copiado (Ctrl+V)" : "Copia antes un elemento (Ctrl+C)"}
-            />
-            <ToolButton
-              icon={Copy}
-              label="Copiar plano"
-              onClick={() => setCopyOpen(true)}
-              disabled={dirty}
-              title={
-                dirty
-                  ? "Guarda los cambios antes de copiar, para no copiar una versión vieja"
-                  : "Copiar zonas y mesas a otro restaurante"
-              }
-            />
-
-            <Divider />
-
-            <ToolButton
-              icon={ZoomOut}
-              label="Alejar"
-              onClick={() => controllerRef.current?.zoomOut()}
-            />
-            <span className="w-12 text-center text-sm tabular-nums text-panel-muted">
-              {zoom}%
-            </span>
-            <ToolButton
-              icon={ZoomIn}
-              label="Acercar"
-              onClick={() => controllerRef.current?.zoomIn()}
-            />
-            <ToolButton
-              icon={Scan}
-              label="Ajustar"
-              onClick={() => controllerRef.current?.resetView()}
-              title="Encuadrar la zona entera en la pantalla"
-            />
-
-            <LiveIndicator status={realtime.status} error={realtime.joinError} />
-          </div>
-
-          {/* Zonas de meseros: ver y cambiar la configuración activa */}
-          <div className="pointer-events-auto flex flex-wrap items-center gap-2">
-            <WaiterSelector state={waiters} />
-            {waiters.configs.length > 0 ? (
-              <ToolButton
-                icon={showWaiters ? EyeOff : Eye}
-                label={showWaiters ? "Ocultar meseros" : "Ver meseros"}
-                onClick={() => setShowWaiters((v) => !v)}
-                title="Teñir cada mesa con el color de su mesero"
-              />
+              </div>
             ) : null}
-            {canManageWaiters ? (
-              <a
-                href={`/restaurante/${restaurantId}/mapa?meseros=editar`}
-                className={`flex h-11 items-center gap-1.5 px-3 text-sm font-medium hover:bg-app-border/60 ${FLOATING}`}
-              >
-                <Paintbrush aria-hidden size={16} strokeWidth={2} />
-                Repartir mesas entre meseros
-              </a>
-            ) : null}
-            {waiters.message ? (
-              <span role="status" className={`px-3 py-2 text-sm ${FLOATING}`}>{waiters.message.text}</span>
-            ) : null}
-          </div>
 
+              {/* Herramientas del elemento elegido (también con el panel plegado). Antes esto era una segunda
+                  ventana flotante que tapaba el mapa; ahora es una fila más de
+                  este mismo panel, y solo aparece si hay algo seleccionado. */}
+              {selected ? (
+                <div className="flex flex-wrap items-end gap-2 border-t border-app-border pt-2">
+                  <p className="flex w-full items-center justify-between gap-2 text-xs font-semibold text-panel-muted">
+                    <span>
+                      Elemento seleccionado: <span className="font-bold text-panel-text">{selected.label}</span>
+                    </span>
+                    {/* Quitar la selección sin tener que tocar el plano (en un
+                        celular el panel puede taparlo). */}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(null)}
+                      className="flex h-9 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-panel-text hover:bg-app-border/60"
+                    >
+                      <Check aria-hidden size={14} strokeWidth={2.5} />
+                      Listo
+                    </button>
+                  </p>
+                  <label className="flex flex-col text-[11px] font-medium text-panel-muted">
+                    Nombre
+                    <input
+                      type="text"
+                      value={selected.label}
+                      maxLength={60}
+                      onChange={(e) => {
+                        recordEdit(`label:${selected.id}`);
+                        patchElement(selected.id, { label: e.target.value });
+                        markDirty();
+                      }}
+                      className="mt-0.5 h-11 w-32 rounded-xl border border-app-border bg-panel px-3 text-sm font-normal text-panel-text"
+                      aria-label="Nombre del elemento"
+                    />
+                  </label>
+                  <label className="flex flex-col text-[11px] font-medium text-panel-muted">
+                    Puestos
+                    <input
+                      type="number"
+                      value={selected.capacity ?? ""}
+                      min={1}
+                      max={100}
+                      placeholder="—"
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        recordEdit(`capacity:${selected.id}`);
+                        patchElement(selected.id, {
+                          capacity: raw === "" ? null : Math.max(1, Number(raw)),
+                        });
+                        markDirty();
+                      }}
+                      className="mt-0.5 h-11 w-20 rounded-xl border border-app-border bg-panel px-3 text-sm font-normal text-panel-text"
+                      aria-label="Puestos"
+                    />
+                  </label>
+                  {selectedSeatable && waiters.active ? (
+                    // Mesero de esta mesa en la configuración activa. El reparto
+                    // se cambia en el plano en vivo («Repartir mesas»).
+                    <span className="flex h-11 items-center gap-1.5 rounded-xl px-2 text-xs font-medium text-panel-text" title={`Configuración activa: ${waiters.active.name}`}>
+                      Mesero:
+                      {selectedWaiter ? (
+                        <>
+                          <span aria-hidden className="h-3 w-3 rounded-full" style={{ backgroundColor: selectedWaiter.color }} />
+                          <span className="font-bold">{selectedWaiter.label}</span>
+                        </>
+                      ) : (
+                        <span className="text-panel-muted">sin mesero</span>
+                      )}
+                    </span>
+                  ) : null}
+                  <ToolButton
+                    icon={RotateCcw}
+                    label="Girar ↺"
+                    onClick={() => rotateSelected(-ELEMENT_STEP)}
+                    title={`Girar el elemento ${ELEMENT_STEP}° a la izquierda`}
+                  />
+                  <ToolButton
+                    icon={RotateCw}
+                    label="Girar ↻"
+                    onClick={() => rotateSelected(ELEMENT_STEP)}
+                    title={`Girar el elemento ${ELEMENT_STEP}° a la derecha`}
+                  />
+                  <Divider />
+                  <ToolButton
+                    icon={Copy}
+                    label="Copiar elemento"
+                    onClick={() => copySelected(selected)}
+                    title="Copiar este elemento (Ctrl+C). Se puede pegar en otra zona."
+                  />
+                  <ToolButton
+                    icon={ClipboardPaste}
+                    label="Pegar"
+                    onClick={() => clipboard && pasteElement(clipboard, selected)}
+                    disabled={!canPaste}
+                    title={canPaste ? "Pegar lo copiado junto a este elemento (Ctrl+V)" : "Copia antes un elemento"}
+                  />
+                  <ToolButton
+                    icon={CopyPlus}
+                    label="Duplicar"
+                    onClick={() => pasteElement(selected)}
+                    title="Crear una copia al lado"
+                  />
+                  <Divider />
+                  <ToolButton
+                    icon={Trash2}
+                    label="Eliminar"
+                    onClick={() => removeElement(selected.id)}
+                    danger
+                  />
+                </div>
+              ) : null}
+
+          {/* Avisos: también DENTRO del panel (y visibles con el panel
+              plegado), para que no haya ventanas sueltas sobre el plano. */}
           {/* Otro dispositivo cambió la estructura que se ve aquí */}
           {staleFromElsewhere ? (
             <Notice tone="info" icon={RefreshCw}>
@@ -814,77 +1047,7 @@ export function EditorClient({
               Tienes cambios sin guardar.
             </Notice>
           ) : null}
-
-          {/* Panel del elemento elegido */}
-          {selected ? (
-            <div className={`pointer-events-auto flex flex-wrap items-end gap-2 p-3 ${FLOATING}`}>
-              <label className="flex flex-col text-[11px] font-medium text-panel-muted">
-                Nombre
-                <input
-                  type="text"
-                  value={selected.label}
-                  maxLength={60}
-                  onChange={(e) => {
-                    recordEdit(`label:${selected.id}`);
-                    patchElement(selected.id, { label: e.target.value });
-                    markDirty();
-                  }}
-                  className="mt-0.5 h-11 w-32 rounded-xl border border-app-border bg-panel px-3 text-sm font-normal text-panel-text"
-                  aria-label="Nombre del elemento"
-                />
-              </label>
-              <label className="flex flex-col text-[11px] font-medium text-panel-muted">
-                Puestos
-                <input
-                  type="number"
-                  value={selected.capacity ?? ""}
-                  min={1}
-                  max={100}
-                  placeholder="—"
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    recordEdit(`capacity:${selected.id}`);
-                    patchElement(selected.id, {
-                      capacity: raw === "" ? null : Math.max(1, Number(raw)),
-                    });
-                    markDirty();
-                  }}
-                  className="mt-0.5 h-11 w-20 rounded-xl border border-app-border bg-panel px-3 text-sm font-normal text-panel-text"
-                  aria-label="Puestos"
-                />
-              </label>
-              <ToolButton
-                icon={RotateCcw}
-                label="Girar ↺"
-                onClick={() => rotateSelected(-ELEMENT_STEP)}
-                title={`Girar el elemento ${ELEMENT_STEP}° a la izquierda`}
-              />
-              <ToolButton
-                icon={RotateCw}
-                label="Girar ↻"
-                onClick={() => rotateSelected(ELEMENT_STEP)}
-                title={`Girar el elemento ${ELEMENT_STEP}° a la derecha`}
-              />
-              <ToolButton
-                icon={Copy}
-                label="Copiar"
-                onClick={() => copySelected(selected)}
-                title="Copiar este elemento (Ctrl+C). Se puede pegar en otra zona."
-              />
-              <ToolButton
-                icon={CopyPlus}
-                label="Duplicar"
-                onClick={() => pasteElement(selected)}
-                title="Crear una copia al lado"
-              />
-              <ToolButton
-                icon={Trash2}
-                label="Eliminar"
-                onClick={() => removeElement(selected.id)}
-                danger
-              />
-            </div>
-          ) : null}
+          </div>
         </div>
 
         {/* Datos de la zona, abajo en el centro (el minimapa va a la
@@ -938,6 +1101,7 @@ function ToolButton({
   title,
   primary = false,
   danger = false,
+  className = "",
 }: {
   icon: LucideIcon;
   label: string;
@@ -946,6 +1110,7 @@ function ToolButton({
   title?: string;
   primary?: boolean;
   danger?: boolean;
+  className?: string;
 }) {
   const tone = primary
     ? "bg-accent text-accent-text hover:bg-accent/85 disabled:bg-app-border/70 disabled:text-panel-muted"
@@ -958,9 +1123,9 @@ function ToolButton({
       onClick={onClick}
       disabled={disabled}
       title={title ?? label}
-      className={`flex h-14 min-w-16 flex-col items-center justify-center gap-0.5 rounded-xl px-2 text-[11px] font-medium transition active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100 ${tone}`}
+      className={`flex h-12 min-w-14 flex-col items-center justify-center gap-0.5 rounded-xl px-2 text-[11px] font-medium transition active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100 ${tone} ${className}`}
     >
-      <Icon aria-hidden size={22} strokeWidth={ICON_STROKE} />
+      <Icon aria-hidden size={20} strokeWidth={ICON_STROKE} />
       <span className="whitespace-nowrap">{label}</span>
     </button>
   );
@@ -1011,7 +1176,7 @@ function Notice({
   children: ReactNode;
 }) {
   return (
-    <div className={`pointer-events-auto flex max-w-full items-center gap-2 px-3 py-2 text-sm ${FLOATING}`}>
+    <div role="status" className="flex max-w-full items-center gap-2 rounded-xl bg-app-border/40 px-3 py-2 text-sm">
       <Icon aria-hidden size={18} strokeWidth={ICON_STROKE} className={`shrink-0 ${NOTICE_TONES[tone]}`} />
       {children}
     </div>

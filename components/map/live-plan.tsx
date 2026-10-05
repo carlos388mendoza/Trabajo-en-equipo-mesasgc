@@ -214,7 +214,7 @@ export function LivePlan({
             <WaiterEditorPanel state={waiters} />
           </div>
         ) : null}
-      <div className="relative min-h-[20rem] flex-1 overflow-hidden rounded-2xl ring-1 ring-app-border sm:h-full sm:min-h-0">
+      <div className="relative min-h-[24rem] flex-1 overflow-hidden rounded-2xl ring-1 ring-app-border sm:h-full sm:min-h-0">
         {zone ? (
           <KonvaCanvas
             key={zone.id}

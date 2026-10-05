@@ -1434,7 +1434,7 @@ section("Zonas de meseros y plano por defecto");
   check("  pero no el botón de editar", !planoAnalitica.text.includes("Editar zonas") && !planoAnalitica.text.includes("Nueva con"));
   check("pizzahut no ve el plano de rest_centro", landing(await http("GET", "/restaurante/rest_centro/mapa", { cookie: cookies.pizzahut })) === "/sin-acceso");
   const editorCentro = await http("GET", "/restaurante/rest_centro/editor", { cookie: cookies.chinawok });
-  check("el editor ofrece «Repartir mesas entre meseros» al host", editorCentro.text.includes("Repartir mesas entre meseros"));
+  check("el editor ofrece «Repartir meseros» al host", editorCentro.text.includes("Repartir meseros"));
   check("  y marcar el plano por defecto", editorCentro.text.includes("Por defecto") || editorCentro.text.includes("Marcar por defecto"));
 
   const seedConfigs = await listWaiterConfigs("rest_centro");
@@ -1564,6 +1564,43 @@ section("Zonas de meseros y plano por defecto");
     check("una zona de otro restaurante no se puede marcar", !okText(await callAction(defaultId, "pizzahut", "/restaurante/rest_norte/editor", { restaurantId: "rest_norte", layoutId: "lay_centro_principal" })) && JSON.stringify(await defaultOf()) === JSON.stringify(["lay_centro_terraza"]));
     check("el admin también puede, y lo deja como estaba", okText(await callAction(defaultId, "admin", "/restaurante/rest_centro/editor", { restaurantId: "rest_centro", layoutId: "lay_centro_principal" })) && JSON.stringify(await defaultOf()) === JSON.stringify(["lay_centro_principal"]));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Acceso directo al modo sencillo (cabecera)
+// ---------------------------------------------------------------------------
+
+section("Acceso directo al modo sencillo");
+
+{
+  // El enlace de la cabecera, tal como sale en el HTML: «Modo sencillo» con su
+  // href, o el botón que abre la lista para elegir restaurante.
+  const enlace = (html: string) => /href="([^"]+)"[^>]*>(?:<!-- -->)?<svg[^>]*>[\s\S]*?<\/svg>(?:<!-- -->)?Modo sencillo</.exec(html)?.[1] ?? null;
+  const botonParaElegir = (html: string) => /aria-haspopup="menu"[^>]*>[\s\S]{0,600}?Modo sencillo/.test(html);
+  const pagina = async (who: Who | null, path: string, cookie?: string) =>
+    (await http("GET", path, { cookie: cookie ?? (who ? cookies[who] : undefined) })).text;
+
+  // Un solo restaurante: va directo a su modo sencillo, desde cualquier página.
+  const unLocal = (await login("prueba-local@grupocomidas.test")).cookie;
+  check("con un solo restaurante, «Modo sencillo» lleva directo a él", enlace(await pagina(null, "/ajustes", unLocal)) === "/restaurante/rest_centro/rapido");
+
+  // Varios restaurantes: dentro de uno, lleva a ESE; fuera, deja elegir.
+  check("chinawok dentro de China Wok Circunvalación: lleva a su modo sencillo", enlace(await pagina("chinawok", "/restaurante/rest_sps_chinawok/editor")) === "/restaurante/rest_sps_chinawok/rapido");
+  check("  dentro de China Wok Centro: lleva al de Centro", enlace(await pagina("chinawok", "/restaurante/rest_centro/mapa")) === "/restaurante/rest_centro/rapido");
+  const ajustesChinawok = await pagina("chinawok", "/ajustes");
+  check("  fuera de un restaurante: un botón para elegir, sin pasar por el Panel", enlace(ajustesChinawok) === null && botonParaElegir(ajustesChinawok));
+  check("  y el Panel sigue en la cabecera", /Panel</.test(ajustesChinawok));
+
+  // Admin: también lo tiene, en el restaurante que esté mirando.
+  check("admin en el plano de Pizza Hut Norte: lleva a su modo sencillo", enlace(await pagina("admin", "/restaurante/rest_norte/mapa")) === "/restaurante/rest_norte/rapido");
+  check("  y en /admin puede elegir cualquier restaurante", botonParaElegir(await pagina("admin", "/admin")));
+
+  // Analítica: no puede usar el modo sencillo, así que no hay acceso directo.
+  const analitica = await pagina("analitica", "/analiticas");
+  check("analítica no ve «Modo sencillo» en la cabecera", !analitica.includes("Modo sencillo"));
+  check("  ni dentro del plano en vivo de un restaurante", !(await pagina("analitica", "/restaurante/rest_centro/mapa")).includes("Modo sencillo"));
+  check("  y el modo sencillo le sigue cerrado", landing(await http("GET", "/restaurante/rest_centro/rapido", { cookie: cookies.analitica })) === "/sin-acceso");
+  check("el destino funciona: chinawok entra a su modo sencillo", landing(await http("GET", "/restaurante/rest_sps_chinawok/rapido", { cookie: cookies.chinawok })) === "200");
 }
 
 // ---------------------------------------------------------------------------

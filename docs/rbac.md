@@ -33,6 +33,9 @@ Qué significa cada marca:
 | `/analiticas` (vista global y por restaurante) | Sí | — | Sí |
 | `/mapa` (mapa general, todas las marcas) | Sí | — | Sí (solo lectura) |
 | `/restaurante/[id]/mapa` (plano en vivo, solo lectura) | Sí | Suyos | Sí, sin nombres |
+| Cabecera: **«Modo sencillo»** (acceso directo) y **«Panel»** (modo completo) | Modo sencillo: todos | Los dos: suyos | — |
+
+Los accesos directos de la cabecera salen solo con `rapido:ver` («Modo sencillo») y, para el rol restaurante, `editor:ver` («Panel»), calculados en el servidor con `can()`. Dentro de un restaurante llevan a ese; fuera, con varios, dejan elegir. Analítica no recibe ni la etiqueta.
 
 ## Acciones
 
