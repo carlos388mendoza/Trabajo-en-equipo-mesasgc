@@ -81,7 +81,7 @@ Todo esto está en `testing`. En `main` está todo hasta el #43; la última fila
 | Mapa más rápido | Cámara por `transform` CSS durante el gesto (sin React) y confirmada al soltar; base memoizada; radar y halos animados por el compositor; controles sin `backdrop-blur`. Arrastre 24 → 60 fps y rueda 15 → 60 en computadora; 11 → 54 y 13 → 47 en tablet (CPU 4×). | `components/map/world-map.tsx`, `docs/mapa-honduras.md` | #41 |
 | Aspecto | Estilo de mapa «radar», minimapa, íconos de lucide y temas Claro, Oscuro, Sistema y Personalizado, sin parpadeo. | `lib/theme/`, `/ajustes`, README §13 | #7 |
 | CI | GitHub Actions en cada PR y cada push a `testing` y `main`: typecheck, lint, build y los cuatro `verify`, con Node 22 y `npm ci`. | `.github/workflows/ci.yml` | #10 |
-| Datos de demostración | Lote de datos falsos para probar el mapa, las estadísticas y el asistente: `npm run db:demo` (idempotente) en los 8 restaurantes reales, con una zona demo propia por restaurante, clientes esperando con teléfonos de mentira, mesas demo ocupadas y reservadas y 8 semanas de historial. Marcado estructural con `is_demo` y `demo_batch_id` (migración `0007`, solo aditiva), nunca por nombre. Aviso global discreto que no bloquea el Modo rápido, y borrado desde `/admin/datos-demo` (`BORRAR`), solo admin, reutilizando el mismo `borrarDemoData()` que el CLI. | `lib/demo/`, `scripts/db-demo*.mts`, `app/admin/datos-demo/`, `components/layout/demo-banner.tsx`, README §17 | #45 |
+| Datos de demostración | Lote de datos falsos para probar el mapa, las estadísticas y el asistente: `npm run db:demo` (idempotente) en los 8 restaurantes reales, con una zona demo propia por restaurante, clientes esperando con teléfonos de mentira, mesas demo ocupadas y reservadas y 8 semanas de historial. Marcado estructural con `is_demo` y `demo_batch_id` (migración `0007`, solo aditiva), nunca por nombre. Se borra con `npm run db:demo:borrar` (`borrarDemoData()`). Desde el 5 de octubre, sin interfaz: se quitaron el aviso, el enlace, la sección de `/admin` y `/admin/datos-demo`; queda la etiqueta «Demo» en las cartas. | `lib/demo/`, `scripts/db-demo*.mts`, README §17 | #45, #51 |
 | Despliegue | Comandos de Railway (build, Pre-deploy `db:migrate && db:catalog`, start y healthcheck), `/api/health` público y guía paso a paso. `railway.json` queda como referencia. | `docs/despliegue.md`, `railway.json` | #13, #21 |
 | Del 2 de octubre (#47–#51) | Borrar un cliente desde el modo sencillo con Aceptar/Cancelar y deshacer (#47, #48); panel «Ver todas las cartas» arrastrable y sin X (#49); modo sencillo sin conexión con cola en IndexedDB, `operationId` y conflictos (#50, migración `0008`); borrado de datos demo por restaurante y etiqueta «Demo» (#51). | `components/quick-mode/`, `lib/offline/`, `public/sw.js`, `lib/demo/` | #47–#51 |
 | Zonas de meseros y plano por defecto | Configuraciones por cantidad de meseros con una activa, selector «Meseros activos», reparto por toque, rectángulo o automático, mesero al sentar, estadísticas y asistente por mesero (migración `0009`, solo aditiva). Plano por defecto elegido desde el editor; copiar y pegar elementos. | `lib/waiters/`, `components/waiters/`, `lib/layout/default.ts`, README §18–19 | `feat/zonas-meseros` |
@@ -354,7 +354,7 @@ Pendiente:
       exista.
 - [ ] Probar a restaurar un respaldo de Turso en una base aparte.
 - [ ] **Cargar los datos de demostración en producción** y borrarlos, con
-      `railway run npm run db:demo` y `/admin/datos-demo` (`docs/despliegue.md`,
+      `railway run npm run db:demo` y `railway run npm run db:demo:borrar` (`docs/despliegue.md`,
       sección 3c). Solo después de comprobar que el despliegue publicado está
       bien (log con migraciones, catálogo y healthcheck) y con consultas de solo
       lectura antes. **No** se carga automáticamente: no está en el Pre-deploy.
@@ -402,9 +402,8 @@ estadísticas y datos) y entran después.
 - [ ] Hacer la demo de `docs/demo.md` de principio a fin sobre `testing`, con
       dos pestañas para el tiempo real.
 - [ ] En la misma demo, enseñar el lote de datos de demostración: cargar con
-      `npm run db:demo` para que las estadísticas tengan historia, enseñar el
-      aviso a un host y a analitica, y borrarlo desde `/admin/datos-demo`
-      escribiendo `BORRAR` para que el aviso desaparezca solo.
+      `npm run db:demo` para que las estadísticas tengan historia, enseñar la
+      etiqueta «Demo» de las cartas y borrarlo con `npm run db:demo:borrar`.
 - [ ] El asistente sin `OPENROUTER_API_KEY` no entiende «¿qué semana fue más
       lenta?» (responde el mensaje genérico); con la clave sí la contesta.
       Si se quiere sin clave, hay que añadirla a `localAnswer` (Miembro B).

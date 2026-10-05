@@ -12,8 +12,8 @@
 // Qué NO hace nunca: no crea ni toca marcas, restaurantes, el catálogo de
 // tipos, usuarios ni contraseñas; no toca la zona real ni los planos que alguien
 // haya dibujado a mano. Cada fila que inserta va marcada con `is_demo` y
-// `demo_batch_id`, que es lo que usa `npm run db:demo:borrar` (o la pantalla
-// /admin/datos-demo) para separarla del resto.
+// `demo_batch_id`, que es lo que usa `npm run db:demo:borrar` para separarla
+// del resto.
 //
 // Es idempotente: correrla dos veces deja lo mismo que correrla una, porque
 // los ids son deterministas y el insert es `ON CONFLICT DO NOTHING`.
@@ -56,7 +56,7 @@ try {
   console.log(`  - ${DEMO_HISTORY_DAYS} días de historial para las estadísticas y el asistente.`);
   console.log("");
   console.log("NO toca marcas, restaurantes, usuarios, contraseñas ni los planos reales.");
-  console.log("Se borra después con `npm run db:demo:borrar` o desde /admin/datos-demo.");
+  console.log("Se borra después con `npm run db:demo:borrar`.");
   console.log("");
 
   const antes = await demoSummary();

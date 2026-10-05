@@ -1,7 +1,6 @@
 import "./globals.css";
 
 import { AppHeader } from "@/components/layout/app-header";
-import { DemoBanner } from "@/components/layout/demo-banner";
 import { InlineScript } from "@/components/theme/inline-script";
 import { ThemeSync } from "@/components/theme/theme-sync";
 import { themeBootScript, themeFallbackCss } from "@/lib/theme/theme";
@@ -36,9 +35,6 @@ export default function RootLayout({
         <ThemeSync />
         {/* Logo, menú según los permisos, usuario, Ajustes y Cerrar sesión. */}
         <AppHeader />
-        {/* Aviso de datos de demostración. Solo aparece si los hay, no tapa
-            nada y desaparece solo: se decide en el servidor, con `is_demo`. */}
-        <DemoBanner />
         {/* El padding se queda aquí: sin él el editor queda pegado a los
             bordes. El fondo lo pone el <body> con el color del tema. */}
         <main className="min-h-[calc(100vh-65px)] p-4">{children}</main>

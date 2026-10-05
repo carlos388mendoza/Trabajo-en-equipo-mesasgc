@@ -865,25 +865,26 @@ Todos tienen la contraseña **`12345abc`**:
 | Correo | Nombre | Roles | Restaurantes |
 |---|---|---|---|
 | `admin@grupocomidas.test` | Administrador | admin | todos |
-| `centro@grupocomidas.test` | Host Centro | restaurante | rest_centro |
-| `norte@grupocomidas.test` | Host Norte | restaurante | rest_norte |
 | `analitica@grupocomidas.test` | Analista | analitica | todos (solo lectura) |
-| `gerente@grupocomidas.test` | Gerente Centro | restaurante, analitica | rest_centro |
-| `pizzahut-proceres@grupocomidas.test` | Host Pizza Hut Los Próceres | restaurante | rest_tgu_pizza |
-| `kfc-morazan@grupocomidas.test` | Host KFC Boulevard Morazán | restaurante | rest_tgu_kfc |
-| `dennys-lomas@grupocomidas.test` | Host Denny's Las Lomas | restaurante | rest_tgu_dennys |
-| `chinawok-circunvalacion@grupocomidas.test` | Host China Wok Circunvalación | restaurante | rest_sps_chinawok |
-| `kfc-riopiedras@grupocomidas.test` | Host KFC Río Piedras | restaurante | rest_sps_kfc |
-| `dennys-andes@grupocomidas.test` | Host Denny's Los Andes | restaurante | rest_sps_dennys |
-| `dennys@grupocomidas.test` | Denny's (piloto) | restaurante | rest_tgu_dennys, rest_sps_dennys |
-| `pizzahut@grupocomidas.test` | Pizza Hut (piloto) | restaurante | rest_norte, rest_tgu_pizza |
+| `pizzahut@grupocomidas.test` | Pizza Hut | restaurante | rest_norte, rest_tgu_pizza |
+| `dennys@grupocomidas.test` | Denny's | restaurante | rest_tgu_dennys, rest_sps_dennys |
+| `kfc@grupocomidas.test` | KFC | restaurante | rest_tgu_kfc, rest_sps_kfc |
+| `chinawok@grupocomidas.test` | China Wok | restaurante | rest_centro, rest_sps_chinawok |
 
-`dennys@` y `pizzahut@` son los usuarios del **piloto**
-(`docs/salida-a-produccion.md`, sección 3): uno por marca, cada uno con sus 2
-locales. Entran a `/inicio`, con sus 2 tarjetas, y cambian de restaurante con
-el selector de la cabecera. (Hasta el 1 de octubre era un solo usuario,
-`dennys-pizzahut@`, para los 4; el seed ya no lo crea, pero no lo borra de una
-base local que ya lo tenga.)
+**Un usuario de restaurante por marca**, con todos los locales de su marca
+(desde el 5 de octubre). Entran a `/inicio`, con una tarjeta por local, y
+cambian de restaurante con el selector de la cabecera.
+
+Antes el seed creaba un «Host» por local, `gerente@` (restaurante +
+analítica) y, hasta el 1 de octubre, `dennys-pizzahut@`. Ya no los crea, y en
+una base **local** que los tenga de antes **los quita** (son cuentas de prueba;
+sus sesiones, roles y accesos se van con ellos, y la lista de espera solo los
+referencia de forma blanda). En producción el seed no corre nunca: allí un
+usuario que sobra se **desactiva** desde `/admin`, no se borra.
+
+Los casos «un host con un solo restaurante» y «un usuario con dos roles» los
+cubre `verify:auth` con dos cuentas propias (`prueba-local@` y
+`prueba-dual@`) que solo existen en su base temporal.
 
 ### `npm run create-user`: crear o actualizar un usuario desde la terminal
 
@@ -1081,7 +1082,7 @@ Desde `/admin` → **Marcas y restaurantes**, sin scripts (solo admin, permiso
 ## 17. Datos de demostración
 
 Para probar el mapa, las estadísticas y el asistente sin esperar al piloto, hay
-un lote de datos **falsos** que se carga con un comando y se borra desde la web:
+un lote de datos **falsos** que se carga y se borra con un comando:
 
 ```bash
 npm run db:demo          # carga el lote (pide escribir «si»)
@@ -1123,39 +1124,20 @@ aditiva, en `table_layouts`, `tables` y `waitlist_entries`). El borrado usa esas
 columnas, **nunca el nombre**: renombrar una zona de demostración no la salva del
 borrado, ni renombrar una real la mete en el lote.
 
-### El aviso global
+### Sin interfaz desde el 5 de octubre
 
-Mientras haya datos de demostración, una franja discreta lo dice en todas las
-pantallas («Hay datos de demostración cargados»). No es un modal: no tapa nada y
-**no bloquea el Modo rápido**. Desaparece sola en cuanto no queda nada marcado
-como demo.
+A pedido de la dirección, **la interfaz de datos demo se quitó**: ya no hay
+aviso «Hay datos de demostración cargados», ni enlace «Datos demo», ni sección
+en `/admin`, ni `/admin/datos-demo` (da 404), ni su server action. Lo único
+que se ve en la app es la etiqueta **«Demo»** en las cartas del modo sencillo.
 
-### Borrado desde la web
-
-En **`/admin`**, la sección **«Datos de demostración»** (solo admin, con ancla
-`#datos-demo`) muestra cuántos **clientes** (los de la fila de hoy y los que
-ocupan mesa), **historial**, **mesas** y **zonas** de demostración hay, en total
-y **por restaurante** (`lib/demo/summary.ts`). Tiene dos botones:
-**«Borrar todos los datos de demostración»** y, en cada fila, **«Borrar demo de
-este restaurante»**. La confirmación dice exactamente cuánto se va a borrar y
-pide escribir `BORRAR`. `/admin/datos-demo` muestra lo mismo en solo lectura a
-analítica.
-
-| Quién | Ve los conteos | Puede borrar |
-| --- | --- | --- |
-| Administrador | Sí | **Sí** (todo o por restaurante) |
-| Restaurante | No (ve la etiqueta «Demo» en cada carta del modo sencillo) | No |
-| Analítica | Sí, en `/admin/datos-demo` (con el aviso) | No |
-
-Hace falta escribir `BORRAR`: el botón no se habilita hasta que se escribe, y la
-server action lo vuelve a pedir en el servidor, porque un POST a mano no pasa por
-la página. El borrado es transaccional y aborta, sin escribir nada, si algún
-dato **real** dependiera de algo de demostración.
-
-Del lado del servidor, `borrarDemoData()` (`lib/demo/delete.ts`) es el único
-sitio que borra datos de demostración, y lo usan **los dos caminos**: la web y
-`npm run db:demo:borrar`. Por eso el script es el plan B y no una segunda
-implementación.
+**Los datos y el sistema se quedan**: `is_demo`, `demo_batch_id`, `lib/demo`,
+`verify:demo`, y los dos comandos (`npm run db:demo` y
+`npm run db:demo:borrar`; en producción, con `railway run`). `borrarDemoData()`
+(`lib/demo/delete.ts`) sigue siendo el único sitio que borra datos de
+demostración: transaccional, solo `is_demo`, y aborta sin escribir nada si algún
+dato **real** dependiera de algo de demostración. `npm run db:demo:borrar` pide
+escribir `BORRAR`.
 
 ### Archivos
 
@@ -1165,29 +1147,24 @@ implementación.
 | `lib/demo/load.ts` | `loadDemoData()` (idempotente) y `demoSummary()`. |
 | `lib/demo/history.ts` | Las ocho semanas de historial. |
 | `lib/demo/delete.ts` | `borrarDemoData()`: solo `is_demo`, en una transacción, y aborta si un dato real depende. |
+| `lib/demo/summary.ts` | `demoBreakdown()`: clientes, historial, mesas, zonas y configuraciones de meseros demo por restaurante. |
 | `scripts/db-demo.mts`, `scripts/db-demo-borrar.mts` | Los dos scripts de terminal. |
-| `app/admin/datos-demo/page.tsx`, `app/admin/demo-actions.ts` | La pantalla y la server action del borrado. |
-| `components/admin/admin-demo.tsx` | Los conteos por restaurante, los dos botones y el diálogo con la palabra. |
-| `lib/demo/summary.ts` | `demoBreakdown()`: clientes, historial, mesas y zonas demo por restaurante. |
 | `components/quick-mode/demo-tag.tsx` | La etiqueta «Demo» de las cartas. |
-| `components/layout/demo-banner.tsx` | El aviso global. |
 | `scripts/verify-demo.mts` | `npm run verify:demo`. |
 
 ### Qué lo comprueba
 
-`npm run verify:demo` (**85 comprobaciones**, en CI): migración aplicada, que
-cargar dos veces es lo mismo que cargar una, cobertura de los 8 restaurantes,
-teléfonos de mentira en los 12 309 clientes, estados variados, las 56 semanas
-(8) de historial, que `/analiticas` los lee como cualquier otro dato, que **no
-toca nada real**, que **aborta** si un cliente real dependiera de una mesa de
-demostración, el borrado, que lo real sobrevive y que se puede recargar.
+`npm run verify:demo` (en CI): migración aplicada, que cargar dos veces es lo
+mismo que cargar una, cobertura de los 8 restaurantes, teléfonos de mentira,
+estados variados, las 8 semanas de historial, que `/analiticas` los lee como
+cualquier otro dato, que **no toca nada real**, que **aborta** si un cliente
+real dependiera de una mesa de demostración, el borrado (todo o por
+restaurante), que lo real sobrevive y que se puede recargar.
 
-`npm run verify:auth` levanta la app de verdad y lo prueba por HTTP: el aviso
-aparece para admin y analitica (no para el host), la sección de `/admin` con sus
-conteos y botones, `/admin/datos-demo` según el rol, analitica, un host y quien
-no tiene sesión **no borran** ni con la palabra puesta, admin borra el demo de
-**un** restaurante (los demás siguen igual) y luego todo, un **cliente real**
-sigue ahí después de los dos borrados, y el aviso desaparece solo.
+`npm run verify:auth` levanta la app de verdad y comprueba que **no queda ningún
+rastro de la interfaz** para ningún rol (ni el aviso, ni el enlace, ni la
+sección, ni `/admin/datos-demo`, ni la server action) y que los datos demo
+siguen ahí y se ven en las estadísticas y en las cartas con su etiqueta.
 
 ---
 
@@ -1274,7 +1251,7 @@ leyenda) pero no las cambia. Tabla completa en `docs/rbac.md`.
   ninguna.
 - `npm run db:demo` crea «2 meseros» y «3 meseros» de ejemplo, marcadas
   `is_demo`, en los restaurantes que **no** tengan ya una, y apunta mesero
-  al historial demo. Las borra «Borrar datos de demostración» (si la borrada
+  al historial demo. Las borra `npm run db:demo:borrar` (si la borrada
   era la activa, pasa a activa la siguiente que quede).
 
 ### Qué lo comprueba
