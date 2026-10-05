@@ -195,15 +195,6 @@ export async function revokeSessions(userId: string): Promise<void> {
 }
 
 /**
- * Igual que `revokeSessions`, pero buscando por correo. Para las tareas que
- * parten de una lista de correos y no tienen el id a mano.
- */
-export async function revokeSessionsByEmail(email: string): Promise<void> {
-  const [found] = await db.select({ id: user.id }).from(user).where(eq(user.email, email)).limit(1);
-  if (found) await revokeSessions(found.id);
-}
-
-/**
  * Cambia la contraseña y cierra sus sesiones: quien tuviera la vieja
  * abierta tiene que volver a entrar.
  */

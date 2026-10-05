@@ -49,7 +49,7 @@ import {
   waiterZones,
   waitlistEntries,
 } from "../lib/db/schema";
-import { createUserWithPassword, findUserIdByEmail, revokeSessionsByEmail } from "../lib/auth/users";
+import { createUserWithPassword, findUserIdByEmail } from "../lib/auth/users";
 import { BASE_BRANDS, BASE_RESTAURANTS } from "../lib/layout/base-restaurants";
 import { upsertElementTypeCatalog } from "../lib/layout/catalog";
 import { copyLayoutToRestaurant, getStructureCounts } from "../lib/layout/copy";
@@ -583,10 +583,12 @@ const TEST_USERS: { email: string; name: string; roles: Role[]; restaurantIds: s
   },
 ];
 
-// Usuarios de restaurante que el seed creaba antes (un «Host X» por restaurante
-// y `gerente@`) y que ya no corresponden. No se borran: se DESACTIVAN, para que
-// su contraseña y su historia sigan ahí sin dar acceso. El administrador y el
-// de analítica no entran nunca en esta lista.
+// Usuarios de restaurante que el seed creaba antes (un «Host X» por restaurante,
+// `gerente@` y el antiguo `dennys-pizzahut@`) y que ya no corresponden. Son
+// cuentas de PRUEBA de la base local: el seed los quita para que en «Usuarios»
+// queden solo los 6 de ahora. El seed no corre nunca en producción (ver
+// `main`); allí los que sobran se DESACTIVAN desde /admin, no se borran. El
+// administrador y el de analítica no entran nunca en esta lista.
 const RETIRED_TEST_USER_EMAILS = [
   "centro@grupocomidas.test",
   "norte@grupocomidas.test",
@@ -597,6 +599,7 @@ const RETIRED_TEST_USER_EMAILS = [
   "chinawok-circunvalacion@grupocomidas.test",
   "kfc-riopiedras@grupocomidas.test",
   "dennys-andes@grupocomidas.test",
+  "dennys-pizzahut@grupocomidas.test",
 ];
 
 async function seedTestUsers() {
@@ -628,23 +631,16 @@ async function seedTestUsers() {
   }
   console.log(`  usuarios de prueba: ${created} creados, ${TEST_USERS.length - created} ya existían`);
 
-  // Los que ya no corresponden pierden el acceso. `active = false` y nada más:
-  // la fila sigue en `user`/`account`, así que su historia de lista de espera y
-  // de sesiones no se pierde, y `setUserActive` en /admin puede volver a
-  // activarlos si hicieran falta.
+  // Los de prueba que ya no corresponden se quitan de la base local. Sus
+  // sesiones, cuentas, roles y accesos se van en cascada; la lista de espera
+  // solo los referencia de forma blanda (`seated_by_user_id`,
+  // `resolved_by_user_id`), así que su historia de clientes se queda.
   const retired = await db
-    .update(userTable)
-    .set({ active: false })
-    .where(and(inArray(userTable.email, RETIRED_TEST_USER_EMAILS), eq(userTable.active, true)))
+    .delete(userTable)
+    .where(inArray(userTable.email, RETIRED_TEST_USER_EMAILS))
     .returning({ email: userTable.email });
   if (retired.length > 0) {
-    console.log(`  usuarios de restaurante retirados (desactivados): ${retired.map((r) => r.email).join(", ")}`);
-    // Sus sesiones abiertas no sirven de nada con `active = false`: el hook de
-    // sesión ya las rechaza, pero se cierran igual para no dejar cookies
-    // vivas de cuentas sin acceso.
-    for (const r of retired) {
-      await revokeSessionsByEmail(r.email);
-    }
+    console.log(`  usuarios de prueba retirados de la base local: ${retired.map((r) => r.email).join(", ")}`);
   }
 }
 

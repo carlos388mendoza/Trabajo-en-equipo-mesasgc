@@ -88,10 +88,10 @@ function run(command: string, args: string[], extraEnv: Record<string, string> =
 check("el seed se niega a correr con NODE_ENV=production", (await run("npx", ["tsx", "scripts/seed.ts"], { NODE_ENV: "production" })) !== 0);
 check("seed con usuarios de prueba", (await run("npx", ["tsx", "scripts/seed.ts"])) === 0);
 
-// El seed ya no crea los hosts por local ni el `gerente@`, pero en una base que
-// ya los tenga de antes NO los borra: los DESACTIVA, para que conserven sus
-// datos y su historia sin poder entrar. Aquí se comprueba con filas puestas a
-// mano ANTES del seed.
+// El seed ya no crea los hosts por local ni el `gerente@`, y en una base local
+// que ya los tenga de antes los QUITA (son cuentas de prueba; en producción el
+// seed no corre y los que sobran se desactivan desde /admin). Aquí se comprueba
+// con filas puestas a mano ANTES del seed.
 {
   const { db: dbTemporal } = await import("@/lib/db");
   const { user: userTable } = await import("@/lib/db/schema");
@@ -105,7 +105,7 @@ check("seed con usuarios de prueba", (await run("npx", ["tsx", "scripts/seed.ts"
   check("el seed se ejecutó sobre una base con los usuarios antiguos", (await run("npx", ["tsx", "scripts/seed.ts"])) === 0);
   for (const email of antesDelSeed) {
     const [u] = await dbTemporal.select({ active: userTable.active }).from(userTable).where(eqTemporal(userTable.email, email));
-    check(`  ${email} queda desactivado, no borrado`, Boolean(u) && u.active === false, u ? `active=${u.active}` : "no existe");
+    check(`  ${email} ya no está en la base local`, !u, u ? `active=${u.active}` : "");
   }
 }
 
@@ -1152,8 +1152,8 @@ check("el usuario único de antes (dennys-pizzahut@) ya no lo crea el seed", (aw
 
 // Los usuarios de restaurante son exactamente los cuatro de marca: ni los hosts
 // por local (`centro@`, `norte@`, `kfc-morazan@`…) ni el antiguo `gerente@`.
-// Los que sobran quedan DESACTIVADOS, no borrados: no pueden entrar y conservan
-// sus datos. El administrador y el de analítica no se tocan.
+// En la base local los que sobran ya no están. El administrador y el de
+// analítica no se tocan.
 {
   const { user: userTable, userRoles } = await import("@/lib/db/schema");
   const estado = async (email: string): Promise<{ existe: boolean; activo: boolean }> => {
@@ -1172,15 +1172,34 @@ check("el usuario único de antes (dennys-pizzahut@) ya no lo crea el seed", (aw
   check("  el administrador conserva su rol", await conRol("admin@grupocomidas.test", "admin"));
   check("  la analitica conserva su rol", await conRol("analitica@grupocomidas.test", "analitica"));
   check("  y ninguno de los dos es de restaurante", !(await conRol("admin@grupocomidas.test", "restaurante")) && !(await conRol("analitica@grupocomidas.test", "restaurante")));
-  // Los que se insertaron a mano arriba (para ver que el seed los desactiva) sí
-// existen: aquí se comprueba que los OTROS seis que el seed creaba antes ya no
-// aparecen en una base nueva.
-  for (const email of ["norte@grupocomidas.test", "pizzahut-proceres@grupocomidas.test", "kfc-morazan@grupocomidas.test", "chinawok-circunvalacion@grupocomidas.test", "kfc-riopiedras@grupocomidas.test", "dennys-andes@grupocomidas.test"]) {
-    check(`  el seed ya no crea a ${email}`, !(await estado(email)).existe);
+  for (const email of ["centro@grupocomidas.test", "norte@grupocomidas.test", "gerente@grupocomidas.test", "pizzahut-proceres@grupocomidas.test", "kfc-morazan@grupocomidas.test", "dennys-lomas@grupocomidas.test", "chinawok-circunvalacion@grupocomidas.test", "kfc-riopiedras@grupocomidas.test", "dennys-andes@grupocomidas.test", "dennys-pizzahut@grupocomidas.test"]) {
+    check(`  el seed ya no deja a ${email}`, !(await estado(email)).existe);
   }
-  for (const email of ["centro@grupocomidas.test", "gerente@grupocomidas.test", "dennys-lomas@grupocomidas.test"]) {
-    check(`  ${email} existe pero desactivado`, (await estado(email)).activo === false);
+  // «Usuarios» queda con los 6: los de restaurante son exactamente los 4 de
+  // marca (más las dos cuentas que esta prueba crea a mano, `prueba-*@`), cada
+  // uno con TODOS los restaurantes de su marca.
+  const { userRestaurants, restaurants: restaurantsTable } = await import("@/lib/db/schema");
+  const todos = await db.select({ email: userTable.email }).from(userTable);
+  // Fuera las cuentas que crea esta misma prueba antes de llegar aquí
+  // (`prueba-*@` arriba y `multi@` en «RBAC del enunciado»).
+  const delSeedReal = todos.map((u) => u.email).filter((e) => !e.startsWith("prueba-") && e !== "multi@grupocomidas.test").sort();
+  check("en «Usuarios» quedan solo los 6 del seed", JSON.stringify(delSeedReal) === JSON.stringify([...delSeed].sort()), JSON.stringify(delSeedReal));
+  const marcas: [string, string][] = [["pizzahut@grupocomidas.test", "brand_pizza_hut"], ["dennys@grupocomidas.test", "brand_dennys"], ["kfc@grupocomidas.test", "brand_kfc"], ["chinawok@grupocomidas.test", "brand_china_wok"]];
+  for (const [email, brandId] of marcas) {
+    const [u] = await db.select({ id: userTable.id }).from(userTable).where(eq(userTable.email, email));
+    const suyos = u ? (await db.select({ id: userRestaurants.restaurantId }).from(userRestaurants).where(eq(userRestaurants.userId, u.id))).map((r) => r.id).sort() : [];
+    const deLaMarca = (await db.select({ id: restaurantsTable.id }).from(restaurantsTable).where(eq(restaurantsTable.brandId, brandId))).map((r) => r.id).sort();
+    check(`  ${email}: rol restaurante y todos los locales de su marca`, (await conRol(email, "restaurante")) && deLaMarca.length > 0 && JSON.stringify(suyos) === JSON.stringify(deLaMarca), `${suyos} vs ${deLaMarca}`);
   }
+
+  // Marcas: solo las 4 reales, activas, y ninguna «Marca Demo» ni restaurante
+  // de prueba, ni en la base ni en /admin.
+  const { brands: brandsTable } = await import("@/lib/db/schema");
+  // «Marca Verificada» la crea la prueba del catálogo de /admin, más arriba.
+  const marcasActivas = (await db.select({ name: brandsTable.name, active: brandsTable.active }).from(brandsTable)).filter((b) => b.active && b.name !== "Marca Verificada").map((b) => b.name).sort();
+  check("solo quedan activas las 4 marcas reales", JSON.stringify(marcasActivas) === JSON.stringify(["China Wok", "Denny's", "KFC", "Pizza Hut"]), JSON.stringify(marcasActivas));
+  const adminHtml = (await http("GET", "/admin", { cookie: cookies.admin })).text;
+  check("  /admin muestra las 4 y no «Marca Demo»", ["China Wok", "Denny&#x27;s", "KFC", "Pizza Hut"].every((m) => adminHtml.includes(m) || adminHtml.includes(m.replace("&#x27;", "'"))) && !/marca demo|restaurante demo/i.test(adminHtml));
 }
 
 // ---------------------------------------------------------------------------
