@@ -628,9 +628,36 @@ El editor está pensado para usarse con el dedo en una tablet:
 - **Mesas ocupadas:** el nombre del cliente y los minutos que lleva sentado. El
   contador avanza solo, con un único reloj para todo el mapa.
 - **Un pulso corto** cuando una mesa cambia por un evento en vivo.
-- **Barra de herramientas:** Guardar, Deshacer (también con Ctrl+Z), Girar el
-  plano ↺ ↻, Copiar plano, Alejar, Acercar y Ajustar. Al lado, el indicador
-  «En vivo».
+- **Marcador de mesa grande:** el nombre, el marcador de estado, el mesero y
+  el cliente sentado crecen con la mesa (`markScale`, entre 1 y 1,4), y
+  **Ajustar** encuadra las mesas que hay (no la zona entera, que puede ser un
+  lienzo mucho mayor), hasta un 160 %. Todo es proporcional: se ve igual de
+  bien en escritorio, tablet y celular, y la zona de toque sigue cubriendo la
+  mesa y sus sillas.
+- **Una sola ventana de control** (desde el 5 de octubre), arriba del plano:
+  - primera fila: zona, «★ Por defecto», **Guardar**, **Deshacer** (Ctrl+Z) y
+    **Rehacer** (Ctrl+Shift+Z o Ctrl+Y);
+  - herramientas: girar el plano ↺ ↻, **Pegar elemento**, **Copiar plano**,
+    zoom, «Meseros activos», «Ver meseros» y «Repartir meseros», y el
+    indicador «En vivo»;
+  - **elemento seleccionado**, en la misma ventana y solo si hay selección:
+    nombre, puestos, mesero, girar, **Copiar elemento**, **Pegar**,
+    **Duplicar**, **Eliminar** y **Listo**. Ya no hay ventanita aparte al tocar
+    una mesa;
+  - los avisos («Tienes cambios sin guardar», «Guardado…», «Otro dispositivo
+    guardó…») también van dentro.
+
+  Se **pliega** a la primera fila: en un celular (vertical u horizontal)
+  empieza plegada y en tablet o computadora abierta; lo decide CSS, así que no
+  hay parpadeo. Con el panel plegado, tocar una mesa sigue mostrando sus
+  herramientas. En el celular, la paleta de elementos va dentro de
+  «Herramientas».
+- **Copiar y pegar elementos** (Ctrl+C / Ctrl+V o los botones, que funcionan
+  con el dedo): la copia (`lib/layout/clipboard.ts`) tiene un id nuevo, el
+  siguiente nombre de su tipo y las mismas medidas, giro y puestos, y **no**
+  copia relaciones: nace libre, sin cliente, sin reserva y sin mesero. Entra en
+  Deshacer y Rehacer y se guarda como cualquier elemento. El portapapeles
+  sobrevive al cambio de zona.
 
 ### Íconos
 
@@ -1184,7 +1211,7 @@ número) y su **color**. Se cambia de una a otra con **un toque**.
   activos: 2 | 3 | 4»** arriba, y cada mesa teñida del color de su mesero
   con su nombre encima. Debajo, la leyenda: cada mesero con sus mesas y
   cuántas quedan «sin mesero».
-- **Editar zonas** (botón del plano en vivo, o «Repartir mesas entre meseros»
+- **Editar zonas** (botón del plano en vivo, o «Repartir meseros»
   desde el editor, que abre `?meseros=editar`): nombre de la configuración,
   nombre y color de cada mesero, y un **pincel**: se elige un mesero y se
   tocan sus mesas (tocar otra vez se la quita). **«Selección en grupo»**
