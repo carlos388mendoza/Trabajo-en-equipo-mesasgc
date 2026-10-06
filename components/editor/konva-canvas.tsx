@@ -11,9 +11,9 @@
 // estado re-renderizaría el árbol entero 60 veces por segundo. Solo se
 // notifica el porcentaje de zoom al padre, que lo muestra en la barra.
 //
-// El giro del plano (`viewRotation`) es solo de la vista: gira un Group que
-// envuelve todo el lienzo alrededor de su centro. Los elementos no cambian y
-// no se guarda nada (ver README, "Pendiente").
+// El giro del plano (`viewRotation`) gira un Group que envuelve todo el lienzo
+// alrededor de su centro. Los elementos no cambian; el giro se guarda aparte,
+// en `table_layouts.rotation` (ver README, «Giro del plano completo»).
 
 import {
   useCallback,
