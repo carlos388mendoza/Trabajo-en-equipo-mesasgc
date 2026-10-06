@@ -588,6 +588,13 @@ barra lleva su aviso con la unidad («Lun: 12 grupos atendidos»). Los cuatro
 títulos viven **dentro** del bloque con scroll horizontal propio del gráfico,
 así que etiquetarlos no le cuesta ancho a la página (issue #61).
 
+`/analiticas` no tiene scroll horizontal en ningún ancho: en móvil las tarjetas
+se apilan y los filtros van en columna, el gráfico ocupa todo lo disponible (las
+barras no tienen ancho fijo: se reparten el ancho de su día) y solo hace scroll
+propio por dentro por debajo de 440 px, donde 14 días con dos barras dejarían de
+leerse. Las tablas y los bloques de código de la respuesta del asistente se
+desplazan ellos solos. La comprobación está en `npm run verify:browser`.
+
 El asistente (`/api/assistant`) recibe ese resumen para contestar preguntas en
 español. Si se configura `OPENROUTER_API_KEY`, consulta OpenRouter; sin esa
 clave, responde localmente las preguntas comunes sobre espera y volumen. La

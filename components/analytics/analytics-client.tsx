@@ -137,12 +137,12 @@ export function AnalyticsClient() {
       </header>
 
       <form onSubmit={applyFilters} className="mt-6 grid gap-3 rounded-2xl border border-app-border bg-panel p-4 text-panel-text sm:grid-cols-2 lg:grid-cols-[1.15fr_1fr_1fr_auto]">
-        <label className="flex flex-col gap-1.5 text-sm font-medium">
+        <label className="min-w-0 flex flex-col gap-1.5 text-sm font-medium">
           Restaurante
           <select
             value={restaurantId}
             onChange={(event) => setRestaurantId(event.target.value)}
-            className="h-11 rounded-xl border border-app-border bg-panel px-3 text-panel-text outline-none focus:border-accent"
+            className="h-11 w-full rounded-xl border border-app-border bg-panel px-3 text-panel-text outline-none focus:border-accent"
           >
             <option value="">Todos los restaurantes</option>
             {analytics?.restaurantsAvailable.map((restaurant) => (
@@ -150,12 +150,12 @@ export function AnalyticsClient() {
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1.5 text-sm font-medium">
+        <label className="min-w-0 flex flex-col gap-1.5 text-sm font-medium">
           Marca
           <select
             value={brandIdInput}
             onChange={(event) => setBrandIdInput(event.target.value)}
-            className="h-11 rounded-xl border border-app-border bg-panel px-3 text-panel-text outline-none focus:border-accent"
+            className="h-11 w-full rounded-xl border border-app-border bg-panel px-3 text-panel-text outline-none focus:border-accent"
           >
             <option value="">Todas las marcas</option>
             {analytics?.brandsAvailable.map((brand) => (
@@ -171,12 +171,12 @@ export function AnalyticsClient() {
             ))}
           </span>
         </label>
-        <label className="flex flex-col gap-1.5 text-sm font-medium">
+        <label className="min-w-0 flex flex-col gap-1.5 text-sm font-medium">
           Ciudad
           <select
             value={cityInput}
             onChange={(event) => setCityInput(event.target.value)}
-            className="h-11 rounded-xl border border-app-border bg-panel px-3 text-panel-text outline-none focus:border-accent"
+            className="h-11 w-full rounded-xl border border-app-border bg-panel px-3 text-panel-text outline-none focus:border-accent"
           >
             <option value="">Todas las ciudades</option>
             {analytics?.citiesAvailable.map((city) => <option key={city} value={city}>{city}</option>)}
@@ -198,7 +198,7 @@ export function AnalyticsClient() {
         <>
           <section aria-label="Resumen del período" className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {cards.map(({ label, value, detail, Icon }) => (
-              <article key={label} className="rounded-2xl border border-app-border bg-panel p-5 text-panel-text shadow-sm">
+              <article key={label} className="min-w-0 rounded-2xl border border-app-border bg-panel p-5 text-panel-text shadow-sm">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-medium text-panel-muted">{label}</span>
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent/10 text-accent">
@@ -212,7 +212,10 @@ export function AnalyticsClient() {
           </section>
 
           <div className="mt-5 grid gap-5 lg:grid-cols-[1.35fr_.85fr]">
-            <section className="rounded-2xl border border-app-border bg-panel p-5 text-panel-text shadow-sm sm:p-6">
+            {/* min-w-0: sin él, cada tarjeta no puede bajar de su min-content
+                (el gráfico mide 680–856 px por dentro) y la rejilla empuja la
+                página fuera de pantalla en pantallas estrechas (issue #61). */}
+            <section className="min-w-0 rounded-2xl border border-app-border bg-panel p-5 text-panel-text shadow-sm sm:p-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="font-bold">Volumen y tiempo de espera</h2>
@@ -227,7 +230,7 @@ export function AnalyticsClient() {
               <p className="mt-9 rounded-xl bg-accent/10 px-4 py-3 text-sm text-panel-text">{analytics.summary}</p>
             </section>
 
-            <section className="rounded-2xl border border-app-border bg-panel p-5 text-panel-text shadow-sm sm:p-6">
+            <section className="min-w-0 rounded-2xl border border-app-border bg-panel p-5 text-panel-text shadow-sm sm:p-6">
               <div className="flex items-center gap-2">
                 <Building2 aria-hidden size={19} className="text-accent" />
                 <h2 className="font-bold">Comparación por restaurante</h2>
@@ -267,7 +270,7 @@ export function AnalyticsClient() {
             {analytics.topCustomers.length ? (
               <ol className="mt-4 grid gap-2 sm:grid-cols-2">
                 {analytics.topCustomers.map((customer, index) => (
-                  <li key={customer.name} className="flex items-center justify-between gap-3 rounded-xl border border-app-border px-3 py-2.5 text-sm">
+                  <li key={customer.name} className="min-w-0 flex items-center justify-between gap-3 rounded-xl border border-app-border px-3 py-2.5 text-sm">
                     <span className="min-w-0 truncate"><span className="mr-2 text-panel-muted">{index + 1}.</span>{customer.name}</span>
                     <span className="shrink-0 font-semibold">{customer.groups} {customer.groups === 1 ? "grupo" : "grupos"}</span>
                   </li>
@@ -285,7 +288,7 @@ export function AnalyticsClient() {
             {analytics.waiters.length ? (
               <ol className="mt-4 grid gap-2 sm:grid-cols-2">
                 {analytics.waiters.map((waiter) => (
-                  <li key={`${waiter.restaurantId}-${waiter.name}`} className="flex items-center justify-between gap-3 rounded-xl border border-app-border px-3 py-2.5 text-sm">
+                  <li key={`${waiter.restaurantId}-${waiter.name}`} className="min-w-0 flex items-center justify-between gap-3 rounded-xl border border-app-border px-3 py-2.5 text-sm">
                     <span className="min-w-0 truncate">
                       {waiter.name}
                       <span className="ml-1.5 text-xs text-panel-muted">{waiter.restaurantName}</span>
@@ -302,7 +305,10 @@ export function AnalyticsClient() {
 
           <section className="mt-5 rounded-2xl border border-app-border bg-panel p-5 text-panel-text shadow-sm sm:p-6">
             <div className="grid gap-5 md:grid-cols-[.8fr_1.2fr] md:items-start">
-              <div>
+              {/* min-w-0 en las dos columnas: la respuesta del asistente puede
+                  llevar tablas anchas y, sin él, la rejilla no bajaría de su
+                  min-content y ensancharía la página (issue #61). */}
+              <div className="min-w-0">
                 <span className="inline-flex items-center gap-2 rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
                   <Sparkles aria-hidden size={14} /> ASISTENTE IA
                 </span>
@@ -313,7 +319,7 @@ export function AnalyticsClient() {
                   <p className="mt-2 text-sm leading-6">{analytics.summary}</p>
                 </div>
               </div>
-              <div>
+              <div className="min-w-0">
                 <form onSubmit={ask} className="flex flex-col gap-2 sm:flex-row">
                   <input
                     value={question}
@@ -360,15 +366,20 @@ export function AnalyticsClient() {
  * Los cuatro títulos de los ejes («Clientes (grupos)» a la izquierda,
  * «Minutos de espera» a la derecha, «Día» debajo, y el máximo de referencia
  * de cada eje Y) van DENTRO del bloque con scroll horizontal propio, así que
- * no le cuestan ni un píxel de ancho a la página (issue #61): el gráfico
- * sigue midiendo 680 px y se desplaza solo en pantallas estrechas.
+ * no le cuestan ni un píxel de ancho a la página (issue #61).
+ *
+ * Las barras no tienen ancho fijo: crecen o encogen con la columna que les
+ * toca, así el gráfico ocupa todo el sitio disponible y solo hace scroll
+ * propio por debajo de 440 px, donde 14 días con dos barras dejarían de
+ * leerse. Ese suelo es lo único que queda con ancho mínimo y solo se nota en
+ * móviles estrechos; la página nunca se desborda.
  */
 function DailyChart({ daily }: { daily: DailyStat[] }) {
   const maxGroups = Math.max(1, ...daily.map((day) => day.groups));
   const maxMinutes = Math.max(1, ...daily.map((day) => day.minutes));
   return (
     <div className="mt-6 overflow-x-auto pb-1">
-      <div className="min-w-[680px]">
+      <div className="min-w-[440px]">
         {/* Títulos de los dos ejes Y, con el valor más alto de cada escala. */}
         <div className="flex items-baseline justify-between gap-4 pb-2 text-xs font-semibold text-app-muted">
           <span className="inline-flex items-baseline gap-1.5">
@@ -382,23 +393,24 @@ function DailyChart({ daily }: { daily: DailyStat[] }) {
         </div>
 
         {/* El área de las barras: `border-l` es el eje Y izquierdo y
-            `border-b` el eje X. Cada barra lleva su aviso con las unidades. */}
-        <div className="flex h-52 items-end justify-between gap-2 border-b border-l border-app-border px-3">
+            `border-b` el eje X. Cada barra lleva su aviso con las unidades y
+            mide lo que toca en su columna (sin ancho fijo). */}
+        <div className="flex h-52 items-end justify-between gap-1 border-b border-l border-app-border px-3">
           {daily.map((day) => (
             <div key={day.date} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end">
-              <div className="flex h-[85%] items-end gap-1">
+              <div className="flex h-[85%] w-full items-end gap-0.5 sm:gap-1">
                 <div
                   role="img"
                   aria-label={`${day.day}: ${day.groups} ${day.groups === 1 ? "grupo" : "grupos"} atendidos`}
                   title={`${day.day}: ${day.groups} ${day.groups === 1 ? "grupo" : "grupos"} atendidos`}
-                  className="w-4 rounded-t-md bg-accent sm:w-6"
+                  className="min-w-0 flex-1 rounded-t-md bg-accent"
                   style={{ height: `${Math.max(day.groups ? 5 : 0, day.groups / maxGroups * 100)}%` }}
                 />
                 <div
                   role="img"
                   aria-label={`${day.day}: ${day.minutes} ${day.minutes === 1 ? "minuto" : "minutos"} de espera promedio`}
                   title={`${day.day}: ${day.minutes} ${day.minutes === 1 ? "minuto" : "minutos"} de espera promedio`}
-                  className="w-4 rounded-t-md bg-estado-ocupada sm:w-6"
+                  className="min-w-0 flex-1 rounded-t-md bg-estado-ocupada"
                   style={{ height: `${Math.max(day.minutes ? 5 : 0, day.minutes / maxMinutes * 100)}%` }}
                 />
               </div>
@@ -408,7 +420,7 @@ function DailyChart({ daily }: { daily: DailyStat[] }) {
 
         {/* Los días, en columnas con el mismo ancho que las barras de
             arriba (`border-l` transparente para que cuadren al píxel). */}
-        <div className="flex justify-between gap-2 border-l border-transparent px-3 pt-2">
+        <div className="flex justify-between gap-1 border-l border-transparent px-3 pt-2">
           {daily.map((day) => (
             <span key={day.date} className="min-w-0 flex-1 text-center text-xs text-app-muted">{day.day}</span>
           ))}
