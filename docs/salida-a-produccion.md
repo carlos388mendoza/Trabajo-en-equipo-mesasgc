@@ -316,14 +316,22 @@ marcadas con un doblez) o el botón **Abanico**. Las cartas de todos los que
 esperan se abren como una mano de naipes, con el número, las personas y los
 minutos de cada uno. **Toca una** para pasarla al frente del montón (solo en
 esa tablet: el orden de la fila no cambia). Para cerrar: toca fuera o Esc. Si
-esperan más de 7, el botón **+N · Ver todas las cartas** abre la lista
-completa.
+esperan más de 7, el botón **+N · Ver clientes** abre la lista completa.
 
-**Ver todas las cartas:** el botón de arriba abre todas las cartas del
-restaurante: en espera, listas y ausentes. Por defecto muestra las de **hoy**;
-**Últimos 7 días** muestra la semana. Filtra por estado o busca por nombre
-(sin importar tildes). Cada carta dice a qué hora llegó, cuánto esperó y
-quién la resolvió.
+**Ver clientes:** el botón de arriba (antes se llamaba «Ver todas las cartas»)
+abre todos los clientes del restaurante: en espera, listos, ausentes y
+sentados. Por defecto muestra los de **hoy**; **Últimos 7 días** muestra la
+semana. Filtra por estado o busca por nombre (sin importar tildes). Cada
+cliente dice a qué hora llegó, cuánto esperó y quién lo resolvió.
+
+**Colores de los meseros:** arriba de la lista sale **MESEROS** con un punto de
+color y el nombre de cada mesero activo (los mismos colores del plano en
+vivo). Cada cliente sentado lleva una franja de ese color y dice «Mesa 4 ·
+Lo atiende **Luis**»; los que siguen esperando dicen «Sin mesero». **Toca un
+mesero** para ver solo sus clientes; tócalo otra vez para volver a verlos
+todos. Si cambian los meseros con **[−] [+]** (aquí o en otra tablet), los
+colores se ponen al día solos. Si el restaurante no tiene zonas de meseros,
+no sale la fila de MESEROS.
 
 Las cartas de los **datos de demostración** llevan la etiqueta **«Demo»**: no
 son clientes de verdad.
@@ -331,7 +339,7 @@ son clientes de verdad.
 El panel **no tiene X**: se mueve arrastrando su parte de arriba (la rayita,
 el título o los filtros). Arrastrado hacia abajo se queda a media pantalla;
 hacia arriba vuelve a ocupar casi toda. **Bajarlo del todo lo cierra** (también
-Esc o tocar fuera). La lista de cartas se desplaza con el dedo como siempre.
+Esc o tocar fuera). La lista de clientes se desplaza con el dedo como siempre.
 Desde ahí:
 
 - una carta **en espera** se marca **Listo** o **Ausente**;
@@ -345,9 +353,9 @@ Desde ahí:
 **Si te equivocaste:** pulsa **Deshacer** (la flecha curva) o **Ctrl+Z**.
 Deshace solo la **última** acción del restaurante, en cualquier tablet, y
 hay que hacerlo enseguida. Si pasó mucho rato o alguien hizo otra cosa
-después, ya no se puede: búscala en **Ver todas las cartas** y corrígela ahí.
+después, ya no se puede: búscala en **Ver clientes** y corrígela ahí.
 
-**Sentar y liberar mesa:** en **Ver todas las cartas**, una carta en espera o
+**Sentar y liberar mesa:** en **Ver clientes**, una carta en espera o
 lista tiene **Sentar**: elige una mesa libre (por zona, con sus lugares y el
 **mesero** que la atiende, con su color). Al sentar, el aviso dice quién lo
 atiende: «Ana se sentó en Mesa 4. **Lo atiende Luis.**». Una carta sentada

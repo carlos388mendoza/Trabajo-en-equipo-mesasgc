@@ -1,4 +1,4 @@
-// «Ver todas las cartas» del modo rápido: todos los clientes de ESTE
+// «Ver clientes» del modo rápido: todos los clientes de ESTE
 // restaurante en un rango (`?rango=hoy` o `?rango=7dias`), con quién los
 // resolvió. Pide "rapido:ver": el admin, en cualquiera; el host, en los suyos;
 // analitica no, porque no opera. Sin sesión, 401; sin permiso, 403.
@@ -28,6 +28,6 @@ export async function GET(request: Request, { params }: Context) {
     return NextResponse.json({ entries: await listWaitlistCards(id, parsed.data.rango) });
   } catch (error) {
     console.error("Failed to load waitlist cards", error);
-    return NextResponse.json({ error: "No se pudieron cargar las cartas." }, { status: 500 });
+    return NextResponse.json({ error: "No se pudieron cargar los clientes." }, { status: 500 });
   }
 }

@@ -92,6 +92,7 @@ PR #66).
 | Editor de mesas | Plano con Konva para tablet: arrastrar, redimensionar, girar elementos, deshacer y copiar a otro restaurante. | `components/editor/`, README §8–9, §12 | #3, #7 |
 | Editor fluido en tablet y celular | 57-60 FPS con la CPU 4× más lenta al arrastrar, mover el plano y pellizcar; panel lateral o barra abajo que no tapa el plano; mesas nuevas dentro del recuadro y nada se sale de la zona. | `components/editor/`, `lib/layout/placement.ts`, README §12 | `perf/editor-fluido` |
 | Plano en vivo a pantalla completa en la tablet | Con la tablet en horizontal (Opera), el plano ocupa toda la pantalla sin cabecera ni menú, se encuadra solo (también al cambiar de tamaño) y lleva controles flotantes: meseros [−] N [+], **Lista** (el modo sencillo en un panel lateral) y volver a la vista normal. En vertical, celular y computadora no cambia nada. Solo el propio sitio puede meter la app en un iframe. | `components/map/live-plan.tsx`, `lib/layout/immersive.ts`, README §16 | `feat/plano-inmersivo` |
+| «Ver clientes» y colores de los meseros | «Ver todas las cartas» del modo sencillo pasa a llamarse **Ver clientes**. Arriba, la leyenda de los meseros activos (punto de color y nombre, los colores del plano en vivo); tocar uno filtra sus clientes. Cada cliente sentado lleva la franja y el nombre de su mesero; los demás, «Sin mesero». Se pone al día en vivo con el [−] [+] de los meseros. | `components/quick-mode/all-cards-view.tsx`, `lib/waiters/legend.ts`, README §11 | `feat/ver-clientes-meseros` |
 | Giro guardado y estructura | El giro del plano completo se guarda (`table_layouts.rotation`), se avisa en vivo, se copia y lo respetan el plano en vivo y el minimapa. Tipos barra, puerta y pared. | `components/editor/`, `lib/layout/`, README §12 | #14 |
 | Tiempo real | Next y Socket.IO en un solo servidor (`server.ts`), con una room por restaurante y la sala `overview` del mapa. | `lib/realtime/`, README §10, §16 | #5, #11 |
 | Conflictos | Asignación de mesa con bloqueo optimista: gana el primero y el otro recibe «Esta mesa ya fue asignada». | `lib/tables/assign.ts` | #5 |
@@ -165,7 +166,7 @@ cubre.
 | Rotación de configuraciones guardadas (galería) | Sí | Varias zonas por restaurante: selector «Zona» del editor y pestañas del plano en vivo; giro del plano completo guardado. README §9 y §12. |
 | Socket.IO con una *room* por restaurante | Sí | Cada restaurante oye solo lo suyo; la sala `overview` lleva solo contadores. `verify:realtime` y `verify:auth`. |
 | Conflictos: bloqueo optimista, el primero gana y al segundo «Esta mesa ya fue asignada» | Sí | Dos tablets sentando en la misma mesa. `lib/tables/assign.ts`; `verify:realtime` (también con la cola sin conexión). |
-| Modo rápido de *check-in*/*check-out* con tarjetas deslizables (listo / ausente) | Sí | Modo sencillo: deslizar la carta o los botones; «Ver todas las cartas». README §11. |
+| Modo rápido de *check-in*/*check-out* con tarjetas deslizables (listo / ausente) | Sí | Modo sencillo: deslizar la carta o los botones; «Ver clientes» (antes «Ver todas las cartas»), con los colores de los meseros. README §11. |
 | Historial de acciones con Deshacer (Ctrl+Z) | Sí | Botón Deshacer y Ctrl+Z en el modo sencillo y en el editor. `verify:realtime`. |
 | Estadísticas: espera promedio, día más rápido y más lento, top de clientes | Sí | `/analiticas`. El gráfico «Volumen y tiempo de espera» lleva sus ejes etiquetados («Clientes (grupos)» a la izquierda, «Minutos de espera» a la derecha, «Día» debajo), con el máximo de cada escala, leyenda de series y avisos de barra con la unidad. La página no tiene scroll horizontal en 320, 375, 414, 768, 1024 ni escritorio (`verify:browser`, 6 anchos × claro/oscuro). `verify:auth` (por rol y con filtros) y `verify:browser`. |
 | Asistente de IA en lenguaje natural sobre las estadísticas | Sí | `/analiticas` → «Pregunta sobre tu servicio». Con OpenRouter y respuestas locales sin clave; nombres con alias. La respuesta se pinta como Markdown (`react-markdown` + `remark-gfm`, sin `rehype-raw`: el HTML crudo queda como texto y no se ejecuta). `verify:auth` y `verify:markdown`. |
@@ -184,7 +185,7 @@ cubre.
 
 Pedidos de la dirección además del enunciado: modo sencillo sin conexión
 (README §11, «Modo sin conexión»), borrar un cliente con Aceptar/Cancelar y
-deshacer, y el panel «Ver todas las cartas» arrastrable.
+deshacer, y el panel «Ver clientes» (antes «Ver todas las cartas») arrastrable.
 
 ## Ramas y PR
 
@@ -487,7 +488,13 @@ completa», y el manual del host. Probado en 1024×768 y 1180×820 (inmersivo),
 768×1024, 375×812, 812×375 y computadora (vista normal), en claro y oscuro:
 reajuste al cambiar el alto de 768 a 800 px, sin scroll, meseros [−] [+],
 sentar y liberar desde el panel con el plano al día, «Vista normal», girar la
-tablet. Después: «Ver clientes» y colores de meseros en el modo sencillo.
+tablet.
+
+**Hecho:** «Ver clientes» (antes «Ver todas las cartas») con la leyenda y los
+colores de los meseros (rama `feat/ver-clientes-meseros`): README §11 y el
+manual del host. Probado en 375×812, 768×1024, 1024×768 y 1440×900, claro y
+oscuro: leyenda, franja del color del mesero, «Sin mesero», filtro por mesero
+y la leyenda que cambia sola con el [+] / [−] de otra tablet.
 
 **Terminado:** el editor de mesas fluido en tablet y celular, en la rama
 `perf/editor-fluido` (sale de `testing` y reúne lo de `perf/editor-tactil`

@@ -10,7 +10,7 @@
 // devuelve el foco a donde estaba: en una tablet con teclado, Ctrl+Z y las
 // flechas siguen funcionando después.
 //
-// Con `draggable` («Ver todas las cartas») es SIEMPRE un panel desde abajo,
+// Con `draggable` («Ver clientes») es SIEMPRE un panel desde abajo,
 // también en computadora, y no tiene botón de cerrar: se arrastra desde su
 // cabecera hacia arriba o hacia abajo y se queda en una de dos alturas fijas
 // (alta o media); bajarlo del todo, o lanzarlo hacia abajo, lo cierra. Solo la
@@ -19,7 +19,7 @@
 // las flechas, y Esc cierra.
 //
 // Se pinta en un portal sobre `body`: así una ventana abierta desde dentro de
-// otra (confirmar un borrado desde «Ver todas las cartas») no queda atrapada
+// otra (confirmar un borrado desde «Ver clientes») no queda atrapada
 // en el `transform` del panel de debajo.
 
 import {

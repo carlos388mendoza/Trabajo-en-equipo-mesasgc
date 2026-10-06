@@ -525,7 +525,7 @@ antes (Socket.IO, avisos a la room, validaciones del servidor).
   reintenta.
 - **Estados:** 🟢 Conectado, 🟠 Sincronizando…, 🔴 Sin conexión, «N cambios
   pendientes», 🟢 Sincronizado (`sync-status.tsx`).
-- **Sentar y liberar** desde «Ver todas las cartas» (`seat-picker.tsx`, con
+- **Sentar y liberar** desde «Ver clientes» (`seat-picker.tsx`, con
   `GET /api/restaurante/[id]/mesas`, permiso `rapido:ver`; el socket exige
   `mesas:asignar`).
 - **Pruebas:** `verify:realtime` (reenvíos, conflictos entre dispositivos,
@@ -534,7 +534,7 @@ antes (Socket.IO, avisos a la room, validaciones del servidor).
   red, acciones, cola en IndexedDB, recarga sin red, conflicto, reconexión,
   sin duplicados y tiempo real.
 
-### Las cartas: agregar, abanico y «Ver todas las cartas»
+### Las cartas: agregar, abanico y «Ver clientes»
 
 Desde el PR `feat/cartas-baraja` el montón ocupa todo el ancho y el
 formulario ya no está al lado (`components/quick-mode/`):
@@ -557,11 +557,13 @@ formulario ya no está al lado (`components/quick-mode/`):
   los quita a todos en una transacción, y no quita a ninguno si alguno ya
   cambió.
 - **Abanico** (`card-fan.tsx`): hasta 7 cartas giradas alrededor de un punto
-  bajo la mano; con más, «+N» abre «Ver todas las cartas». Solo anima
+  bajo la mano; con más, «+N · Ver clientes» abre la lista. Solo anima
   `rotate`, `scale` y `opacity`, y `MotionConfig reducedMotion="user"` lo
   respeta. Elegir una carta la pone arriba del montón **en esa tablet**; el
   orden de la fila no cambia.
-- **Ver todas las cartas** (`all-cards-view.tsx`): `GET
+- **Ver clientes** (`all-cards-view.tsx`; se llamaba «Ver todas las cartas»,
+  y por dentro sigue con los nombres de entonces: `AllCardsView`, la API
+  `/cartas`): `GET
   /api/restaurante/[id]/cartas?rango=hoy|7dias` (`rapido:ver`: el host, sus
   restaurantes; el admin, todos; analitica, 403). Las que siguen esperando
   salen siempre. Filtros por estado y buscador sin tildes. Una en espera se
@@ -569,6 +571,26 @@ formulario ya no está al lado (`components/quick-mode/`):
   `waitlist:reopen` (conserva su hora de llegada y su lugar; se puede
   deshacer). Un sentado no vuelve: tiene mesa. Se actualiza con los
   `waitlist:changed` de la room.
+- **Colores de los meseros en «Ver clientes».** Arriba de la lista, la
+  leyenda de la configuración de meseros activa (los mismos que cuenta
+  «Meseros activos: [−] N [+]»): un punto de color y el nombre de cada uno.
+  Tocar un mesero deja solo sus clientes; tocarlo otra vez lo quita. Cada
+  cliente sentado lleva una franja a la izquierda y «Lo atiende Ana» con el
+  color de su mesero, el que se apuntó al sentarlo (`waiter_name`); los demás,
+  «Sin mesero» en gris. Si el restaurante no tiene zonas de meseros, no hay
+  leyenda.
+  - La leyenda sale de las mesas que el modo sencillo ya tiene, con el mesero y
+    el color de la configuración activa (`waiterLegend` y `waiterColorFor`
+    en `lib/waiters/legend.ts`, funciones puras). Por eso los colores son los
+    mismos del plano en vivo y funciona también sin conexión.
+  - En vivo: el modo sencillo ahora escucha `waiters:changed` y vuelve a leer
+    las mesas, así que el [−] [+] de otra tablet cambia la leyenda y los
+    colores sola. Al sentar desde otra tablet, el aviso `table:assigned` trae
+    el mesero y el cliente sale ya con su color.
+  - El nombre va siempre escrito: el color no es lo único que lo dice.
+  - Pruebas: `verify:editor` (la leyenda: sin zonas, orden, nombres repetidos,
+    mesero que ya no está) y `verify:realtime` (con la base: leyenda = meseros
+    de la activa con sus colores, y se pone al día al pasar de 2 a 3 meseros).
 - **Migración `0006`** (solo aditiva): `waitlist_entries.resolved_at` y
   `resolved_by_user_id` (sin FK, como `seated_by_user_id`), para «esperó 12
   minutos, la resolvió Ana». Volver a la espera las vacía, junto con
@@ -1351,8 +1373,9 @@ número) y su **color**. Se cambia de una a otra con **un toque**.
   repartirlas. El reparto se edita en el plano en vivo a propósito: allí un
   toque no mueve la mesa.
 - **Modo sencillo**: al **sentar**, cada mesa del selector dice su mesero, y
-  el aviso dice «Ana se sentó en Mesa 4. **Lo atiende Luis.**». En «Ver todas
-  las cartas», los sentados dicen quién los atiende.
+  el aviso dice «Ana se sentó en Mesa 4. **Lo atiende Luis.**». En «Ver
+  clientes», los sentados dicen quién los atiende, con el color de su mesero,
+  y una leyenda arriba deja filtrar por mesero.
 - **Estadísticas**: «Clientes atendidos por mesero» (grupos y personas de los
   últimos 14 días) y el asistente contesta «¿cuántos clientes atendió cada
   mesero?». Hacia OpenRouter los meseros viajan con alias («Mesero R1»…).
