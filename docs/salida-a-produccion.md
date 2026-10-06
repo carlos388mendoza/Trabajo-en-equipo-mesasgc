@@ -417,6 +417,29 @@ Cambia de sitio según cómo tengas el aparato:
 - Nada se guarda hasta pulsar **Guardar** (después dice «Guardado»). Una mesa
   con un cliente sentado no se puede eliminar.
 
+**Ver el plano en grande (tablet con Opera)**
+
+**Gira la tablet a horizontal y activa la pantalla completa de Opera para ver
+el plano en grande.**
+
+- Abre **Plano en vivo** y pon la tablet acostada: el plano ocupa toda la
+  pantalla, sin la barra de arriba ni el menú, y se ajusta solo para que se
+  vean todas las mesas.
+- La pantalla completa se activa desde el menú de Opera. Si Opera entra o sale
+  de pantalla completa, o asoma su barra, el plano se reacomoda solo.
+- Arriba quedan unos botones pequeños, sin tapar las mesas:
+  - el nombre del restaurante, «En vivo» y las zonas (Comedor principal,
+    Terraza…);
+  - **[−] 3 meseros [+]** para cambiar cuántos meseros hay;
+  - **Lista**: abre a la derecha la lista de espera (el mismo modo sencillo)
+    para agregar, avisar, sentar y liberar sin salir del plano. La **X** la
+    cierra;
+  - el botón de **contraer** (dos flechas hacia dentro) vuelve a la vista
+    normal. Desde la vista normal, **Plano en grande** vuelve a pantalla
+    completa.
+- Al poner la tablet de pie vuelve sola a la vista normal. En el celular y en
+  la computadora el plano se ve como siempre.
+
 **No compartas la contraseña fuera del equipo del piloto.** Si alguien nuevo
 necesita entrar, el administrador le crea su propio usuario.
 
