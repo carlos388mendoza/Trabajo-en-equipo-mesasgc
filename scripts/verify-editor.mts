@@ -1304,6 +1304,71 @@ section("Copiar y pegar elementos");
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Colocación dentro del recuadro y límites de la zona
+// ---------------------------------------------------------------------------
+
+section("Colocación dentro del recuadro y límites");
+
+{
+  const { placeInView, clampToZone, occupiedBox, halfExtent } = await import("@/lib/layout/placement");
+  const { pastedCopy } = await import("@/lib/layout/clipboard");
+  const zone = { width: 1200, height: 800 };
+  const mesa = { width: 80, height: 80, rotation: 0 };
+  const dentro = (b: { left: number; top: number; right: number; bottom: number }, v: { left: number; top: number; right: number; bottom: number }) =>
+    b.left >= v.left - 0.5 && b.top >= v.top - 0.5 && b.right <= v.right + 0.5 && b.bottom <= v.bottom + 0.5;
+  const solapan = (a: { left: number; top: number; right: number; bottom: number }, b: { left: number; top: number; right: number; bottom: number }) =>
+    a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+
+  // 1. En el centro de lo que se ve, si está libre.
+  const visible = { left: 300, top: 200, right: 700, bottom: 500 };
+  const p1 = placeInView(mesa, { x: 500, y: 350 }, visible, zone, []);
+  check("una mesa nueva cae en el centro de lo que se ve", p1.x === 460 && p1.y === 310, JSON.stringify(p1));
+
+  // 2. Si ahí ya hay una, en el hueco libre más cercano, sin solaparse y visible.
+  const ocupada = { ...mesa, x: 460, y: 310 };
+  const p2 = placeInView(mesa, { x: 500, y: 350 }, visible, zone, [ocupada]);
+  const caja2 = occupiedBox({ ...mesa, ...p2 });
+  check("si el centro está ocupado, busca el hueco libre más cercano", !solapan(caja2, occupiedBox(ocupada)) && dentro(caja2, visible), JSON.stringify(p2));
+  check("  y cerca (no en la otra punta)", Math.hypot(p2.x - 460, p2.y - 310) < 150, JSON.stringify(p2));
+
+  // 3. Lleno de mesas alrededor: aun así queda dentro de lo visible.
+  const llenas = [];
+  for (let x = 300; x < 700; x += 90) for (let y = 200; y < 500; y += 90) llenas.push({ ...mesa, x, y });
+  const p3 = placeInView(mesa, { x: 500, y: 350 }, visible, zone, llenas);
+  check("sin ningún hueco libre, la mesa sigue dentro de lo visible", dentro(occupiedBox({ ...mesa, ...p3 }), visible), JSON.stringify(p3));
+
+  // 4. Lo visible se recorta a la zona: con el plano desplazado, nunca fuera.
+  const fuera = { left: 1100, top: 700, right: 1500, bottom: 1000 };
+  const p4 = placeInView(mesa, { x: 1300, y: 850 }, fuera, zone, []);
+  check("con el plano desplazado, la mesa nueva queda dentro de la zona", dentro(occupiedBox({ ...mesa, ...p4 }), { left: 0, top: 0, right: 1200, bottom: 800 }), JSON.stringify(p4));
+
+  // 5. Mucho zoom (se ve menos que una mesa): queda centrada en lo visible.
+  const diminuto = { left: 500, top: 300, right: 540, bottom: 330 };
+  const p5 = placeInView(mesa, { x: 520, y: 315 }, diminuto, zone, []);
+  check("con mucho zoom, la mesa nueva queda centrada en la pantalla", p5.x + 40 === 520 && p5.y + 40 === 315, JSON.stringify(p5));
+
+  // 6. Límites al arrastrar (lo que aplica cada mesa al moverse) y al girar.
+  check("arrastrada más allá del borde, vuelve dentro", JSON.stringify(clampToZone({ ...mesa, x: 1190, y: -30 }, zone)) === JSON.stringify({ x: 1120, y: 0 }));
+  const larga = { width: 200, height: 60, rotation: 90, x: 50, y: 400 };
+  const { hx, hy } = halfExtent(larga);
+  check("una mesa larga girada 90° ocupa alto × ancho", Math.round(hx) === 30 && Math.round(hy) === 100);
+  const girada = clampToZone({ ...larga, y: 760 }, zone);
+  check("  y girada junto al borde no se sale de la zona", dentro(occupiedBox({ ...larga, ...girada }), { left: 0, top: 0, right: 1200, bottom: 800 }), JSON.stringify(girada));
+  const g45 = clampToZone({ width: 80, height: 80, rotation: 45, x: 1150, y: 760 }, zone);
+  check("  también a 45°", dentro(occupiedBox({ width: 80, height: 80, rotation: 45, ...g45 }), { left: 0, top: 0, right: 1200, bottom: 800 }), JSON.stringify(g45));
+
+  // 7. Pegar: junto al original y dentro de lo que se ve, sin pisarlo.
+  const original = { id: "o", elementTypeId: "t", label: "Mesa 1", x: 640, y: 440, width: 80, height: 80, rotation: 0, capacity: 4, status: "ocupada", currentEntryId: "c", occupantName: "Ana", seatedAt: 1 };
+  const copia = pastedCopy(original, { id: "c2", typeKey: "mesa-sillas", labelsOfType: ["Mesa 1"], zoneWidth: 1200, zoneHeight: 800 });
+  const p7 = placeInView(copia, { x: copia.x + 40, y: copia.y + 40 }, visible, zone, [original]);
+  const caja7 = occupiedBox({ ...copia, ...p7 });
+  check("pegar deja la copia dentro de lo que se ve", dentro(caja7, visible), JSON.stringify(p7));
+  check("  junto al original y sin pisarlo", !solapan(caja7, occupiedBox(original)) && Math.hypot(p7.x - original.x, p7.y - original.y) < 200, JSON.stringify(p7));
+}
+
+// ---------------------------------------------------------------------------
+
 // El cliente de libSQL sigue con la conexión abierta (el proxy de `lib/db` es
 // perezoso y no se cierra solo), así que en Windows el fichero está pillado y
 // `rmSync` da EPERM. No es un fallo del test: se borra al principio de la
