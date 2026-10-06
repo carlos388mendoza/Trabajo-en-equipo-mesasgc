@@ -479,10 +479,10 @@ check(
 }
 
 // ---------------------------------------------------------------------------
-// «Ver todas las cartas»: quién resolvió, volver a la espera y deshacerlo
+// «Ver clientes»: quién resolvió, volver a la espera y deshacerlo
 // ---------------------------------------------------------------------------
 
-section("Ver todas las cartas: volver a la espera");
+section("Ver clientes: volver a la espera");
 
 {
   // Filas propias de esta sección, en REST; se borran al final para no mover
@@ -618,7 +618,7 @@ section("Ver todas las cartas: volver a la espera");
 }
 
 // ---------------------------------------------------------------------------
-// «Ver todas las cartas»: eliminar un cliente de la fila
+// «Ver clientes»: eliminar un cliente de la fila
 // ---------------------------------------------------------------------------
 
 section("Eliminar un cliente de la lista");
@@ -1278,6 +1278,7 @@ section("Zonas de meseros: quién atiende al sentar, y el cambio de configuraci�
 {
   const { activateWaiterConfig, createWaiterConfig, listWaiterConfigs, saveWaiterConfig } = await import("@/lib/waiters/configs");
   const { listSeatableTables } = await import("@/lib/tables/list");
+  const { waiterColorFor, waiterLegend } = await import("@/lib/waiters/legend");
   const { waiterConfigs } = await import("@/lib/db/schema");
   const { and } = await import("drizzle-orm");
 
@@ -1289,6 +1290,7 @@ section("Zonas de meseros: quién atiende al sentar, y el cambio de configuraci�
 
   const sinConfig = await getRestaurantCounters(REST);
   check("sin configuración, los contadores no traen meseros", sinConfig.waitersKey === null);
+  check("sin configuración, «Ver clientes» no tiene leyenda de meseros", waiterLegend(await listSeatableTables(REST)).length === 0);
 
   const dos = await createWaiterConfig({ restaurantId: REST, waiterCount: 2 });
   const tres = await createWaiterConfig({ restaurantId: REST, waiterCount: 3 });
@@ -1300,6 +1302,16 @@ section("Zonas de meseros: quién atiende al sentar, y el cambio de configuraci�
 
     const libres = (await listSeatableTables(REST)).filter((t) => t.id.startsWith("w-"));
     check("cada mesa trae el mesero de la configuración activa", libres.every((t) => t.waiterName?.startsWith("Mesero ") && t.waiterColor?.startsWith("#")), JSON.stringify(libres.map((t) => t.waiterName)));
+
+    // «Ver clientes»: la leyenda son los meseros de la activa, con sus colores
+    // (los mismos del plano en vivo) y en el orden de sus posiciones.
+    const zonasDos = [...dos.config.zones].sort((a, b) => a.position - b.position);
+    const leyendaDos = waiterLegend(await listSeatableTables(REST));
+    check(
+      "leyenda de «Ver clientes» = meseros de la configuración activa, con su color",
+      JSON.stringify(leyendaDos) === JSON.stringify(zonasDos.map((z) => ({ name: z.waiterName, color: z.color }))),
+      JSON.stringify(leyendaDos),
+    );
 
     const avisos = counter(hostA, "table:assigned");
     const mesaA = libres[0];
@@ -1331,6 +1343,18 @@ section("Zonas de meseros: quién atiende al sentar, y el cambio de configuraci�
     check("  el siguiente cliente se apunta al mesero de la configuración nueva", ackC.ok && ackC.waiterName === zonaNueva?.waiterName, `${ackC.waiterName} vs ${zonaNueva?.waiterName}`);
     const [filaA2] = await db.select({ waiterName: waitlistEntries.waiterName }).from(waitlistEntries).where(eq(waitlistEntries.id, "mesero-a"));
     check("  y el que ya estaba sentado conserva el suyo", filaA2?.waiterName === mesaA.waiterName);
+
+    // Tras «waiters:changed» el modo sencillo vuelve a leer las mesas: la
+    // leyenda y los colores ya son los de la configuración nueva.
+    const zonasTres = [...tres.config.zones].sort((a, b) => a.position - b.position);
+    const leyendaTres = waiterLegend(await listSeatableTables(REST));
+    check(
+      "con 3 meseros, la leyenda se pone al día (3 meseros y sus colores)",
+      JSON.stringify(leyendaTres) === JSON.stringify(zonasTres.map((z) => ({ name: z.waiterName, color: z.color }))),
+      JSON.stringify(leyendaTres),
+    );
+    check("  el cliente nuevo sale del color de su mesero", waiterColorFor(leyendaTres, ackC.ok ? ackC.waiterName : null) === zonaNueva?.color);
+    check("  uno en espera, sin color («Sin mesero»)", waiterColorFor(leyendaTres, null) === null);
 
     // Conflictos: dos tablets a la vez.
     await Promise.all([

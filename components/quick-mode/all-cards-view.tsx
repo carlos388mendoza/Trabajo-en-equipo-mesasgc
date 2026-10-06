@@ -1,14 +1,21 @@
 "use client";
 
-// «Ver todas las cartas»: todas las del restaurante (en espera, listas,
-// ausentes y sentadas) de hoy o de los últimos 7 días, con filtros por estado
-// y un buscador por nombre. Una en espera se marca lista o ausente; una lista
+// «Ver clientes» (antes «Ver todas las cartas»): todos los clientes del
+// restaurante (en espera, listos, ausentes y sentados) de hoy o de los últimos
+// 7 días, con filtros por estado y un buscador por nombre. Una en espera se marca lista o ausente; una lista
 // o ausente vuelve a la espera. Todo pasa por el socket del modo rápido, así
 // que se puede deshacer igual que un deslizamiento, y los cambios de otras
 // tablets llegan en vivo (`subscribe`).
 //
 // Los datos salen de `GET /api/restaurante/[id]/cartas`, que exige
 // `rapido:ver`: el host solo ve las de sus restaurantes y analitica ninguna.
+//
+// Meseros: arriba, la leyenda de la configuración ACTIVA (los mismos que cuenta
+// «Meseros activos: [−] N [+]», con punto de color y nombre); tocar un mesero
+// filtra sus clientes. Cada cliente sentado lleva el color y el nombre del
+// mesero que lo atendió; los demás, «Sin mesero» en gris. Sale de las mesas (`lib/waiters/legend.ts`),
+// así que cambia en vivo con el [−] [+] de los meseros. El nombre va siempre
+// escrito: el color no es lo único que lo dice.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Armchair, Check, Clock3, DoorOpen, LayoutGrid, RotateCcw, Search, Trash2, Undo2, UsersRound, X } from "lucide-react";
@@ -27,6 +34,7 @@ import type { WaitlistStatus } from "@/lib/db/enums";
 import type { WaitlistChange, WaitlistUndoState } from "@/lib/realtime/events";
 import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
 import type { SeatableTable } from "@/lib/tables/list";
+import { waiterColorFor, waiterLegend } from "@/lib/waiters/legend";
 import { addCalendarDays, hondurasMidnightUtc, hondurasToday } from "@/lib/time/honduras";
 
 /**
@@ -47,7 +55,7 @@ const RANGES: { value: CardRange; label: string }[] = [
 ];
 
 const FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: "todas", label: "Todas" },
+  { value: "todas", label: "Todos" },
   { value: "esperando", label: "En espera" },
   { value: "listo", label: "Listo" },
   { value: "ausente", label: "Ausente" },
@@ -152,7 +160,7 @@ function AllCardsContent({
       try {
         const response = await fetch(`/api/restaurante/${restaurantId}/cartas?rango=${range}`, { cache: "no-store" });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "No se pudieron cargar las cartas.");
+        if (!response.ok) throw new Error(data.error || "No se pudieron cargar los clientes.");
         if (cancelled || version !== loadVersion.current) return;
         setEntries(data.entries as WaitlistEntrySnapshot[]);
         setFromLocal(false);
@@ -160,7 +168,7 @@ function AllCardsContent({
       } catch (cause) {
         if (!cancelled && version === loadVersion.current) {
           // Sin conexión no es un error: se enseña lo que la tablet ya tiene.
-          if (connectedRef.current) setError(cause instanceof Error ? cause.message : "No se pudieron cargar las cartas.");
+          if (connectedRef.current) setError(cause instanceof Error ? cause.message : "No se pudieron cargar los clientes.");
           else setError("");
           setFromLocal(true);
         }
@@ -202,20 +210,30 @@ function AllCardsContent({
       .sort((a, b) => b.arrivedAt - a.arrivedAt);
   }, [applyPending, entries, fromLocal, localEntries, now, range]);
 
+  // Leyenda de meseros y filtro por mesero. Si el mesero elegido deja de
+  // estar (se cambió la cantidad de meseros), el filtro se quita solo.
+  const legend = useMemo(() => waiterLegend(tables), [tables]);
+  const [waiterFilter, setWaiterFilter] = useState<string | null>(null);
+  const activeWaiter = waiterFilter && legend.some((w) => w.name === waiterFilter) ? waiterFilter : null;
+  const byWaiter = useMemo(
+    () => (activeWaiter ? shown.filter((entry) => entry.waiterName === activeWaiter) : shown),
+    [activeWaiter, shown],
+  );
+
   const counts = useMemo(() => {
-    const result: Record<StatusFilter, number> = { todas: shown.length, esperando: 0, listo: 0, ausente: 0 };
-    for (const entry of shown) {
+    const result: Record<StatusFilter, number> = { todas: byWaiter.length, esperando: 0, listo: 0, ausente: 0 };
+    for (const entry of byWaiter) {
       if (entry.status === "esperando" || entry.status === "listo" || entry.status === "ausente") result[entry.status] += 1;
     }
     return result;
-  }, [shown]);
+  }, [byWaiter]);
 
   const visible = useMemo(() => {
     const needle = normalize(query.trim());
-    return shown.filter((entry) =>
+    return byWaiter.filter((entry) =>
       (filter === "todas" || entry.status === filter)
       && (!needle || normalize(entry.customerName).includes(needle)));
-  }, [shown, filter, query]);
+  }, [byWaiter, filter, query]);
 
   async function act(entryId: string, run: () => Promise<boolean>): Promise<boolean> {
     if (busyId) return false;
@@ -234,15 +252,16 @@ function AllCardsContent({
           página). Sus botones y el buscador se siguen pudiendo tocar. La lista
           de abajo hace scroll normal. Ya no hay X: bajarlo del todo lo cierra. */}
       <div onPointerDown={drag?.onPointerDown} className="shrink-0 touch-none select-none">
-      <SheetHandle label="Mover el panel de todas las cartas" />
+      <SheetHandle label="Mover el panel de clientes" />
       <header className="flex flex-wrap items-center gap-3 border-b border-app-border px-5 pb-4 pt-1 sm:px-7">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-accent/10 text-accent">
           <LayoutGrid aria-hidden size={20} />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 id="todas-cartas-titulo" className="font-bold text-panel-text">Todas las cartas</h2>
+          <h2 id="todas-cartas-titulo" className="font-bold text-panel-text">Clientes</h2>
           <p className="text-sm text-panel-muted">
-            {loading ? "Cargando…" : plural(visible.length, "carta", "cartas")}
+            {loading ? "Cargando…" : plural(visible.length, "cliente", "clientes")}
+            {activeWaiter && ` · atendidos por ${activeWaiter}`}
             {!connected && " · Sin conexión (copia de esta tablet)"}
           </p>
         </div>
@@ -273,6 +292,32 @@ function AllCardsContent({
             </Chip>
           ))}
         </div>
+        {legend.length > 0 && (
+          <div role="group" aria-label="Meseros: toca uno para ver solo sus clientes" className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-panel-muted">Meseros</span>
+            {legend.map((waiter) => {
+              const on = activeWaiter === waiter.name;
+              return (
+                <button
+                  key={waiter.name}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setWaiterFilter((current) => (current === waiter.name ? null : waiter.name))}
+                  title={on ? "Ver todos los clientes" : `Ver solo los clientes de ${waiter.name}`}
+                  className={`inline-flex min-h-11 items-center gap-2 rounded-full border-2 px-3.5 text-sm font-semibold text-panel-text transition hover:bg-app-border/50 ${
+                    on ? "" : "border-app-border"
+                  }`}
+                  // El borde y el fondo con el color del mesero solo al elegirlo;
+                  // el texto sigue con el color del tema para que se lea.
+                  style={on ? { borderColor: waiter.color, backgroundColor: `${waiter.color}26` } : undefined}
+                >
+                  <span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full ring-2 ring-panel" style={{ backgroundColor: waiter.color }} />
+                  {waiter.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <label className="relative block">
           <span className="sr-only">Buscar por nombre</span>
           <Search aria-hidden size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-panel-muted" />
@@ -295,10 +340,10 @@ function AllCardsContent({
           </p>
         )}
         {loading && !shown.length ? (
-          <p role="status" className="py-16 text-center text-panel-muted">Cargando cartas…</p>
+          <p role="status" className="py-16 text-center text-panel-muted">Cargando clientes…</p>
         ) : visible.length === 0 ? (
           <p className="py-16 text-center text-panel-muted">
-            {shown.length ? "Ninguna carta coincide con el filtro." : range === "hoy" ? "Hoy todavía no hay cartas." : "No hay cartas en los últimos 7 días."}
+            {shown.length ? "Ningún cliente coincide con el filtro." : range === "hoy" ? "Hoy todavía no hay clientes." : "No hay clientes en los últimos 7 días."}
           </p>
         ) : (
           <ul className="grid gap-3 movil-horizontal:!grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] movil-horizontal:gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -310,6 +355,7 @@ function AllCardsContent({
                 disabled={busyId !== null}
                 busy={busyId === entry.id}
                 table={tables.find((table) => table.currentEntryId === entry.id) ?? null}
+                waiterColor={waiterColorFor(legend, entry.waiterName)}
                 onSeat={() => onSeat(entry)}
                 onRelease={(tableId) => void act(entry.id, () => onRelease(entry.id, tableId))}
                 onResolve={(status) => void act(entry.id, () => onResolve(entry.id, status))}
@@ -360,7 +406,7 @@ function DeleteConfirm({ entry, busy, disabled, onCancel, onConfirm }: DeleteCon
           ¿Eliminar de la lista?
         </h2>
         <p className="mt-2 text-panel-muted">
-          Se quita de todas las cartas de este restaurante. Puedes deshacerlo con
+          Se quita de la lista de clientes de este restaurante. Puedes deshacerlo con
           «Deshacer» o <kbd className="rounded bg-app-bg px-1.5 py-0.5 text-xs">Ctrl+Z</kbd> enseguida
           después.
         </p>
@@ -435,11 +481,13 @@ type CardRowProps = {
   onDelete: () => void;
   /** La mesa que ocupa ahora (si está sentado y la mesa sigue con él). */
   table: SeatableTable | null;
+  /** Color del mesero que lo atendió (null: sin mesero, o ya no está en la configuración activa). */
+  waiterColor: string | null;
   onSeat: () => void;
   onRelease: (tableId: string) => void;
 };
 
-function CardRow({ entry, now, disabled, busy, table, onResolve, onReopen, onDelete, onSeat, onRelease }: CardRowProps) {
+function CardRow({ entry, now, disabled, busy, table, waiterColor, onResolve, onReopen, onDelete, onSeat, onRelease }: CardRowProps) {
   const waiting = entry.status === "esperando";
   // Hasta cuándo esperó: la marca de listo o ausente, el aviso o la mesa. Las
   // filas de antes de `resolved_at` (migración 0006) usan su último cambio.
@@ -447,9 +495,15 @@ function CardRow({ entry, now, disabled, busy, table, onResolve, onReopen, onDel
     ? now
     : entry.resolvedAt ?? entry.calledAt ?? entry.seatedAt ?? entry.updatedAt;
   const waited = end === null ? null : minutesBetween(entry.arrivedAt, end);
+  // Atendido: sentado con un mesero apuntado. Los demás van «Sin mesero».
+  const served = entry.status === "sentado" && Boolean(entry.waiterName);
 
   return (
-    <li className={`flex flex-col rounded-2xl border border-app-border bg-panel p-4 shadow-sm movil-horizontal:gap-1 ${busy ? "opacity-60" : ""}`}>
+    // Sentado con mesero: una franja a la izquierda con su color.
+    <li
+      className={`flex flex-col rounded-2xl border border-app-border bg-panel p-4 shadow-sm movil-horizontal:gap-1 ${served && waiterColor ? "border-l-[6px]" : ""} ${busy ? "opacity-60" : ""}`}
+      style={served && waiterColor ? { borderLeftColor: waiterColor } : undefined}
+    >
       <div className="flex items-start justify-between gap-3">
         {/* El nombre manda: dos líneas como mucho, y el completo en el `title`
             (tooltip al pasar el mouse, texto al mantener pulsado en el móvil)
@@ -486,10 +540,21 @@ function CardRow({ entry, now, disabled, busy, table, onResolve, onReopen, onDel
             Resuelta por {entry.resolvedByName}
           </p>
         )}
-        {entry.waiterName && (
+        {served ? (
+          <p className="flex items-center gap-1.5 text-panel-text">
+            <span
+              aria-hidden
+              className="h-3 w-3 shrink-0 rounded-full ring-1 ring-app-border"
+              style={{ backgroundColor: waiterColor ?? "rgb(var(--c-panel-muted))" }}
+            />
+            <span>
+              {table ? `${table.label} · ` : ""}Lo atiende <strong className="font-semibold">{entry.waiterName}</strong>
+            </span>
+          </p>
+        ) : (
           <p className="flex items-center gap-1.5">
-            <Armchair aria-hidden size={15} />
-            {table ? `${table.label} · ` : ""}Lo atiende {entry.waiterName}
+            <span aria-hidden className="h-3 w-3 shrink-0 rounded-full border border-dashed border-panel-muted" />
+            Sin mesero
           </p>
         )}
       </div>

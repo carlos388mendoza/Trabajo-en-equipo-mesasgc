@@ -493,7 +493,7 @@ async function seedHistory() {
             ...base,
             status: "ausente",
             calledAt: leftEarly ? null : calledAt,
-            // Para «Ver todas las cartas» («esperó X min»). Sin quién: el
+            // Para «Ver clientes» («esperó X min»). Sin quién: el
             // historial es anterior a los usuarios de prueba.
             resolvedAt: markedAbsent,
             updatedAt: markedAbsent,

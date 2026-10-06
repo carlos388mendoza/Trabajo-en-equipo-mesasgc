@@ -29,7 +29,7 @@ type CardFanProps = {
   now: number;
   onPick: (id: string) => void;
   onClose: () => void;
-  /** «+N»: abre «Ver todas las cartas» con los que esperan. */
+  /** «+N»: abre «Ver clientes» con los que esperan. */
   onShowAll: () => void;
 };
 
@@ -189,7 +189,7 @@ export function CardFan({ open, guests, now, onPick, onClose, onShowAll }: CardF
               exit={{ opacity: 0, y: 10 }}
               className="absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 z-[60] -translate-x-1/2 rounded-full bg-accent px-5 py-3 text-sm font-semibold text-accent-text shadow-xl transition hover:bg-accent/85"
             >
-              +{hidden} · Ver todas las cartas
+              +{hidden} · Ver clientes
             </motion.button>
           )}
         </div>

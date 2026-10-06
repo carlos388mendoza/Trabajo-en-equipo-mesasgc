@@ -536,7 +536,7 @@ const API: [Who, string, string, unknown, number][] = [
   ["dual", "GET", "/api/restaurante/rest_norte/clientes", undefined, 403],
   ["admin", "GET", "/api/restaurante/rest_norte/clientes", undefined, 200],
   ["admin", "GET", "/api/analiticas", undefined, 200],
-  // «Ver todas las cartas» del modo rápido: rapido:ver. Analítica no opera.
+  // «Ver clientes» del modo rápido: rapido:ver. Analítica no opera.
   ["analitica", "GET", "/api/restaurante/rest_centro/cartas", undefined, 403],
   ["chinawok", "GET", "/api/restaurante/rest_centro/cartas", undefined, 200],
   ["chinawok", "GET", "/api/restaurante/rest_centro/cartas?rango=7dias", undefined, 200],
@@ -1280,10 +1280,10 @@ section("npm run create-user");
 }
 
 // ---------------------------------------------------------------------------
-// Modo rápido: «Ver todas las cartas» y agregar varios a la vez
+// Modo rápido: «Ver clientes» y agregar varios a la vez
 // ---------------------------------------------------------------------------
 
-section("Modo rápido: todas las cartas y agregar varios");
+section("Modo rápido: Ver clientes y agregar varios");
 
 {
   // Lo que devuelve la API: solo cartas de ese restaurante, con los campos de la vista.
