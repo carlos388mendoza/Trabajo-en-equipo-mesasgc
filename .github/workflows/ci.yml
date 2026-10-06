@@ -64,6 +64,11 @@ jobs:
       - name: Verificar tiempo real
         run: npm run verify:realtime
 
+      # El render de Markdown del asistente, incluida la prueba de que el
+      # HTML/Markdown malicioso no se ejecuta.
+      - name: Verificar Markdown del asistente
+        run: npm run verify:markdown
+
       - name: Verificar autenticación y permisos
         run: npm run verify:auth
 

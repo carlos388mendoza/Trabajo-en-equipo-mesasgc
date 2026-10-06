@@ -16,6 +16,7 @@
     "seed:reset": "tsx scripts/seed.ts --reset",
     "verify:editor": "tsx scripts/verify-editor.mts",
     "verify:realtime": "tsx scripts/verify-realtime.mts",
+    "verify:markdown": "tsx scripts/verify-markdown.mts",
     "verify:demo": "tsx scripts/verify-demo.mts",
     "db:demo": "tsx scripts/db-demo.mts",
     "db:demo:borrar": "tsx scripts/db-demo-borrar.mts",
@@ -26,7 +27,8 @@
     "create-admin": "tsx scripts/create-admin.mts",
     "create-user": "tsx scripts/create-user.mts",
     "reset-password": "tsx scripts/reset-password.mts",
-    "verify:auth": "tsx scripts/verify-auth.mts"
+    "verify:auth": "tsx scripts/verify-auth.mts",
+    "verify:browser": "tsx scripts/verify-browser.mts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
@@ -40,6 +42,8 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-konva": "^19.3.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "socket.io": "^4.8.4",
     "socket.io-client": "^4.8.4",
     "tsx": "^4.23.15",

@@ -104,6 +104,22 @@ contra una base temporal. Ejecutadas el **1 de octubre de 2026** sobre
 | `npm run lint` | pasa sobre el código del repositorio. En esta máquina hay dos carpetas `.next-preview` y `.next-perf` de pruebas antiguas, ignoradas por git pero no por `eslint.config.mjs`, que meten ruido de `node_modules` compilado; CI no las tiene. |
 | `npm run build` | pasa (Next 16.3.6). En local, si hay un `next dev` corriendo, `.next` queda bloqueado en Windows: con `NEXT_DIST_DIR` aparte. |
 
+Ejecutada el **6 de octubre de 2026** sobre la rama de la issue #59,
+`npm run verify:markdown` da **67/67**: renderiza el Markdown del asistente de
+verdad (`react-dom/server`) y comprueba, con casos de ataque, que ni
+`<script>`, ni `<iframe>`, ni atributos `on…=`, ni URLs `javascript:` llegan
+como elementos reales: se quedan como texto visible. Corre en el CI (junto con
+`verify:editor` 204/204, `verify:realtime` 231/231 y `verify:auth` 452/452
+tras #58).
+
+Añadido con #60, `npm run verify:browser` (**no corre en el CI**: necesita
+Chrome) levanta la app real y mide `/analiticas` con Chrome por DevTools
+Protocol, sin dependencias nuevas. Comprueba los ejes y la leyenda del gráfico
+(#60) y, en 320, 375, 414, 768, 1024 y 1440 px en claro y oscuro, que
+`document.documentElement.scrollWidth <= window.innerWidth` (#61); si algo se
+sale, lista las hojas que empujan la página. Deja capturas en
+`.verify-browser/shots/`.
+
 Cifras reales del lote sobre los 8 restaurantes, contadas el 1 de octubre de
 2026: **8 zonas de demostración, 86 mesas, 29 clientes esperando, 29 sentados,
 6 mesas reservadas y 12 251 de historial**; 12 403 filas en total, con 0
@@ -126,8 +142,8 @@ cubre.
 | Conflictos: bloqueo optimista, el primero gana y al segundo «Esta mesa ya fue asignada» | Sí | Dos tablets sentando en la misma mesa. `lib/tables/assign.ts`; `verify:realtime` (también con la cola sin conexión). |
 | Modo rápido de *check-in*/*check-out* con tarjetas deslizables (listo / ausente) | Sí | Modo sencillo: deslizar la carta o los botones; «Ver todas las cartas». README §11. |
 | Historial de acciones con Deshacer (Ctrl+Z) | Sí | Botón Deshacer y Ctrl+Z en el modo sencillo y en el editor. `verify:realtime`. |
-| Estadísticas: espera promedio, día más rápido y más lento, top de clientes | Sí | `/analiticas`. `verify:auth` (por rol y con filtros). |
-| Asistente de IA en lenguaje natural sobre las estadísticas | Sí | `/analiticas` → «Pregunta sobre tu servicio». Con OpenRouter y respuestas locales sin clave; nombres con alias. `verify:auth`. |
+| Estadísticas: espera promedio, día más rápido y más lento, top de clientes | Sí | `/analiticas`. El gráfico «Volumen y tiempo de espera» lleva sus ejes etiquetados («Clientes (grupos)» a la izquierda, «Minutos de espera» a la derecha, «Día» debajo), con el máximo de cada escala, leyenda de series y avisos de barra con la unidad. La página no tiene scroll horizontal en 320, 375, 414, 768, 1024 ni escritorio (`verify:browser`, 6 anchos × claro/oscuro). `verify:auth` (por rol y con filtros) y `verify:browser`. |
+| Asistente de IA en lenguaje natural sobre las estadísticas | Sí | `/analiticas` → «Pregunta sobre tu servicio». Con OpenRouter y respuestas locales sin clave; nombres con alias. La respuesta se pinta como Markdown (`react-markdown` + `remark-gfm`, sin `rehype-raw`: el HTML crudo queda como texto y no se ejecuta). `verify:auth` y `verify:markdown`. |
 | Resumen automático de estadísticas | Sí | `/analiticas` → «Resumen de 14 días» (variación, día más lento, mesero que más atendió). |
 | RBAC: administrador, restaurante y analítica, y varios roles por usuario | Sí | Tabla completa en `docs/rbac.md`. `verify:auth`. |
 | Administrador: crea usuarios y entra a todo | Sí | `/admin` → Usuarios. `verify:auth`. |
@@ -138,7 +154,7 @@ cubre.
 | CI/CD: build y pruebas en cada push; despliegue al fusionar a `main` | Sí | GitHub Actions (typecheck, lint, build y los cuatro `verify`); Railway despliega `main` con «Wait for CI». |
 | Flujo de GitHub: ramas desde `testing`, PR, revisión y `testing` → `main` | Sí | Tabla «Ramas y PR» de este documento; protección de `main` y `testing`. |
 | README y documentación | Sí | `README.md` y `docs/`. |
-| **Zonas de meseros**: configuración por cantidad de meseros activa y cambio fácil entre configuraciones | Sí | Plano en vivo → «Meseros activos: 2 \| 3 \| 4», «Editar zonas» (pincel, selección en grupo, reparto automático); editor → «Ver meseros». Llega a todas las tablets en vivo. Al sentar se ve quién atiende; estadísticas y asistente por mesero. README §18. `verify:editor`, `verify:realtime`, `verify:auth` y `verify:demo`. |
+| **Zonas de meseros**: configuración por cantidad de meseros activa y cambio fácil entre configuraciones | Sí | Plano en vivo → «Meseros activos: [−] 3 [+]» (botones de 44 px que activan la configuración de esa cantidad o la crean con las mesas repartidas), «Editar zonas» (pincel, selección en grupo, reparto automático); editor → «Ver meseros». Llega a todas las tablets en vivo. Al sentar se ve quién atiende; estadísticas y asistente por mesero. README §18. `verify:editor`, `verify:realtime`, `verify:auth` y `verify:demo`. |
 | **Plano por defecto en cada restaurante**, con la estructura actualizada por los usuarios de los restaurantes | Sí | Editor → «★ Por defecto» / «Marcar por defecto»; el editor y el plano en vivo abren esa zona. El rol restaurante edita (mover, añadir, borrar, girar, copiar y pegar) solo en los suyos; analítica no. README §19. `verify:editor` y `verify:auth`. |
 
 Pedidos de la dirección además del enunciado: modo sencillo sin conexión

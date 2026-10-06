@@ -580,6 +580,21 @@ registros reales: grupos sentados durante los últimos 14 días (zona
 resumen diario y agrupación por restaurante. Sin registros, la interfaz indica
 que todavía no hay actividad; no presenta cifras de demostración.
 
+El gráfico «Volumen y tiempo de espera» lleva los ejes etiquetados: el eje Y
+izquierdo dice «Clientes (grupos)» con el valor más alto de su escala, el
+derecho «Minutos de espera» con el suyo y el eje X «Día». La leyenda identifica
+las dos series (clientes/grupos en azul, minutos de espera en naranja) y cada
+barra lleva su aviso con la unidad («Lun: 12 grupos atendidos»). Los cuatro
+títulos viven **dentro** del bloque con scroll horizontal propio del gráfico,
+así que etiquetarlos no le cuesta ancho a la página (issue #61).
+
+`/analiticas` no tiene scroll horizontal en ningún ancho: en móvil las tarjetas
+se apilan y los filtros van en columna, el gráfico ocupa todo lo disponible (las
+barras no tienen ancho fijo: se reparten el ancho de su día) y solo hace scroll
+propio por dentro por debajo de 440 px, donde 14 días con dos barras dejarían de
+leerse. Las tablas y los bloques de código de la respuesta del asistente se
+desplazan ellos solos. La comprobación está en `npm run verify:browser`.
+
 El asistente (`/api/assistant`) recibe ese resumen para contestar preguntas en
 español. Si se configura `OPENROUTER_API_KEY`, consulta OpenRouter; sin esa
 clave, responde localmente las preguntas comunes sobre espera y volumen. La
@@ -591,6 +606,19 @@ promedio; la respuesta cambia esos alias por los nombres solo para mostrarla
 en pantalla. No se envían nombres reales, teléfonos ni notas de clientes. Los
 teléfonos y notas tampoco forman parte del contexto estadístico que se manda al
 proveedor.
+
+La respuesta se pinta como **Markdown** (`components/analytics/markdown.tsx`,
+con `react-markdown` y `remark-gfm`): títulos, negritas, cursivas, listas
+ordenadas y desordenadas, tablas, código inline, bloques de código y enlaces.
+No se interpreta HTML crudo (no hay `rehype-raw`), así que un `<script>` que
+aparezca en el texto se queda **como texto visible y no se ejecuta**, igual
+que los atributos `on…=`; los enlaces salen con `target="_blank"` y
+`rel="noopener noreferrer"`, y las URLs `javascript:` se vacían. Cada tabla va
+envuelta en su propio contenedor con scroll horizontal, para que en el celular
+empuje solo a la tabla. El prompt pide además al modelo que responda en
+Markdown sencillo y nunca en HTML. `npm run verify:markdown` renderiza el
+componente de verdad y comprueba el formato y el ataque (67 comprobaciones),
+y corre también en el CI.
 
 No se añadieron tablas ni columnas: el esquema de `testing` ya contiene lo
 necesario. `waitlist_entries.party_size` guarda cuántas personas hay en el
@@ -1258,10 +1286,14 @@ número) y su **color**. Se cambia de una a otra con **un toque**.
 
 ### Qué se ve
 
-- **Plano en vivo** (`/restaurante/[id]/mapa`): el selector **«Meseros
-  activos: 2 | 3 | 4»** arriba, y cada mesa teñida del color de su mesero
+- **Plano en vivo** (`/restaurante/[id]/mapa`): el contador **«Meseros
+  activos: [−] 3 [+]»** arriba, y cada mesa teñida del color de su mesero
   con su nombre encima. Debajo, la leyenda: cada mesero con sus mesas y
-  cuántas quedan «sin mesero».
+  cuántas quedan «sin mesero». Los botones **[−] y [+]** (44×44 px) bajan y
+  suben la cantidad de meseros: activan la configuración de ese número y, si
+  todavía no existe, **la crean con las mesas ya repartidas** y la activan.
+  No se puede bajar de 1 ni subir de `MAX_WAITERS` (12), y el cambio llega a
+  las demás tablets por el socket.
 - **Editar zonas** (botón del plano en vivo, o «Repartir meseros»
   desde el editor, que abre `?meseros=editar`): nombre de la configuración,
   nombre y color de cada mesero, y un **pincel**: se elige un mesero y se
