@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 
+import { Markdown } from "@/components/analytics/markdown";
 import type { AnalyticsData, DailyStat } from "@/lib/analytics/data";
 
 const HONDURAS_DATE = new Intl.DateTimeFormat("es-HN", {
@@ -340,7 +341,7 @@ export function AnalyticsClient() {
                 {answer && (
                   <div aria-live="polite" className="mt-5 rounded-xl border border-app-border bg-app-bg p-4">
                     <p className="text-xs font-semibold text-accent">RESPUESTA</p>
-                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{answer}</p>
+                    <Markdown>{answer}</Markdown>
                   </div>
                 )}
               </div>
