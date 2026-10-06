@@ -22,7 +22,7 @@ export default async function RestauranteLayout({
   return (
     <div>
       {links.length > 0 ? (
-        <nav className="mb-4 flex flex-wrap gap-2 text-sm">
+        <nav className="mb-4 flex flex-wrap gap-2 text-sm con-plano-inmersivo:hidden embebido:hidden">
           {links.map((link) => (
             <Link
               key={link.href}

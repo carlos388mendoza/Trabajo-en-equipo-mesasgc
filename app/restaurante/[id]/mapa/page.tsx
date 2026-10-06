@@ -33,9 +33,11 @@ export default async function PlanoEnVivoPage({
   // no (analitica, que no ve nombres), por los contadores de la sala overview.
   const live = can(user, "editor:ver", id) || can(user, "rapido:ver", id) ? "restaurante" : "overview";
 
+  // Tablet en horizontal: el plano pasa a pantalla completa (ver
+  // `components/map/live-plan.tsx`) y este título se esconde con la cabecera.
   return (
-    <div className="flex h-[calc(100vh-9.5rem)] min-h-[30rem] flex-col gap-3">
-      <div>
+    <div className="flex h-[calc(100vh-9.5rem)] min-h-[30rem] flex-col gap-3 con-plano-inmersivo:h-auto con-plano-inmersivo:min-h-0">
+      <div className="con-plano-inmersivo:hidden">
         <h1 className="text-2xl font-bold">{plan.restaurant.name}</h1>
         <p className="text-sm text-app-muted">
           Plano en vivo{plan.restaurant.brand ? ` · ${plan.restaurant.brand.name}` : ""}
@@ -52,6 +54,12 @@ export default async function PlanoEnVivoPage({
           // Analítica ve las zonas de meseros, pero no las cambia.
           canManageWaiters={can(user, "meseros:gestionar", id)}
           startEditingWaiters={meseros === "editar"}
+          // La lista de espera del modo inmersivo es el modo sencillo: solo
+          // con `rapido:ver` (analítica no lo tiene, así que no ve el botón).
+          immersive={{
+            restaurantName: plan.restaurant.name,
+            waitlistHref: can(user, "rapido:ver", id) ? `/restaurante/${id}/rapido` : undefined,
+          }}
         />
       </div>
     </div>

@@ -292,10 +292,13 @@ export function WaiterSelector({ state }: { state: WaiterZonesState }) {
   const count = active?.waiterCount ?? configs[0]?.waiterCount ?? 1;
   const plural = count === 1 ? "mesero" : "meseros";
   return (
-    <div className="flex flex-wrap items-center gap-1 rounded-xl bg-panel p-1 text-panel-text ring-1 ring-app-border">
+    // En el plano en vivo a pantalla completa (`inmersivo:`) va en una sola
+    // línea y el texto «Meseros activos:» queda solo para el lector de
+    // pantalla: el ícono y «3 meseros» ya lo dicen, y así cabe con lo demás.
+    <div className="flex flex-wrap items-center gap-1 rounded-xl bg-panel p-1 text-panel-text ring-1 ring-app-border inmersivo:flex-nowrap">
       <span className="flex items-center gap-1.5 px-2 text-sm font-medium text-panel-muted">
         <Users aria-hidden size={16} strokeWidth={2} />
-        Meseros activos:
+        <span className="inmersivo:sr-only">Meseros activos:</span>
       </span>
       {configs.length === 0 ? <span className="px-1 text-sm text-panel-muted">sin configuración</span> : null}
       <div

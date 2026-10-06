@@ -14,7 +14,7 @@
 import { useEffect, useState } from "react";
 import { Radio, WifiOff } from "lucide-react";
 
-import { LivePlan } from "@/components/map/live-plan";
+import { LivePlan, type LivePlanProps } from "@/components/map/live-plan";
 import { FALLBACK_REFRESH_MS, useOverviewSocket } from "@/components/map/use-overview-socket";
 import { type RealtimeStatus, useRestaurantSocket } from "@/components/realtime/use-restaurant-socket";
 import type { LivePlan as LivePlanData } from "@/lib/map/queries";
@@ -26,6 +26,8 @@ type Props = {
   /** `meseros:gestionar` en este restaurante. */
   canManageWaiters?: boolean;
   startEditingWaiters?: boolean;
+  /** Modo inmersivo de la tablet en horizontal (ver `LivePlan`). */
+  immersive?: LivePlanProps["immersive"];
 };
 
 export function RestaurantLivePlan(props: Props) {
@@ -44,7 +46,7 @@ function useFallbackTick(): number {
   return tick;
 }
 
-function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startEditingWaiters }: Props) {
+function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startEditingWaiters, immersive }: Props) {
   const [events, setEvents] = useState(0);
   const tick = useFallbackTick();
   const bump = () => setEvents((n) => n + 1);
@@ -64,11 +66,12 @@ function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startE
       toolbar={<LiveBadge status={status} />}
       canManageWaiters={canManageWaiters}
       startEditingWaiters={startEditingWaiters}
+      immersive={immersive}
     />
   );
 }
 
-function ViaOverview({ restaurantId, initialPlan }: Props) {
+function ViaOverview({ restaurantId, initialPlan, immersive }: Props) {
   const { counters, status } = useOverviewSocket([]);
   const tick = useFallbackTick();
   const mine = counters[restaurantId];
@@ -78,6 +81,7 @@ function ViaOverview({ restaurantId, initialPlan }: Props) {
       initialPlan={initialPlan}
       refreshSignal={`${mine ? JSON.stringify(mine) : ""}-${tick}`}
       toolbar={<LiveBadge status={status} />}
+      immersive={immersive}
     />
   );
 }

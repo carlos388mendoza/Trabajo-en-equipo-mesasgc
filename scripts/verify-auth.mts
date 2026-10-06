@@ -178,7 +178,15 @@ check(`la app arranca en el puerto ${port}`, true);
 // Utilidades HTTP
 // ---------------------------------------------------------------------------
 
-type Res = { status: number; location: string | null; text: string; setCookie: string | null };
+type Res = {
+  status: number;
+  location: string | null;
+  text: string;
+  setCookie: string | null;
+  /** Quién puede meter la página en un iframe (`next.config.mjs`). */
+  frameAncestors: string | null;
+  frameOptions: string | null;
+};
 
 // Ninguna comprobación espera un 404: todas las rutas que se piden existen.
 // Un 404 aquí es `next dev` compilando (o recompilando) esa ruta en ese
@@ -221,6 +229,8 @@ async function httpOnce(
     location: response.headers.get("location"),
     text: await response.text(),
     setCookie: response.headers.get("set-cookie"),
+    frameAncestors: response.headers.get("content-security-policy"),
+    frameOptions: response.headers.get("x-frame-options"),
   };
 }
 
@@ -486,6 +496,18 @@ section("Healthcheck de Railway");
   for (const path of ["/api/healthz", "/api/health/x"]) {
     const other = await http("GET", path);
     check(`  la excepción es exacta: sin sesión, GET ${path} -> 401`, other.status === 401, `HTTP ${other.status}`);
+  }
+}
+
+section("Solo el propio sitio puede meter la app en un iframe");
+
+{
+  // El plano en vivo abre el modo sencillo en un iframe del propio sitio; ningún
+  // otro sitio debe poder enmarcar la app (clickjacking). Páginas y API.
+  for (const path of ["/login", "/api/health"]) {
+    const res = await http("GET", path);
+    check(`GET ${path}: Content-Security-Policy frame-ancestors 'self'`, res.frameAncestors === "frame-ancestors 'self'", String(res.frameAncestors));
+    check(`  y X-Frame-Options: SAMEORIGIN`, res.frameOptions === "SAMEORIGIN", String(res.frameOptions));
   }
 }
 

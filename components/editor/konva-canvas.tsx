@@ -141,6 +141,13 @@ type Props = {
    * cuyo centro quedó dentro.
    */
   onMarquee?: (ids: string[]) => void;
+  /**
+   * Volver a encuadrar las mesas cada vez que cambia el tamaño del hueco.
+   * Lo usa el plano en vivo a pantalla completa: al entrar o salir de la
+   * pantalla completa de Opera, o al asomar su barra, el plano se reajusta
+   * solo y no queda ninguna mesa cortada.
+   */
+  refitOnResize?: boolean;
 };
 
 /**
@@ -179,6 +186,7 @@ export function KonvaCanvas({
   waiterMarks,
   onElementTap,
   onMarquee,
+  refitOnResize = false,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -630,6 +638,15 @@ export function KonvaCanvas({
     emitView();
   }, [emitView, size]);
 
+  // Con `refitOnResize`, además se vuelve a encuadrar. Con una pausa corta:
+  // al girar la tablet o entrar en pantalla completa el tamaño cambia varias
+  // veces seguidas, y basta con encuadrar una vez, con la medida final.
+  useEffect(() => {
+    if (!refitOnResize || size.width === 0) return;
+    const timer = window.setTimeout(resetView, 120);
+    return () => window.clearTimeout(timer);
+  }, [refitOnResize, resetView, size.width, size.height]);
+
   // El Transformer sigue siempre al elemento seleccionado. `elements.length`
   // en las dependencias cubre que el nodo se monte o se desmonte; la posición
   // no hace falta porque Konva ya sigue al nodo mientras se mueve.
@@ -943,8 +960,10 @@ export function KonvaCanvas({
       ) : null}
 
       {/* En un celular en vertical el minimapa taparía media sala: el plano ya
-          cabe entero en la pantalla, así que no hace falta. */}
-      <div className="pointer-events-none absolute bottom-3 left-3 hidden sm:block movil-horizontal:!hidden">
+          cabe entero en la pantalla, así que no hace falta. Tampoco en el
+          plano en vivo a pantalla completa (`inmersivo`), que sale encuadrado
+          entero y donde taparía las mesas de la esquina. */}
+      <div className="pointer-events-none absolute bottom-3 left-3 hidden sm:block movil-horizontal:!hidden inmersivo:!hidden">
         <div className="pointer-events-auto">
           <Minimap
             width={width}

@@ -15,10 +15,21 @@
 // configuración activa, con su nombre encima. Con `meseros:gestionar` se
 // cambia la activa con un toque y se editan las zonas aquí mismo (pintando
 // mesas sobre este plano, que no deja mover nada).
+//
+// Modo inmersivo (solo con `immersive`, es decir, en /restaurante/[id]/mapa):
+// con la tablet en horizontal el plano ocupa la pantalla entera, sin la
+// cabecera de la app ni el menú. Lo decide CSS (`inmersivo:`, ver
+// `lib/layout/immersive.ts`), así que en celular y en computadora no cambia
+// nada y al girar la tablet a vertical vuelve solo a la vista normal. La
+// misma barra de siempre pasa a flotar encima del plano, en pequeño y
+// semitransparente (no se pinta otra: así no hay dos «Agregar mesero»). La
+// lista de espera se abre en un panel lateral con el modo sencillo dentro
+// (un iframe del propio sitio): el mismo tiempo real, la misma cola sin
+// conexión, los mismos permisos y la misma forma de sentar y liberar.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { EyeOff } from "lucide-react";
+import { EyeOff, ListOrdered, Maximize2, Minimize2, X } from "lucide-react";
 
 import {
   WaiterActions,
@@ -33,11 +44,30 @@ import { isSeatableElement } from "@/lib/db/enums";
 import { loadLivePlan } from "@/app/mapa/actions";
 import type { CanvasHandle } from "@/components/editor/konva-canvas";
 import { KonvaCanvas } from "@/components/editor/lazy-konva-canvas";
+import { TABLET_LANDSCAPE_QUERY } from "@/lib/layout/immersive";
 import type { LivePlan as LivePlanData } from "@/lib/map/queries";
 
 const NOOP = () => {};
 
-type Props = {
+/** Lo que tapan los controles flotantes de arriba al encuadrar las mesas. */
+const FLOATING_BAR_HEIGHT = 64;
+
+function subscribeTabletLandscape(onChange: () => void) {
+  const media = window.matchMedia(TABLET_LANDSCAPE_QUERY);
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
+}
+
+/** ¿Tablet en horizontal? La misma media query que el CSS. En el servidor, no. */
+function useTabletLandscape(): boolean {
+  return useSyncExternalStore(
+    subscribeTabletLandscape,
+    () => window.matchMedia(TABLET_LANDSCAPE_QUERY).matches,
+    () => false,
+  );
+}
+
+export type LivePlanProps = {
   restaurantId: string;
   /** El plano que ya trae la página, para no pintar un "Cargando" al abrir. */
   initialPlan?: LivePlanData | null;
@@ -49,6 +79,19 @@ type Props = {
   canManageWaiters?: boolean;
   /** Abrir directamente la edición de la configuración activa (?meseros=editar). */
   startEditingWaiters?: boolean;
+  /**
+   * Activa el modo inmersivo de la tablet en horizontal. Solo lo pasa la
+   * página del plano de un restaurante; el zoom de /mapa no lo usa.
+   */
+  immersive?: {
+    /** El nombre del restaurante, en pequeño arriba a la izquierda. */
+    restaurantName: string;
+    /**
+     * La página del modo sencillo, para el panel de la lista de espera. Sin
+     * ella (quien no tiene `rapido:ver`, como analítica) no hay botón.
+     */
+    waitlistHref?: string;
+  };
 };
 
 /** Qué mesas cambiaron entre dos lecturas del plano. */
@@ -77,7 +120,33 @@ export function LivePlan({
   toolbar,
   canManageWaiters = false,
   startEditingWaiters = false,
-}: Props) {
+  immersive,
+}: LivePlanProps) {
+  // Modo inmersivo. `immersiveMode` es lo que pide el usuario: "auto" (a
+  // pantalla completa cuando la tablet está en horizontal, lo normal) o
+  // "normal" (tocó «Vista normal»). Quien lo aplica es el CSS; aquí solo
+  // hace falta saberlo para encuadrar y dejar sitio a los controles.
+  const tabletLandscape = useTabletLandscape();
+  const [immersiveMode, setImmersiveMode] = useState<"auto" | "normal">("auto");
+  // Al girar la tablet a vertical se olvida «Vista normal»: la próxima vez
+  // que se ponga en horizontal vuelve a pantalla completa.
+  const [wasLandscape, setWasLandscape] = useState(tabletLandscape);
+  if (wasLandscape !== tabletLandscape) {
+    setWasLandscape(tabletLandscape);
+    if (!tabletLandscape) setImmersiveMode("auto");
+  }
+  const immersiveOn = Boolean(immersive) && immersiveMode === "auto";
+  const immersiveActive = immersiveOn && tabletLandscape;
+  // El panel de la lista de espera. El iframe se crea la primera vez que se
+  // abre y luego se queda (cerrado, fuera de la pantalla): así no se recarga
+  // cada vez y su cola sin conexión sigue trabajando.
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
+  const [waitlistMounted, setWaitlistMounted] = useState(false);
+  const openWaitlist = () => {
+    setWaitlistMounted(true);
+    setWaitlistOpen(true);
+  };
+
   const [plan, setPlan] = useState<LivePlanData | null>(initialPlan);
   const [error, setError] = useState<string | null>(null);
   const [zoneId, setZoneId] = useState<string | null>(null);
@@ -167,12 +236,36 @@ export function LivePlan({
     waiters.edit(waiters.active.id);
   }
 
+  // Los controles de la barra, en modo inmersivo: flotan encima del plano,
+  // pequeños y semitransparentes. Las clases van en la barra (`[&>*]`), no en
+  // cada control, para que valgan también para los que pinta otro componente.
+  const floatingBar =
+    "inmersivo:pointer-events-none inmersivo:absolute inmersivo:inset-x-0 inmersivo:top-0 inmersivo:z-20 inmersivo:flex-nowrap inmersivo:gap-1.5 inmersivo:p-2 " +
+    "inmersivo:[&>*]:pointer-events-auto inmersivo:[&>*]:shrink-0 inmersivo:[&>*]:whitespace-nowrap inmersivo:[&>*]:bg-panel/80 inmersivo:[&>*]:shadow-md";
+  const roundButton =
+    "flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-medium text-panel-text ring-1 ring-app-border hover:bg-app-border/60";
+
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
+    <div
+      data-inmersivo={immersiveOn ? "" : undefined}
+      className={
+        "flex h-full min-h-0 flex-col gap-2 " +
+        // A pantalla completa: fijo sobre todo, del alto que se ve de verdad
+        // (`dvh`: cambia cuando Opera enseña o esconde su barra) y fuera de las
+        // zonas que tapan la cámara o los bordes redondeados (`safe-area`).
+        "inmersivo-raiz:fixed inmersivo-raiz:inset-0 inmersivo-raiz:z-30 inmersivo-raiz:h-[100dvh] inmersivo-raiz:w-full inmersivo-raiz:gap-0 inmersivo-raiz:overflow-hidden inmersivo-raiz:bg-map-bg " +
+        "inmersivo-raiz:pb-[env(safe-area-inset-bottom)] inmersivo-raiz:pl-[env(safe-area-inset-left)] inmersivo-raiz:pr-[env(safe-area-inset-right)] inmersivo-raiz:pt-[env(safe-area-inset-top)]"
+      }
+    >
+      <div className={`flex flex-wrap items-center gap-2 ${floatingBar}`}>
+        {immersive ? (
+          <span className="hidden max-w-[14rem] truncate rounded-full px-3 py-1.5 text-xs font-semibold text-panel-text ring-1 ring-app-border inmersivo:block inmersivo:!shrink">
+            {immersive.restaurantName}
+          </span>
+        ) : null}
         {toolbar}
         {zones.length > 1 ? (
-          <div role="tablist" aria-label="Zonas" className="flex flex-wrap gap-1 rounded-xl bg-panel p-1 ring-1 ring-app-border">
+          <div role="tablist" aria-label="Zonas" className="flex flex-wrap gap-1 rounded-xl bg-panel p-1 ring-1 ring-app-border inmersivo:flex-nowrap">
             {zones.map((z) => (
               <button
                 key={z.id}
@@ -180,7 +273,7 @@ export function LivePlan({
                 role="tab"
                 aria-selected={z.id === zone?.id}
                 onClick={() => setZoneId(z.id)}
-                className={`h-10 rounded-lg px-3 text-sm font-medium ${
+                className={`h-10 rounded-lg px-3 text-sm font-medium inmersivo:px-2.5 inmersivo:text-xs ${
                   z.id === zone?.id ? "bg-accent text-accent-text" : "text-panel-muted hover:bg-app-border/60"
                 }`}
               >
@@ -189,32 +282,78 @@ export function LivePlan({
             ))}
           </div>
         ) : null}
-        <WaiterSelector state={waiters} />
-        <WaiterActions state={waiters} />
+        {/* A la derecha en modo inmersivo; en la vista normal, donde siempre
+            (`contents`: el envoltorio no existe para el diseño). */}
+        <div className="contents inmersivo:!ml-auto inmersivo:!flex inmersivo:items-center inmersivo:gap-1.5 inmersivo:!bg-transparent inmersivo:!shadow-none inmersivo:[&>*]:bg-panel/80 inmersivo:[&>*]:shadow-md">
+          <WaiterSelector state={waiters} />
+          {immersive?.waitlistHref ? (
+            <button
+              type="button"
+              onClick={() => (waitlistOpen ? setWaitlistOpen(false) : openWaitlist())}
+              aria-expanded={waitlistOpen}
+              aria-label="Lista de espera"
+              title="Lista de espera: agregar, avisar, sentar y liberar"
+              aria-controls="panel-lista-espera"
+              className={`${roundButton} hidden inmersivo:flex`}
+            >
+              <ListOrdered aria-hidden size={18} strokeWidth={2} />
+              Lista
+            </button>
+          ) : null}
+          {immersive ? (
+            <button
+              type="button"
+              onClick={() => setImmersiveMode("normal")}
+              aria-label="Volver a la vista normal"
+              title="Volver a la vista normal"
+              className={`${roundButton} hidden px-0 inmersivo:flex`}
+            >
+              <Minimize2 aria-hidden size={18} strokeWidth={2} />
+            </button>
+          ) : null}
+        </div>
+        {/* En la tablet en horizontal, desde la vista normal: volver a grande. */}
+        {immersive && !immersiveOn ? (
+          <button
+            type="button"
+            onClick={() => setImmersiveMode("auto")}
+            className={`${roundButton} hidden bg-panel tableta-horizontal:flex`}
+          >
+            <Maximize2 aria-hidden size={18} strokeWidth={2} />
+            Plano en grande
+          </button>
+        ) : null}
+        <span className="contents inmersivo:hidden">
+          <WaiterActions state={waiters} />
+        </span>
         {plan && !plan.showNames ? (
-          <span className="flex items-center gap-1.5 rounded-full bg-panel px-3 py-1.5 text-xs font-medium text-panel-muted ring-1 ring-app-border">
+          <span className="flex items-center gap-1.5 rounded-full bg-panel px-3 py-1.5 text-xs font-medium text-panel-muted ring-1 ring-app-border inmersivo:hidden">
             <EyeOff aria-hidden size={14} strokeWidth={2} />
             Solo estados y ocupación: sin nombres de clientes
           </span>
         ) : null}
       </div>
 
-      <WaiterLegend state={waiters} tableCount={seatableTables.length} />
-      <WaiterMessage state={waiters} />
-
-      {error ? (
-        <p role="alert" className="rounded-xl bg-panel px-3 py-2 text-sm text-critica ring-1 ring-app-border">
-          {error}
-        </p>
-      ) : null}
+      <div className="inmersivo:hidden">
+        <WaiterLegend state={waiters} tableCount={seatableTables.length} />
+      </div>
+      {/* Avisos: en modo inmersivo, abajo en el centro, encima del plano. */}
+      <div className="contents inmersivo:pointer-events-none inmersivo:absolute inmersivo:inset-x-0 inmersivo:bottom-3 inmersivo:z-20 inmersivo:flex inmersivo:flex-col inmersivo:items-center inmersivo:gap-2 inmersivo:px-3 inmersivo:[&>*]:pointer-events-auto">
+        <WaiterMessage state={waiters} />
+        {error ? (
+          <p role="alert" className="rounded-xl bg-panel px-3 py-2 text-sm text-critica ring-1 ring-app-border">
+            {error}
+          </p>
+        ) : null}
+      </div>
 
       <div className="relative flex min-h-0 flex-1 flex-col gap-2 sm:block">
         {waiters.editing ? (
-          <div className="max-h-[40vh] shrink-0 sm:absolute sm:bottom-3 sm:left-3 sm:top-3 sm:z-10 sm:max-h-none">
+          <div className="max-h-[40vh] shrink-0 sm:absolute sm:bottom-3 sm:left-3 sm:top-3 sm:z-10 sm:max-h-none inmersivo:top-16 inmersivo:z-20">
             <WaiterEditorPanel state={waiters} />
           </div>
         ) : null}
-      <div className="relative min-h-[24rem] flex-1 overflow-hidden rounded-2xl ring-1 ring-app-border sm:h-full sm:min-h-0">
+      <div className="relative min-h-[24rem] flex-1 overflow-hidden rounded-2xl ring-1 ring-app-border sm:h-full sm:min-h-0 inmersivo:h-full inmersivo:min-h-0 inmersivo:rounded-none inmersivo:ring-0">
         {zone ? (
           <KonvaCanvas
             key={zone.id}
@@ -224,6 +363,11 @@ export function LivePlan({
             height={zone.height}
             // El giro guardado de la zona: se ve como en el editor.
             viewRotation={zone.rotation}
+            // A pantalla completa los controles flotan encima: se encuadra por
+            // debajo de ellos, y se vuelve a encuadrar cada vez que cambia el
+            // tamaño (pantalla completa de Opera, su barra, girar la tablet).
+            topInset={immersiveActive ? FLOATING_BAR_HEIGHT : 0}
+            refitOnResize={immersiveActive}
             elements={zone.elements}
             pulses={pulses}
             now={now}
@@ -247,6 +391,32 @@ export function LivePlan({
         )}
       </div>
       </div>
+
+      {/* La lista de espera: el modo sencillo en un panel a la derecha. Solo
+          en modo inmersivo; en la vista normal se usa su pestaña de siempre. */}
+      {immersive?.waitlistHref && waitlistMounted ? (
+        <aside
+          id="panel-lista-espera"
+          aria-label="Lista de espera"
+          inert={!waitlistOpen}
+          className={`absolute bottom-0 right-0 top-0 z-30 hidden w-[min(26rem,46vw)] flex-col border-l border-app-border bg-panel shadow-2xl transition-transform duration-200 inmersivo:flex ${
+            waitlistOpen ? "translate-x-0" : "translate-x-full"
+          }`}
+        >
+          <div className="flex shrink-0 items-center gap-2 border-b border-app-border px-3 py-1.5">
+            <h2 className="flex-1 text-sm font-semibold text-panel-text">Lista de espera</h2>
+            <button
+              type="button"
+              onClick={() => setWaitlistOpen(false)}
+              aria-label="Cerrar la lista de espera"
+              className="flex h-11 w-11 items-center justify-center rounded-xl text-panel-text hover:bg-app-border/60"
+            >
+              <X aria-hidden size={20} strokeWidth={2} />
+            </button>
+          </div>
+          <iframe src={immersive.waitlistHref} title="Lista de espera (modo sencillo)" className="min-h-0 w-full flex-1 border-0 bg-app-bg" />
+        </aside>
+      ) : null}
     </div>
   );
 }
