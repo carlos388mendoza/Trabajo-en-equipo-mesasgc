@@ -17,6 +17,8 @@ const config = [
       // Salida de la app que levanta `npm run verify:auth`.
       ".next-verify/**",
       ".next-verify-*/**",
+      // Builds locales con otro `NEXT_DIST_DIR` (medir FPS, vista previa).
+      ".next-*/**",
       "out/**",
       "build/**",
       "node_modules/**",

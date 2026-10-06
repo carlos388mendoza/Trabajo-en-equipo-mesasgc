@@ -11,19 +11,21 @@
 // estado re-renderizaría el árbol entero 60 veces por segundo. Solo se
 // notifica el porcentaje de zoom al padre, que lo muestra en la barra.
 //
-// El giro del plano (`viewRotation`) es solo de la vista: gira un Group que
-// envuelve todo el lienzo alrededor de su centro. Los elementos no cambian y
-// no se guarda nada (ver README, "Pendiente").
+// El giro del plano (`viewRotation`) gira un Group que envuelve todo el lienzo
+// alrededor de su centro. Los elementos no cambian; el giro se guarda aparte,
+// en `table_layouts.rotation` (ver README, «Giro del plano completo»).
 
 import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
+  startTransition,
 } from "react";
-import type { ReactNode, RefObject } from "react";
-import { Group, Layer, Line, Rect, Stage, Transformer } from "react-konva";
+import type { RefObject } from "react";
+import { Group, Layer, Rect, Shape, Stage, Transformer } from "react-konva";
 import Konva from "konva";
 
 import { ElementNode } from "./element-node";
@@ -45,9 +47,18 @@ const FIT_PADDING = 70;
 const ZOOM_STEP = 1.2;
 const MIN_SIZE = 24;
 
-// Con dos dedos en pantalla, Konva por defecto deja de detectar qué hay
-// debajo mientras algo se arrastra, y el pellizco no llega a empezar.
-Konva.hitOnDragEnabled = true;
+// Rendimiento en tablet y celular (ver README, «Editor fluido en tablet»):
+//
+//  - Densidad de píxeles como mucho 2: una pantalla de 3x pinta 2,25 veces
+//    más píxeles que una de 2x y no se nota la diferencia en un plano.
+//  - El pellizco se escucha con eventos táctiles NATIVOS del contenedor (ver
+//    abajo), no con los de Konva. Así Konva no tiene que recalcular a qué
+//    elemento toca cada dedo mientras algo se arrastra (`hitOnDragEnabled`),
+//    que costaba un repintado extra en cada movimiento.
+if (typeof window !== "undefined") {
+  Konva.pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+}
+Konva.hitOnDragEnabled = false;
 
 /** Mesero de una mesa en la configuración que se está mirando: color y nombre. */
 export type CanvasWaiterMark = { color: string; label: string };
@@ -64,6 +75,16 @@ export type CanvasHandle = {
    * no en el de la ventana, que es donde el usuario está mirando.
    */
   viewportCenter: () => { x: number; y: number } | null;
+  /**
+   * La parte del plano que se ve en pantalla, en coordenadas del plano. Las
+   * mesas nuevas se colocan dentro (ver `lib/layout/placement.ts`).
+   */
+  visibleBox: () => { left: number; top: number; right: number; bottom: number } | null;
+  /**
+   * Si un elemento queda fuera de lo que se ve (o pegado al borde), mueve el
+   * plano para que quede a la vista. No cambia el zoom.
+   */
+  revealElement: (id: string) => void;
 };
 
 type Props = {
@@ -164,13 +185,21 @@ export function KonvaCanvas({
   const contentRef = useRef<Konva.Group>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const nodesRef = useRef(new Map<string, Konva.Group>());
-  // Distancia entre los dos dedos en el último `touchmove` del pellizco.
-  const pinchRef = useRef<number | null>(null);
+
+  // Los callbacks del padre se leen por ref: así los que se pasan a cada mesa
+  // son SIEMPRE los mismos y el `memo` de `ElementNode` funciona. Si no, cada
+  // render del editor (y hay uno por cada cambio de estado) volvía a pintar
+  // todas las mesas aunque no hubiera cambiado ninguna.
+  const callbacks = useRef({ onSelect, onElementTap, onEditStart, onMove, onChange, onZoomChange });
+  useEffect(() => {
+    callbacks.current = { onSelect, onElementTap, onEditStart, onMove, onChange, onZoomChange };
+  });
 
   const [size, setSize] = useState({ width: 0, height: 0 });
-  // Mientras un elemento se arrastra, el Stage deja de ser arrastrable para
-  // que Konva no mueva los dos a la vez.
-  const [dragging, setDragging] = useState(false);
+  // Capa de arrastre: mientras se arrastra una mesa, vive aquí (ver
+  // `handleNodeDragStart`).
+  const dragGroupRef = useRef<Konva.Group>(null);
+  const dragOrigin = useRef<{ id: string; index: number } | null>(null);
   // Rectángulo de la selección en grupo, en píxeles del contenedor. El ref
   // es para los manejadores de Konva, que leen el valor del momento.
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
@@ -204,9 +233,12 @@ export function KonvaCanvas({
   }, []);
   const getView = useCallback(() => viewRef.current, []);
 
+  // Como mucho unas 10 veces por segundo: el minimapa es una ayuda, y
+  // repintarlo (es React) a 60 por segundo mientras se panea le quitaba
+  // fotogramas al plano.
   const emitView = useCallback(() => {
     if (viewFrame.current !== null) return;
-    viewFrame.current = window.requestAnimationFrame(() => {
+    viewFrame.current = window.setTimeout(() => {
       viewFrame.current = null;
       const content = contentRef.current;
       const node = containerRef.current;
@@ -221,12 +253,12 @@ export function KonvaCanvas({
         inverse.point({ x: 0, y: h }),
       ];
       viewListeners.current.forEach((listener) => listener());
-    });
+    }, 100);
   }, []);
 
   useEffect(
     () => () => {
-      if (viewFrame.current !== null) window.cancelAnimationFrame(viewFrame.current);
+      if (viewFrame.current !== null) window.clearTimeout(viewFrame.current);
       // Sin esto, tras el desmontaje y remontaje de Strict Mode el ref se
       // quedaba con el id del fotograma cancelado y `emitView` creía que ya
       // había uno en camino: el minimapa no volvía a enterarse de nada.
@@ -266,6 +298,23 @@ export function KonvaCanvas({
     return () => observer.disconnect();
   }, []);
 
+  // El porcentaje de zoom de la barra es estado del editor: actualizarlo en
+  // cada paso del pellizco re-renderizaba el editor entero 60 veces por
+  // segundo. Se avisa como mucho cada 150 ms, con el último valor.
+  const zoomTimer = useRef<number | null>(null);
+  const pendingZoom = useRef(100);
+  const reportZoom = useCallback((scale: number) => {
+    pendingZoom.current = Math.round(scale * 100);
+    if (zoomTimer.current !== null) return;
+    zoomTimer.current = window.setTimeout(() => {
+      zoomTimer.current = null;
+      callbacks.current.onZoomChange(pendingZoom.current);
+    }, 150);
+  }, []);
+  useEffect(() => () => {
+    if (zoomTimer.current !== null) window.clearTimeout(zoomTimer.current);
+  }, []);
+
   /**
    * Zoom anclado a un punto de la pantalla.
    *
@@ -298,10 +347,10 @@ export function KonvaCanvas({
         x: offsetX - pointerInStage.x * newScale,
         y: offsetY - pointerInStage.y * newScale,
       });
-      onZoomChange(Math.round(newScale * 100));
+      reportZoom(newScale);
       emitView();
     },
-    [emitView, onZoomChange],
+    [emitView, reportZoom],
   );
 
   const handleWheel = useCallback(
@@ -314,36 +363,126 @@ export function KonvaCanvas({
     [zoomAround],
   );
 
-  // Pellizco con dos dedos. Mientras dura, ni el Stage ni un elemento se
-  // arrastran: el primer dedo había empezado un arrastre y hay que cortarlo.
-  const handleTouchMove = useCallback(
-    (e: Konva.KonvaEventObject<TouchEvent>) => {
-      const touches = e.evt.touches;
-      if (touches.length !== 2) {
-        pinchRef.current = null;
+  // --- Cámara: mover el plano y pellizcar ---------------------------------
+  //
+  // Durante el gesto NO se redibuja nada: se desplaza (o escala) con CSS el
+  // lienzo YA dibujado, que el navegador mueve en la tarjeta gráfica sin coste.
+  // Al soltar, se pasa a Konva la vista nueva y se redibuja UNA vez. Es lo que
+  // hace que mover el plano y el pellizco vayan a 60 FPS en una tablet: antes,
+  // cada movimiento del dedo redibujaba el plano entero. Mientras se pellizca
+  // el plano se ve un poco borroso; al soltar vuelve a estar nítido.
+  //
+  // Va con eventos de puntero nativos del contenedor (dedo, ratón o lápiz).
+  // Un gesto que empieza sobre una mesa no mueve el plano: esa mesa la arrastra
+  // Konva. El segundo dedo convierte cualquier gesto en pellizco.
+  const panEnabledRef = useRef(true);
+  useEffect(() => {
+    panEnabledRef.current = !onMarquee;
+  });
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+    type Pt = { x: number; y: number };
+    const pointers = new Map<number, Pt>();
+    let gesture: null | {
+      kind: "pan" | "pinch";
+      base: { x: number; y: number; s: number };
+      start: Pt;
+      startDist: number;
+      cur: { tx: number; ty: number; s: number };
+    } = null;
+    const local = (e: PointerEvent): Pt => {
+      const r = node.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    const contentDiv = () => stageRef.current?.content ?? null;
+    const apply = () => {
+      const div = contentDiv();
+      if (!div || !gesture) return;
+      div.style.transformOrigin = `${gesture.start.x}px ${gesture.start.y}px`;
+      div.style.transform = `translate(${gesture.cur.tx}px, ${gesture.cur.ty}px) scale(${gesture.cur.s})`;
+    };
+    const commit = () => {
+      const stage = stageRef.current;
+      const g = gesture;
+      gesture = null;
+      const div = contentDiv();
+      if (!stage || !g) return;
+      const { tx, ty, s } = g.cur;
+      if (tx !== 0 || ty !== 0 || s !== 1) {
+        // Un punto en pantalla P pasó a O + (P - O)·s + t, con O = inicio.
+        const O = g.start;
+        stage.scale({ x: g.base.s * s, y: g.base.s * s });
+        stage.position({ x: O.x + (g.base.x - O.x) * s + tx, y: O.y + (g.base.y - O.y) * s + ty });
+        // Dibujar YA, antes de quitar el CSS: si no, un fotograma saltaría.
+        stage.draw();
+        reportZoom(g.base.s * s);
+        emitView();
+      }
+      if (div) div.style.transform = "";
+    };
+    const startGesture = (kind: "pan" | "pinch") => {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const pts = [...pointers.values()];
+      const start = kind === "pan" ? pts[0] : { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      gesture = {
+        kind,
+        base: { x: stage.x(), y: stage.y(), s: stage.scaleX() },
+        start,
+        startDist: kind === "pinch" ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0,
+        cur: { tx: 0, ty: 0, s: 1 },
+      };
+    };
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      const p = local(e);
+      pointers.set(e.pointerId, p);
+      const stage = stageRef.current;
+      if (!stage) return;
+      if (pointers.size === 2) {
+        // Segundo dedo: pellizco. Si un dedo arrastraba una mesa, se suelta.
+        if (gesture) commit();
+        for (const n of nodesRef.current.values()) if (n.isDragging()) n.stopDrag();
+        startGesture("pinch");
         return;
       }
-      e.evt.preventDefault();
-      const stage = stageRef.current;
-      if (stage?.isDragging()) stage.stopDrag();
-      for (const node of nodesRef.current.values()) {
-        if (node.isDragging()) node.stopDrag();
+      if (pointers.size !== 1 || !panEnabledRef.current) return;
+      // Sobre una mesa: la arrastra Konva, no se mueve el plano.
+      if (stage.getIntersection(p)) return;
+      startGesture("pan");
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, local(e));
+      if (!gesture) return;
+      if (gesture.kind === "pan") {
+        const p = pointers.get(e.pointerId)!;
+        gesture.cur = { tx: p.x - gesture.start.x, ty: p.y - gesture.start.y, s: 1 };
+      } else if (pointers.size >= 2) {
+        const [p1, p2] = [...pointers.values()];
+        const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        const s = clamp(gesture.base.s * (d / (gesture.startDist || 1)), MIN_SCALE, MAX_SCALE) / gesture.base.s;
+        const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+        gesture.cur = { tx: mid.x - gesture.start.x, ty: mid.y - gesture.start.y, s };
       }
-
-      const [a, b] = [touches[0], touches[1]];
-      const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-      const previous = pinchRef.current;
-      pinchRef.current = distance;
-      if (previous === null || previous === 0) return;
-
-      zoomAround(
-        (a.clientX + b.clientX) / 2,
-        (a.clientY + b.clientY) / 2,
-        distance / previous,
-      );
-    },
-    [zoomAround],
-  );
+      apply();
+    };
+    const onUp = (e: PointerEvent) => {
+      if (!pointers.delete(e.pointerId)) return;
+      if (gesture && (pointers.size === 0 || gesture.kind === "pinch")) commit();
+    };
+    node.addEventListener("pointerdown", onDown);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      node.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [emitView, reportZoom]);
 
   const zoomByCentre = useCallback(
     (factor: number) => {
@@ -444,8 +583,36 @@ export function KonvaCanvas({
         const rect = node.getBoundingClientRect();
         return toCanvas(rect.width / 2, rect.height / 2);
       },
+      visibleBox: () => {
+        const node = containerRef.current;
+        if (!node) return null;
+        const w = node.clientWidth;
+        const h = node.clientHeight;
+        const corners = [toCanvas(0, 0), toCanvas(w, 0), toCanvas(w, h), toCanvas(0, h)];
+        if (corners.some((p) => p === null)) return null;
+        const xs = corners.map((p) => p!.x);
+        const ys = corners.map((p) => p!.y);
+        return { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) };
+      },
+      revealElement: (id: string) => {
+        const stage = stageRef.current;
+        const node = nodesRef.current.get(id);
+        const box = containerRef.current;
+        if (!stage || !node || !box) return;
+        const r = node.getClientRect();
+        const M = 16;
+        const w = box.clientWidth;
+        const h = box.clientHeight;
+        if (r.x >= M && r.y >= M && r.x + r.width <= w - M && r.y + r.height <= h - M) return;
+        stage.position({
+          x: stage.x() + (w / 2 - (r.x + r.width / 2)),
+          y: stage.y() + (h / 2 - (r.y + r.height / 2)),
+        });
+        stage.batchDraw();
+        emitView();
+      },
     }),
-    [resetView, toCanvas, zoomByCentre],
+    [emitView, resetView, toCanvas, zoomByCentre],
   );
 
   // Se encuadra al abrir, al cambiar de zona y al girar el plano. `hasSize`
@@ -531,34 +698,88 @@ export function KonvaCanvas({
   );
 
   // Retícula de fondo, tenue: líneas finas cada 25 unidades y algo más
-  // marcadas cada 100, como el radar de un mapa visto desde arriba. Va en el Layer de abajo y con
-  // `listening={false}`: los clics la atraviesan y llegan al Stage, que es lo
-  // que hace que tocar el vacío deseleccione.
-  const MINOR = 25;
-  const MAJOR = 100;
-  const gridLines: ReactNode[] = [];
-  for (let gx = MINOR; gx < width; gx += MINOR) {
-    gridLines.push(
-      <Line
-        key={`grid-v-${gx}`}
-        points={[gx, 0, gx, height]}
-        stroke={gx % MAJOR === 0 ? theme.gridMajor : theme.grid}
-        strokeWidth={1}
-        listening={false}
-      />,
-    );
-  }
-  for (let gy = MINOR; gy < height; gy += MINOR) {
-    gridLines.push(
-      <Line
-        key={`grid-h-${gy}`}
-        points={[0, gy, width, gy]}
-        stroke={gy % MAJOR === 0 ? theme.gridMajor : theme.grid}
-        strokeWidth={1}
-        listening={false}
-      />,
-    );
-  }
+  // marcadas cada 100, como el radar de un mapa visto desde arriba. Va en el
+  // Layer de abajo y con `listening={false}`: los clics la atraviesan y llegan
+  // al Stage, que es lo que hace que tocar el vacío deseleccione.
+  //
+  // Es UNA figura que traza todas las líneas en dos pasadas (finas y
+  // marcadas), no una figura por línea: con ~80 líneas, cada movimiento del
+  // plano costaba ~80 dibujos en vez de 2.
+  const drawGrid = useCallback(
+    (ctx: Konva.Context) => {
+      const c = ctx._context;
+      const MINOR = 25;
+      const MAJOR = 100;
+      c.lineWidth = 1;
+      for (const major of [false, true]) {
+        c.beginPath();
+        for (let gx = MINOR; gx < width; gx += MINOR) {
+          if ((gx % MAJOR === 0) !== major) continue;
+          c.moveTo(gx, 0);
+          c.lineTo(gx, height);
+        }
+        for (let gy = MINOR; gy < height; gy += MINOR) {
+          if ((gy % MAJOR === 0) !== major) continue;
+          c.moveTo(0, gy);
+          c.lineTo(width, gy);
+        }
+        c.strokeStyle = major ? theme.gridMajor : theme.grid;
+        c.stroke();
+      }
+    },
+    [height, theme.grid, theme.gridMajor, width],
+  );
+
+  // Callbacks estables para las mesas (ver `callbacks` arriba).
+  // Elegir una mesa re-renderiza el panel del editor: se marca como «no
+  // urgente» para que React no bloquee los fotogramas del dedo (si el toque
+  // sigue en un arrastre, el arrastre va primero).
+  const handleSelect = useCallback((id: string) => {
+    startTransition(() => callbacks.current.onSelect(id));
+  }, []);
+  const handleTap = useCallback((id: string) => callbacks.current.onElementTap?.(id), []);
+  // Mientras se arrastra, la mesa pasa a una capa propia (`dragGroupRef`, con
+  // el mismo giro que el plano): así cada movimiento redibuja SOLO esa mesa y
+  // no las otras 40. Es la técnica que recomienda Konva para arrastrar rápido.
+  // Al soltar vuelve a su sitio, en el mismo orden.
+  const handleNodeDragStart = useCallback((id: string) => {
+    const node = nodesRef.current.get(id);
+    const dragGroup = dragGroupRef.current;
+    if (node && dragGroup && node.getParent() !== dragGroup) {
+      dragOrigin.current = { id, index: node.zIndex() };
+      node.moveTo(dragGroup);
+      contentRef.current?.getLayer()?.batchDraw();
+      // La mesa se guarda como imagen mientras se arrastra (a la escala de
+      // ahora, para que se vea nítida): cada movimiento copia esa imagen en
+      // vez de volver a componer sus textos y figuras. Y el recuadro de
+      // selección se esconde hasta soltar, para no redibujarlo en cada paso.
+      const scale = stageRef.current?.scaleX() ?? 1;
+      node.cache({ pixelRatio: Konva.pixelRatio * scale, offset: 24 });
+      // El recuadro se desengancha hasta soltar: enganchado, se recalcula en
+      // cada movimiento aunque no se vea.
+      transformerRef.current?.nodes([]);
+    }
+  }, []);
+  // Al SOLTAR: la mesa se movió sola durante el arrastre (es Konva quien la
+  // mueve); el estado de React se actualiza una sola vez, aquí.
+  const handleNodeDragEnd = useCallback((id: string, x: number, y: number) => {
+    const node = nodesRef.current.get(id);
+    const content = contentRef.current;
+    if (node && content && dragOrigin.current?.id === id) {
+      node.clearCache();
+      node.moveTo(content);
+      node.zIndex(Math.min(dragOrigin.current.index, content.children.length - 1));
+      transformerRef.current?.nodes([node]);
+      dragOrigin.current = null;
+    }
+    // La foto para Deshacer se toma AQUÍ y no al empezar: el estado todavía
+    // tiene la posición de antes (la mesa la movió Konva, no React), y así
+    // empezar a arrastrar no re-renderiza el editor.
+    callbacks.current.onEditStart();
+    callbacks.current.onMove(id, x, y);
+    callbacks.current.onChange();
+  }, []);
+  const bounds = useMemo(() => ({ width, height }), [width, height]);
 
   // Mismo giro en las dos capas: el suelo y los elementos giran juntos.
   const rotated = {
@@ -628,24 +849,17 @@ export function KonvaCanvas({
           ref={stageRef}
           width={size.width}
           height={size.height}
-          draggable={!dragging && !onMarquee}
+          // El plano se mueve con la cámara de arriba, no arrastrando el Stage.
+          draggable={false}
           onWheel={handleWheel}
           onMouseDown={deselectOnEmpty}
           onTouchStart={deselectOnEmpty}
-          onTouchMove={(e) => {
+          onTouchMove={() => {
             if (marqueeRef.current) moveMarquee();
-            else handleTouchMove(e);
           }}
           onMouseMove={moveMarquee}
           onMouseUp={endMarquee}
-          onDragMove={(e) => {
-            // Solo el paneo del Stage mueve la vista; arrastrar una mesa no.
-            if (e.target === e.target.getStage()) emitView();
-          }}
-          onTouchEnd={() => {
-            pinchRef.current = null;
-            endMarquee();
-          }}
+          onTouchEnd={endMarquee}
         >
           <Layer listening={false}>
             <Group {...rotated}>
@@ -657,8 +871,10 @@ export function KonvaCanvas({
                 cornerRadius={14}
                 fill={theme.mapBg}
               />
-              {gridLines}
-              {/* Paredes del local: línea marcada con un brillo suave. */}
+              <Shape sceneFunc={drawGrid} listening={false} perfectDrawEnabled={false} />
+              {/* Paredes del local. Sin sombra difuminada: en una tablet,
+                  repintar ese brillo en cada movimiento costaba más que el
+                  resto del plano. */}
               <Rect
                 x={0}
                 y={0}
@@ -667,9 +883,7 @@ export function KonvaCanvas({
                 cornerRadius={14}
                 stroke={theme.line}
                 strokeWidth={3}
-                shadowColor={theme.glow}
-                shadowBlur={16}
-                shadowOpacity={theme.dark ? 0.8 : 0.35}
+                perfectDrawEnabled={false}
               />
             </Group>
           </Layer>
@@ -692,40 +906,45 @@ export function KonvaCanvas({
                     occupantName={element.currentEntryId ? element.occupantName : null}
                     minutes={minutesSeated(element, now)}
                     pulse={pulses[element.id] ?? 0}
-                    onSelect={onSelect}
-                    onTap={onElementTap}
+                    onSelect={handleSelect}
+                    onTap={onElementTap ? handleTap : undefined}
                     waiter={waiterMarks?.[element.id] ?? null}
                     draggable={!readOnly}
-                    onDragStart={() => {
-                      onEditStart();
-                      setDragging(true);
-                    }}
-                    onDragMove={onMove}
-                    onDragEnd={() => {
-                      setDragging(false);
-                      onChange();
-                    }}
+                    bounds={bounds}
+                    onDragStart={handleNodeDragStart}
+                    onDragEnd={handleNodeDragEnd}
                     registerNode={registerNode}
                   />
                 );
               })}
             </Group>
+          </Layer>
 
-            {readOnly ? null : (
+          {/* La mesa que se está arrastrando (ver `handleNodeDragStart`). Sin
+              `listening`: mientras se arrastra no hace falta saber qué hay
+              bajo el dedo, y así no se redibuja su mapa de toques. */}
+          <Layer listening={false}>
+            <Group ref={dragGroupRef} {...rotated} />
+          </Layer>
+
+          {/* Selección y tiradores en su propia capa: elegir otra mesa repinta
+              solo esta capa, no todas las mesas. */}
+          {readOnly ? null : (
+            <Layer>
               <Transformer
                 {...transformerConfig}
                 ref={transformerRef}
                 onTransformStart={onEditStart}
                 onTransformEnd={handleTransformEnd}
               />
-            )}
-          </Layer>
+            </Layer>
+          )}
         </Stage>
       ) : null}
 
       {/* En un celular en vertical el minimapa taparía media sala: el plano ya
           cabe entero en la pantalla, así que no hace falta. */}
-      <div className="pointer-events-none absolute bottom-3 left-3 hidden sm:block">
+      <div className="pointer-events-none absolute bottom-3 left-3 hidden sm:block movil-horizontal:!hidden">
         <div className="pointer-events-auto">
           <Minimap
             width={width}
@@ -766,7 +985,7 @@ export function KonvaCanvas({
  */
 function StatusLegend({ theme }: { theme: Theme }) {
   return (
-    <div className="pointer-events-none absolute bottom-3 right-3 flex flex-col gap-1.5 rounded-2xl bg-panel/80 px-3 py-2.5 text-xs font-medium text-panel-text shadow-lg ring-1 ring-app-border backdrop-blur-md">
+    <div className="pointer-events-none absolute bottom-3 right-3 flex flex-col gap-1.5 rounded-2xl bg-panel/95 px-3 py-2.5 text-xs font-medium text-panel-text shadow-lg ring-1 ring-app-border">
       {STATUS_ORDER.map((status) => {
         const colors = theme.status[status];
         return (
