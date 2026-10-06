@@ -12,34 +12,58 @@ Grupo Comidas.
 ## En producción
 
 Desde el 30 de septiembre de 2026 hay una versión publicada en Railway. La
-última es `main` = `675c687` (PR #43), desplegada el 1 de octubre (despliegue
-`f9e13d63`): cartas del modo rápido como baraja y agregar varios (#40), mapa a
-60 fps (#41) y `npm run create-user` (#42).
+última es `main` = `19d8efe` (PR #66), desplegada el **6 de octubre de 2026**
+(despliegue `eefbb850`): meseros con «[−] N [+]» (#58), respuestas del
+asistente en Markdown sin HTML crudo (#59), ejes y leyenda del gráfico de
+volumen y espera (#60) y `/analiticas` sin scroll horizontal (#61).
+
+Despliegues del 6 de octubre:
+
+| PR | `main` | Despliegue | Qué llevó |
+|---|---|---|---|
+| #57 | `035f574` | `e8bc6d5f` | Editor de mesas fluido en tablet y celular (#56): 57-60 FPS, ventana de control que no tapa el plano y mesas nuevas dentro del recuadro. |
+| #66 | `19d8efe` | `eefbb850` | Issues #58 a #61 (PR #62 a #65). |
+
+Antes: `395d8d5` (PR #55, 5 de octubre) con zonas de meseros, modo sin
+conexión, editor con ventana única y un usuario por marca.
 
 - **Dominio:** https://trabajo-en-equipo-mesasgc-production.up.railway.app
 - **Railway:** proyecto `noble-energy`, servicio `Trabajo-en-equipo-mesasgc`,
   región US East, rama `main` con **Wait for CI**.
-- **Base:** Turso `mesasgc-prod`, nueva, en la cuenta del Miembro A
-  (`aws-us-east-1`). Tiene las 7 migraciones (hasta la `0006`, con
-  `resolved_at` y `resolved_by_user_id`; comprobado con una consulta de solo
-  lectura), las 12 tablas y el catálogo de 8 tipos. **Sin datos de
-  ejemplo:** el seed no se corre en producción, y el lote de datos de
-  demostración (#45) todavía no se ha cargado: entra la migración `0007`
-  (`is_demo` y `demo_batch_id`) con el próximo despliegue.
+- **Base:** Turso `mesasgc-prod`, en la cuenta del Miembro A
+  (`aws-us-east-1`). El Pre-deploy aplica las 10 migraciones del repositorio
+  (hasta la `0009_zonas_meseros`) y el catálogo de 8 tipos. Tiene cargados
+  los datos de demostración (#45): no se borran, aunque su interfaz se quitó
+  (#53). El seed no se corre en producción.
 - **Restaurantes:** cargados con `railway run npm run db:restaurantes`: las
-  4 marcas, los 8 restaurantes con su latitud y longitud, y una zona vacía
-  «Comedor principal» en cada uno (sin mesas ni clientes todavía).
-- **Usuarios:** el admin (`admin@grupocomidas.test`) y
-  `analitica@grupocomidas.test`. Los del piloto, `dennys@` y `pizzahut@`,
-  los crea Carlos con `railway run npm run create-user` (comandos en
-  `docs/salida-a-produccion.md`, sección 3.1). Si se pierde el acceso:
-  `railway run npm run reset-password` (ver `docs/despliegue.md`, sección 3).
+  4 marcas (Pizza Hut, KFC, Denny's y China Wok) y sus restaurantes, con su
+  latitud y longitud. Las marcas y los restaurantes nuevos se dan de alta
+  desde `/admin`.
+- **Usuarios:** el admin, analítica y uno de restaurante por marca
+  (`pizzahut@`, `dennys@`, `kfc@` y `chinawok@`, todos en
+  `@grupocomidas.test`), creados con `railway run npm run create-user`
+  (comandos en `docs/salida-a-produccion.md`, sección 3.1). Si se pierde el
+  acceso: `railway run npm run reset-password` (ver `docs/despliegue.md`,
+  sección 3).
 - **Variables:** `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`,
-  `BETTER_AUTH_SECRET` (nuevo, de 48 bytes), `BETTER_AUTH_URL`,
+  `BETTER_AUTH_SECRET` (de 48 bytes), `BETTER_AUTH_URL`,
   `OPENROUTER_API_KEY` (con límite de gasto) y `OPENROUTER_MODEL`. Ningún
-  valor está en el repositorio.
+  valor está en el repositorio. Los despliegues del 6 de octubre no
+  añadieron ninguna.
 - **Comandos:** se escriben a mano en Railway, porque los servicios nuevos
   ya no leen `railway.json` (ver `docs/despliegue.md`, sección 1).
+- **Comprobado en los despliegues del #57 y del #66 (6 de octubre):**
+  - Railway desplegó exactamente el commit de `main` (`035f574` y
+    `19d8efe`), con estado SUCCESS;
+  - el build compila sin errores; en el log salen «migrations applied
+    successfully!» y «catálogo de elementos: 8 tipos listos», el servidor
+    arranca con Socket.IO activo y no hay errores de la app;
+  - `/api/health` responde 200 con `{"ok":true}` y `/login`, 200;
+  - sin sesión, `/analiticas` y el editor redirigen a `/login?next=…`, y
+    `/api/assistant` y `/api/analiticas` responden 401;
+  - las pruebas funcionales de #56 y de #58 a #61 se hicieron en local con
+    el mismo código que `main` (Chrome sin ventana, 375×812, 768×1024,
+    1024×768 y computadora, claro y oscuro), no en producción.
 - **Comprobado en el despliegue del #43 (1 de octubre):**
   - en el log salen «migrations applied successfully!» (con la `0006`),
     «catálogo de elementos: 8 tipos listos» y «Healthcheck succeeded!», y
@@ -58,8 +82,8 @@ Desde el 30 de septiembre de 2026 hay una versión publicada en Railway. La
 
 ## Lo que ya está hecho
 
-Todo esto está en `testing`. En `main` está todo hasta el #43; la última fila
-(datos de demostración, #45) llega con el siguiente `testing` → `main`.
+Todo esto está en `testing` y en `main` (desplegado el 6 de octubre de 2026,
+PR #66).
 
 | Área | Qué hay | Dónde está | PR |
 |---|---|---|---|
@@ -482,8 +506,13 @@ plano»).
 - typecheck, lint, build y los cuatro `verify` en verde. ESLint ya no revisa
   las carpetas de build locales (`.next-*`).
 
-**Sigue pendiente decidir** qué hacer con lo ajeno que quedó en local: la rama
-`wip/perf-script-ajeno` (commit `ef8047c`, guion de FPS por CDP), el stash
-«wip-perf-script-ajeno» y, sin seguimiento, `.next-baseline/` (185 MB),
-`.perf-baseline.db`, `.perf-editor.db` y `perf-resultados/`. No se subieron
-ni se borraron.
+**Publicado el 6 de octubre:** el editor (#56) con el #57 (`035f574`) y las
+issues #58 a #61 con el #66 (`19d8efe`); ver «En producción».
+
+**Limpieza de los restos de rendimiento (6 de octubre):** se borraron la rama
+`perf/editor-tactil` (local y en GitHub; su código está entero en `testing`)
+y, en local, `.next-baseline/`, `.perf-baseline.db`, `.perf-editor.db` y
+`perf-resultados/`. **Se conservan** la rama local `wip/perf-script-ajeno` y
+el stash «wip-perf-script-ajeno»: traen un guion de medición de FPS por CDP
+(`scripts/perf/`, `perf:levantar` y `perf:editor`) que no está en `testing`.
+Falta decidir si se sube en su propio PR o se descarta.
