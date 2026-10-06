@@ -1097,6 +1097,48 @@ solo ve el plano de los suyos.
   vuelve a pedir el plano a la server action `loadLivePlan`, que decide en el
   servidor si incluye los nombres.
 
+### Plano en vivo a pantalla completa (tablet en horizontal)
+
+Las tablets usan Opera, y la pantalla completa se pone desde el propio Opera
+(no hay botón de Fullscreen API). Con la tablet en horizontal,
+`/restaurante/[id]/mapa` pasa a **modo inmersivo**:
+
+- **Lo decide CSS, no JS.** Una media query en `lib/layout/immersive.ts`
+  (horizontal, 900×500 o más, `hover: none` y `pointer: coarse`) alimenta las
+  variantes de Tailwind `tableta-horizontal:`, `inmersivo:`, `inmersivo-raiz:`
+  y `con-plano-inmersivo:`. Así no hay parpadeo al cargar, cambia en el mismo
+  fotograma al girar la tablet, y el celular tumbado (430 px de alto como
+  mucho) y la computadora (puntero fino) se quedan como siempre.
+- **Pantalla entera sin `overflow: hidden`.** La raíz del plano
+  (`data-inmersivo`) es `fixed` con `100dvh` y los márgenes de
+  `safe-area-inset`; la cabecera, el menú del restaurante y el título se
+  ocultan (`con-plano-inmersivo:hidden`) y el `<main>` pierde margen y alto
+  mínimo. No queda nada que haga scroll.
+- **Controles flotantes:** la misma barra de siempre pasa a flotar arriba,
+  semitransparente y sin desenfoque (un `backdrop-filter` encima del lienzo
+  costaría fotogramas): nombre, «En vivo», zonas, «Meseros activos [−] N [+]»
+  (con el texto solo para el lector de pantalla), **Lista** y **contraer**. No
+  se pinta una segunda barra: no hay dos «Agregar mesero».
+- **Encuadre:** `KonvaCanvas` recibe `refitOnResize` y `topInset` (la franja
+  de los controles): al entrar en el modo, al asomar la barra de Opera o al
+  entrar en su pantalla completa, el plano se vuelve a encuadrar solo (con
+  120 ms de pausa, una vez con la medida final). El minimapa se oculta.
+- **Lista de espera:** un panel a la derecha con el **modo sencillo en un
+  iframe del propio sitio**. Es la misma página de siempre, así que conserva
+  el tiempo real, la cola sin conexión, los permisos (`rapido:ver`; sin él no
+  hay botón) y sentar y liberar. Dentro del iframe, un script en `<head>` marca
+  `data-embebido` y la variante `embebido:` quita cabecera y menú. El iframe se
+  crea al abrir el panel la primera vez y luego se queda.
+- **Solo el propio sitio puede enmarcar la app:** `next.config.mjs` envía
+  `Content-Security-Policy: frame-ancestors 'self'` y
+  `X-Frame-Options: SAMEORIGIN` (contra el *clickjacking*). Lo comprueba
+  `verify:auth`.
+- **«Vista normal»** (ícono de contraer) lo quita hasta que la tablet se pone
+  de pie; desde la vista normal, **Plano en grande** lo vuelve a poner.
+- **Rendimiento:** con la CPU 4 veces más lenta, mover el plano y pellizcar
+  van igual o mejor que en la vista normal (57 y 51 FPS en 1024×768, contra 55
+  y 46), y a 60 FPS sin ralentizar.
+
 ### Archivos
 
 | Fichero | Para qué |
@@ -1110,6 +1152,8 @@ solo ve el plano de los suyos.
 | `lib/realtime/overview.ts` | `emitOverview`. |
 | `app/mapa/page.tsx`, `app/mapa/actions.ts` | Página y actions (`loadOverviewCounters`, `loadLivePlan`). |
 | `app/restaurante/[id]/mapa/page.tsx` | Plano en vivo de un restaurante. |
+| `components/map/live-plan.tsx` | El plano en vivo y su modo inmersivo (controles flotantes y panel de la lista de espera). |
+| `lib/layout/immersive.ts` | La media query de la tablet en horizontal, que comparten Tailwind y el plano. |
 | `components/map/world-map.tsx` | Mapa, cámara (rueda, pellizco, arrastre, botones y minimapa), marcadores y grupos, filtros, lista y zoom al plano. |
 | `components/map/live-plan.tsx` | Plano en vivo (Konva en solo lectura). |
 | `components/map/use-overview-socket.ts` | Socket de la sala `overview` y respaldo de 30 s. |

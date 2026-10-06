@@ -63,7 +63,7 @@ export async function AppHeader() {
   }
 
   return (
-    <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-app-border bg-panel px-4 py-2.5 text-panel-text">
+    <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-app-border bg-panel px-4 py-2.5 text-panel-text con-plano-inmersivo:hidden embebido:hidden">
       <Link href={user ? "/inicio" : "/login"} className="flex shrink-0 items-center gap-2.5">
         <Image
           src="/brand/grupo-comidas-logo-circular-solo-nombre.png"
