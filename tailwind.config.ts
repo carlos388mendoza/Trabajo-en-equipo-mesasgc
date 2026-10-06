@@ -1,6 +1,8 @@
 import type { Config } from "tailwindcss";
 import plugin from "tailwindcss/plugin";
 
+import { TABLET_LANDSCAPE_QUERY } from "./lib/layout/immersive";
+
 const config: Config = {
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
@@ -60,6 +62,28 @@ const config: Config = {
     // el `sm:h-[400px]` de siempre se impondría y el arreglo no se vería.
     plugin(({ addVariant }) => {
       addVariant("movil-horizontal", "@media (orientation: landscape) and (max-width: 1023px)");
+    }),
+    // Tablet en horizontal: el plano en vivo pasa a pantalla completa (modo
+    // inmersivo, ver `components/map/live-plan.tsx`). La media query y por qué
+    // es así están en `lib/layout/immersive.ts`.
+    //
+    // Es CSS y no JS: al girar la tablet cambia en el mismo fotograma, y al
+    // cargar la página no hay parpadeo de la vista normal.
+    //
+    // Se registran en este orden a propósito: Tailwind los emite así, y el de
+    // `inmersivo` tiene que ganar al de `tableta-horizontal`.
+    plugin(({ addVariant }) => {
+      const tabletaHorizontal = TABLET_LANDSCAPE_QUERY;
+      addVariant("tableta-horizontal", `@media ${tabletaHorizontal}`);
+      // Dentro del plano en modo inmersivo (`data-inmersivo` en su raíz).
+      addVariant("inmersivo", `@media ${tabletaHorizontal} { [data-inmersivo] & }`);
+      // La raíz misma del plano en modo inmersivo.
+      addVariant("inmersivo-raiz", `@media ${tabletaHorizontal} { &[data-inmersivo] }`);
+      // Fuera del plano (cabecera, menú, márgenes) mientras hay uno inmersivo.
+      addVariant("con-plano-inmersivo", `@media ${tabletaHorizontal} { :root:has([data-inmersivo]) & }`);
+      // La página va dentro de un iframe del propio sitio (el panel de la
+      // lista de espera del plano inmersivo): sin cabecera ni menú.
+      addVariant("embebido", ":root[data-embebido] &");
     }),
   ],
 };

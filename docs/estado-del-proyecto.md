@@ -91,6 +91,7 @@ PR #66).
 | Catálogo en producción | `npm run db:catalog` carga los 8 tipos de elemento sin tocar nada más. Va en el Pre-deploy. | `lib/layout/catalog.ts`, `scripts/db-catalog.mts` | #21 |
 | Editor de mesas | Plano con Konva para tablet: arrastrar, redimensionar, girar elementos, deshacer y copiar a otro restaurante. | `components/editor/`, README §8–9, §12 | #3, #7 |
 | Editor fluido en tablet y celular | 57-60 FPS con la CPU 4× más lenta al arrastrar, mover el plano y pellizcar; panel lateral o barra abajo que no tapa el plano; mesas nuevas dentro del recuadro y nada se sale de la zona. | `components/editor/`, `lib/layout/placement.ts`, README §12 | `perf/editor-fluido` |
+| Plano en vivo a pantalla completa en la tablet | Con la tablet en horizontal (Opera), el plano ocupa toda la pantalla sin cabecera ni menú, se encuadra solo (también al cambiar de tamaño) y lleva controles flotantes: meseros [−] N [+], **Lista** (el modo sencillo en un panel lateral) y volver a la vista normal. En vertical, celular y computadora no cambia nada. Solo el propio sitio puede meter la app en un iframe. | `components/map/live-plan.tsx`, `lib/layout/immersive.ts`, README §16 | `feat/plano-inmersivo` |
 | Giro guardado y estructura | El giro del plano completo se guarda (`table_layouts.rotation`), se avisa en vivo, se copia y lo respetan el plano en vivo y el minimapa. Tipos barra, puerta y pared. | `components/editor/`, `lib/layout/`, README §12 | #14 |
 | Tiempo real | Next y Socket.IO en un solo servidor (`server.ts`), con una room por restaurante y la sala `overview` del mapa. | `lib/realtime/`, README §10, §16 | #5, #11 |
 | Conflictos | Asignación de mesa con bloqueo optimista: gana el primero y el otro recibe «Esta mesa ya fue asignada». | `lib/tables/assign.ts` | #5 |
@@ -479,6 +480,14 @@ estadísticas y datos) y entran después.
   servidor, pero para varios servidores haría falta, por ejemplo, Redis.
 
 ## Dónde quedé (6 de octubre de 2026)
+
+**Hecho:** plano en vivo a pantalla completa en la tablet en horizontal
+(rama `feat/plano-inmersivo`): ver README §16, «Plano en vivo a pantalla
+completa», y el manual del host. Probado en 1024×768 y 1180×820 (inmersivo),
+768×1024, 375×812, 812×375 y computadora (vista normal), en claro y oscuro:
+reajuste al cambiar el alto de 768 a 800 px, sin scroll, meseros [−] [+],
+sentar y liberar desde el panel con el plano al día, «Vista normal», girar la
+tablet. Después: «Ver clientes» y colores de meseros en el modo sencillo.
 
 **Terminado:** el editor de mesas fluido en tablet y celular, en la rama
 `perf/editor-fluido` (sale de `testing` y reúne lo de `perf/editor-tactil`

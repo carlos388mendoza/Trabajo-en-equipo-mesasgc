@@ -19,6 +19,8 @@ const config = [
       ".next-verify-*/**",
       // Builds locales con otro `NEXT_DIST_DIR` (medir FPS, vista previa).
       ".next-*/**",
+      // Capturas y perfil de Chrome de `scripts/verify-browser.mts`.
+      ".verify-browser/**",
       "out/**",
       "build/**",
       "node_modules/**",
