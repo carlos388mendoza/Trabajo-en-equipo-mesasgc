@@ -312,6 +312,7 @@ const contenido = `(() => {
   const doc = document.documentElement;
   const texto = document.body ? document.body.innerText : "";
   const conTitulo = [...document.querySelectorAll("[title]")].map((el) => el.getAttribute("title") || "");
+  const anchosBarras = [...document.querySelectorAll('[role="img"][title]')].map((el) => el.getBoundingClientRect().width);
   const desbordados = [];
   const fuera = [];
   // ¿Alguien por encima lo recorta o le pone scroll propio? Entonces no es el
@@ -366,6 +367,8 @@ const contenido = `(() => {
       x: texto.split("\\n").includes("Día"),
       leyenda: texto.includes("Clientes (grupos)") && texto.includes("Minutos de espera"),
       tooltips: conTitulo.some((t) => /\\bgrupos?\\b/.test(t)) && conTitulo.some((t) => /\\bminutos?\\b/.test(t)),
+      // Las barras son fluidas (#61): ninguna puede quedar en 0 px.
+      barras: anchosBarras.length > 0 && anchosBarras.every((ancho) => ancho >= 4),
     },
   });
 })()`;
@@ -378,7 +381,7 @@ type Medicion = {
   desbordados: Array<{ tag: string; cls: string; scrollWidth: number; clientWidth: number }>;
   fuera: Array<{ tag: string; cls: string; derecho: number; ancho: number; texto: string }>;
   cargado: boolean;
-  ejes: { izquierdo: boolean; derecho: boolean; x: boolean; leyenda: boolean; tooltips: boolean };
+  ejes: { izquierdo: boolean; derecho: boolean; x: boolean; leyenda: boolean; tooltips: boolean; barras: boolean };
 };
 
 async function evaluar(expresion: string): Promise<unknown> {
@@ -473,13 +476,19 @@ for (const [clave, ok] of Object.entries(ejes ?? {})) {
 
 console.log("\n#61 desbordamientos");
 for (const fila of filas) {
-  if (fila.pasa && fila.pasaEstricto) continue;
-  fallos += 1;
-  console.log(`  ${fila.ancho} ${fila.tema}: scrollWidth=${fila.medicion.scrollWidth} inner=${fila.medicion.innerWidth} client=${fila.medicion.clientWidth}`);
+  const okFila = fila.pasa && fila.pasaEstricto;
+  if (!okFila) fallos += 1;
   if (fila.tema !== "claro") continue;
-  console.log("    hojas que empujan la página:");
-  for (const d of fila.medicion.fuera) {
-    console.log(`      <${d.tag} class="${d.cls}"> derecho=${d.derecho} ancho=${d.ancho} «${d.texto}»`);
+  console.log(
+    `  ${String(fila.ancho).padStart(4)}: scrollWidth=${fila.medicion.scrollWidth} inner=${fila.medicion.innerWidth} client=${fila.medicion.clientWidth} ${okFila ? "sin scroll" : "CON SCROLL HORIZONTAL"}`,
+  );
+  if (fila.medicion.fuera.length) {
+    console.log("    hojas que empujan la página:");
+    for (const d of fila.medicion.fuera) console.log(`      <${d.tag} class="${d.cls}"> derecho=${d.derecho} ancho=${d.ancho} «${d.texto}»`);
+  }
+  if (fila.medicion.desbordados.length) {
+    console.log(`    contenido interno más ancho que su caja (${fila.medicion.desbordados.length}; lo recorta o lo desplaza un ancestro):`);
+    for (const d of fila.medicion.desbordados.slice(0, 6)) console.log(`      <${d.tag} class="${d.cls}"> scroll=${d.scrollWidth} client=${d.clientWidth}`);
   }
 }
 
