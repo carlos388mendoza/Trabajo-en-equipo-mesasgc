@@ -1242,6 +1242,26 @@ section("Zonas de meseros");
   check("  …pasa a activa la que queda", (await waiters.listWaiterConfigs(R)).map((c) => `${c.id}:${c.isActive}`).join() === `${actual.id}:true`);
   check("no se borra la de otro restaurante", !(await waiters.deleteWaiterConfig({ restaurantId: R2, configId: actual.id })).ok);
 
+  // El contador [−][+]: si NO existe la configuración con ese número de
+  // meseros, el selector la crea (con las mesas repartidas por autoBalance)
+  // y la activa; si ya existe, la reutiliza sin duplicar. Es la misma
+  // secuencia que hace `WaiterSelector.setWaiterCount`.
+  const cinco = await waiters.createWaiterConfig({ restaurantId: R, waiterCount: 5 });
+  check("crear la configuración que faltaba deja 5 meseros con mesas repartidas",
+    cinco.ok && cinco.config.zones.length === 5 && cinco.config.zones.every((z) => z.tableIds.length === 1),
+    cinco.ok ? JSON.stringify(cinco.config.zones.map((z) => z.tableIds)) : "no se pudo crear");
+  if (cinco.ok) {
+    check("  y activándola es la ÚNICA activa",
+      (await waiters.activateWaiterConfig({ restaurantId: R, configId: cinco.config.id })).ok &&
+        (await waiters.listWaiterConfigs(R)).filter((c) => c.isActive).map((c) => c.id).join() === cinco.config.id);
+    const total = (await waiters.listWaiterConfigs(R)).length;
+    check("  volver a «2 meseros» reutiliza la existente, sin crear otra",
+      (await waiters.activateWaiterConfig({ restaurantId: R, configId: actual.id })).ok &&
+        (await waiters.listWaiterConfigs(R)).length === total);
+    // Se retira para no alterar las comprobaciones siguientes.
+    await waiters.deleteWaiterConfig({ restaurantId: R, configId: cinco.config.id });
+  }
+
   // Plano por defecto.
   const { setDefaultLayout, ensureDefaultLayout } = await import("@/lib/layout/default");
   const defaults = async (restaurantId: string) =>

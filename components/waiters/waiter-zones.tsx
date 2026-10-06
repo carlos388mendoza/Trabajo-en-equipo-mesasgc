@@ -2,10 +2,12 @@
 
 // Zonas de meseros en el modo completo (plano en vivo y editor).
 //
-//  - `WaiterSelector`: «Meseros activos: 2 | 3 | 4». Un toque activa otra
-//    configuración; el cambio llega a todas las tablets del restaurante por
-//    el socket (`waiters:changed`). Quien solo puede mirar (analítica) ve el
-//    selector, pero no lo puede cambiar.
+//  - `WaiterSelector`: «Meseros activos: [−] 3 [+]». Los botones cambian la
+//    cantidad de meseros: activan la configuración con ese número y, si
+//    todavía no existe, la crean con las mesas ya repartidas. El cambio
+//    llega a todas las tablets del restaurante por el socket
+//    (`waiters:changed`). Quien solo puede mirar (analítica) ve el selector,
+//    pero no lo puede usar.
 //  - `useWaiterZones`: el estado del reparto. Fuera de la edición, las marcas
 //    del plano son las de la configuración ACTIVA; editando, las del borrador.
 //  - `WaiterEditorPanel`: nombre y color de cada mesero, «pincel» para pintar
@@ -16,7 +18,7 @@
 // actions.ts`).
 
 import { useMemo, useState, useTransition } from "react";
-import { Check, Eraser, Paintbrush, Plus, Save, SquareDashedMousePointer, Trash2, Users, Wand2, X } from "lucide-react";
+import { Eraser, Minus, Paintbrush, Plus, Save, SquareDashedMousePointer, Trash2, Users, Wand2, X } from "lucide-react";
 
 import {
   activateWaiterConfigAction,
@@ -160,6 +162,40 @@ export function useWaiterZones({
         undefined,
         `Ahora: ${configs.find((c) => c.id === configId)?.name ?? "configuración"}.`,
       ),
+    /**
+     * Los botones [−] y [+]: pasan a estar activa la configuración con ese
+     * número de meseros y, si todavía no existe, la crean con las mesas ya
+     * repartidas (`autoBalance`, la misma lógica de siempre) y la activan.
+     *
+     * Crear y activar son dos server actions distintas y CADA UNA avisa por
+     * el socket, así que las demás tablets se enteran igual que con el
+     * selector de antes. Si no llega a crearse (por ejemplo, porque ya hay 12
+     * configuraciones), el error queda en `message` y no se cambia nada.
+     */
+    setWaiterCount: (target: number) => {
+      if (!canManage || pending || draft !== null) return;
+      const next = Math.max(1, Math.min(MAX_WAITERS, Math.round(target)));
+      const plural = next === 1 ? "mesero" : "meseros";
+      const existing = configs.find((c) => c.waiterCount === next);
+      if (existing) {
+        if (existing.id === active?.id) return;
+        run(
+          () => activateWaiterConfigAction({ restaurantId, configId: existing.id }),
+          undefined,
+          `Ahora con ${next} ${plural}.`,
+        );
+        return;
+      }
+      run(
+        async () => {
+          const created = await createWaiterConfigAction({ restaurantId, waiterCount: next });
+          if (!created.ok) return created;
+          return activateWaiterConfigAction({ restaurantId, configId: created.configId });
+        },
+        undefined,
+        `Se creó la configuración de ${next} ${plural} con las mesas ya repartidas, y está activa.`,
+      );
+    },
     create: (waiterCount: number) =>
       run(
         async () => {
@@ -237,39 +273,60 @@ export function useWaiterZones({
   };
 }
 
-/** «Meseros activos: 2 | 3 | 4». */
+/**
+ * «Meseros activos: [−] 3 [+]».
+ *
+ * El contador manda de verdad: activa la configuración con ese número de
+ * meseros y, si no existe, la crea con las mesas repartidas y la activa (ver
+ * `setWaiterCount`). Analítica lo ve, pero no lo puede cambiar.
+ *
+ * Los botones miden 44×44 px (`h-11 w-11`) para que sirvan con el dedo, se
+ * desactivan en los extremos (1 y `MAX_WAITERS`) y llevan `aria-label`
+ * propio; el valor está en un `aria-live` para que un lector de pantalla lo
+ * anuncie al cambiar.
+ */
 export function WaiterSelector({ state }: { state: WaiterZonesState }) {
   const { configs, active, canManage, pending, editing } = state;
   if (configs.length === 0 && !canManage) return null;
+  const frozen = !canManage || pending || editing;
+  const count = active?.waiterCount ?? configs[0]?.waiterCount ?? 1;
+  const plural = count === 1 ? "mesero" : "meseros";
   return (
     <div className="flex flex-wrap items-center gap-1 rounded-xl bg-panel p-1 text-panel-text ring-1 ring-app-border">
       <span className="flex items-center gap-1.5 px-2 text-sm font-medium text-panel-muted">
         <Users aria-hidden size={16} strokeWidth={2} />
         Meseros activos:
       </span>
-      {configs.length === 0 ? <span className="px-2 text-sm text-panel-muted">ninguna configuración</span> : null}
-      <div role="radiogroup" aria-label="Configuración de meseros activa" className="flex flex-wrap gap-1">
-        {configs.map((c) => {
-          const on = c.id === active?.id;
-          return (
-            <button
-              key={c.id}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              // Analítica lo ve, pero no lo cambia.
-              disabled={!canManage || pending || editing}
-              title={canManage ? `Activar «${c.name}»` : "Solo el restaurante o un administrador cambian la configuración"}
-              onClick={() => (on ? undefined : state.activate(c.id))}
-              className={`flex h-11 min-w-11 items-center justify-center gap-1 rounded-lg px-3 text-sm font-semibold tabular-nums transition disabled:cursor-default ${
-                on ? "bg-accent text-accent-text" : "text-panel-muted hover:bg-app-border/60 disabled:hover:bg-transparent"
-              }`}
-            >
-              {on ? <Check aria-hidden size={14} strokeWidth={3} /> : null}
-              {c.name === `${c.waiterCount} meseros` || c.name === "1 mesero" ? c.waiterCount : c.name}
-            </button>
-          );
-        })}
+      {configs.length === 0 ? <span className="px-1 text-sm text-panel-muted">sin configuración</span> : null}
+      <div
+        role="group"
+        aria-label="Cantidad de meseros activos"
+        title={active ? `Configuración activa: ${active.name}` : "Todavía no hay configuración activa"}
+        className="flex items-center gap-1"
+      >
+        <button
+          type="button"
+          aria-label="Quitar mesero"
+          title={count <= 1 ? "Siempre queda al menos un mesero" : "Quitar un mesero"}
+          disabled={frozen || count <= 1}
+          onClick={() => state.setWaiterCount(count - 1)}
+          className="flex h-11 w-11 items-center justify-center rounded-lg text-panel-text transition hover:bg-app-border/60 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <Minus aria-hidden size={18} strokeWidth={2.5} />
+        </button>
+        <span aria-live="polite" className="min-w-[4.5rem] text-center text-sm font-semibold tabular-nums text-panel-text">
+          {count} {plural}
+        </span>
+        <button
+          type="button"
+          aria-label="Agregar mesero"
+          title={count >= MAX_WAITERS ? `El máximo es ${MAX_WAITERS} meseros` : "Agregar un mesero"}
+          disabled={frozen || count >= MAX_WAITERS}
+          onClick={() => state.setWaiterCount(count + 1)}
+          className="flex h-11 w-11 items-center justify-center rounded-lg text-panel-text transition hover:bg-app-border/60 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <Plus aria-hidden size={18} strokeWidth={2.5} />
+        </button>
       </div>
     </div>
   );
@@ -309,30 +366,47 @@ export function WaiterActions({ state }: { state: WaiterZonesState }) {
           type="button"
           onClick={() => state.edit(state.active!.id)}
           disabled={state.pending}
-          className="flex h-10 items-center gap-1.5 rounded-xl bg-panel px-3 text-sm font-medium text-panel-text ring-1 ring-app-border hover:bg-app-border/60"
+          className="flex h-11 items-center gap-1.5 rounded-xl bg-panel px-3 text-sm font-medium text-panel-text ring-1 ring-app-border hover:bg-app-border/60"
         >
           <Paintbrush aria-hidden size={16} strokeWidth={2} />
           Editar zonas
         </button>
       ) : null}
-      <div className="flex items-center gap-1 rounded-xl bg-panel p-1 ring-1 ring-app-border">
-        <label className="sr-only" htmlFor="nuevos-meseros">Meseros de la nueva configuración</label>
-        <input
-          id="nuevos-meseros"
-          type="number"
-          min={1}
-          max={MAX_WAITERS}
-          value={count}
-          onChange={(e) => setCount(Math.max(1, Math.min(MAX_WAITERS, Number(e.target.value) || 1)))}
-          className="h-8 w-14 rounded-lg border border-app-border bg-panel px-2 text-sm text-panel-text tabular-nums"
-        />
+      <div
+        role="group"
+        aria-label="Cantidad de meseros de la nueva configuración"
+        className="flex items-center gap-1 rounded-xl bg-panel p-1 ring-1 ring-app-border"
+      >
+        <button
+          type="button"
+          aria-label="Quitar mesero de la nueva configuración"
+          title={count <= 1 ? "Siempre queda al menos un mesero" : "Quitar un mesero"}
+          disabled={count <= 1}
+          onClick={() => setCount((value) => Math.max(1, value - 1))}
+          className="flex h-11 w-11 items-center justify-center rounded-lg text-panel-text transition hover:bg-app-border/60 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <Minus aria-hidden size={18} strokeWidth={2.5} />
+        </button>
+        <span aria-live="polite" className="min-w-10 text-center text-sm font-semibold tabular-nums text-panel-text">
+          {count}
+        </span>
+        <button
+          type="button"
+          aria-label="Agregar mesero de la nueva configuración"
+          title={count >= MAX_WAITERS ? `El máximo es ${MAX_WAITERS} meseros` : "Agregar un mesero"}
+          disabled={count >= MAX_WAITERS}
+          onClick={() => setCount((value) => Math.min(MAX_WAITERS, value + 1))}
+          className="flex h-11 w-11 items-center justify-center rounded-lg text-panel-text transition hover:bg-app-border/60 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <Plus aria-hidden size={18} strokeWidth={2.5} />
+        </button>
         <button
           type="button"
           onClick={() => state.create(count)}
           disabled={state.pending}
-          className="flex h-8 items-center gap-1 rounded-lg px-2 text-sm font-medium text-panel-text hover:bg-app-border/60"
+          title="Crea la configuración con las mesas ya repartidas, sin activarla todavía"
+          className="flex h-11 items-center rounded-lg px-3 text-sm font-medium text-panel-text hover:bg-app-border/60 disabled:cursor-default disabled:opacity-60"
         >
-          <Plus aria-hidden size={16} strokeWidth={2} />
           Nueva con {count} {count === 1 ? "mesero" : "meseros"}
         </button>
       </div>
