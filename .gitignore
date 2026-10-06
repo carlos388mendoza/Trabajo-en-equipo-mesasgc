@@ -6,6 +6,8 @@
 # salida de la app que levanta `npm run verify:auth`
 /.next-verify/
 /.next-verify-*/
+# salida de la app que levanta `npx tsx scripts/verify-browser.mts`
+/.next-browser*/
 /out/
 
 # production
@@ -36,6 +38,10 @@ local.db-shm
 .verify-realtime.db*
 .verify-auth.db*
 .verify-demo.db*
+.verify-browser.db*
+
+# salida de `npx tsx scripts/verify-browser.mts` (capturas y resultado)
+.verify-browser/
 
 # logs de `next dev` en segundo plano
 .dev-*.log
