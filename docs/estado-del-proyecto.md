@@ -66,6 +66,7 @@ Todo esto está en `testing`. En `main` está todo hasta el #43; la última fila
 | Esquema y seed | Restaurantes, marcas, zonas, elementos, lista de espera y catálogo de 8 tipos. Seed idempotente (solo desarrollo; con `NODE_ENV=production` se niega a correr): 8 restaurantes, 11 usuarios de prueba (un host por restaurante) y 8 semanas de historial (~12 000 grupos) para las estadísticas. | `lib/db/`, `scripts/seed.ts`, README §15 | varios, #20 |
 | Catálogo en producción | `npm run db:catalog` carga los 8 tipos de elemento sin tocar nada más. Va en el Pre-deploy. | `lib/layout/catalog.ts`, `scripts/db-catalog.mts` | #21 |
 | Editor de mesas | Plano con Konva para tablet: arrastrar, redimensionar, girar elementos, deshacer y copiar a otro restaurante. | `components/editor/`, README §8–9, §12 | #3, #7 |
+| Editor fluido en tablet y celular | 57-60 FPS con la CPU 4× más lenta al arrastrar, mover el plano y pellizcar; panel lateral o barra abajo que no tapa el plano; mesas nuevas dentro del recuadro y nada se sale de la zona. | `components/editor/`, `lib/layout/placement.ts`, README §12 | `perf/editor-fluido` |
 | Giro guardado y estructura | El giro del plano completo se guarda (`table_layouts.rotation`), se avisa en vivo, se copia y lo respetan el plano en vivo y el minimapa. Tipos barra, puerta y pared. | `components/editor/`, `lib/layout/`, README §12 | #14 |
 | Tiempo real | Next y Socket.IO en un solo servidor (`server.ts`), con una room por restaurante y la sala `overview` del mapa. | `lib/realtime/`, README §10, §16 | #5, #11 |
 | Conflictos | Asignación de mesa con bloqueo optimista: gana el primero y el otro recibe «Esta mesa ya fue asignada». | `lib/tables/assign.ts` | #5 |
@@ -436,3 +437,37 @@ estadísticas y datos) y entran después.
 - **Más de un servidor.** El Deshacer del modo rápido y las salas de Socket.IO
   viven en la memoria del proceso: basta para 8 restaurantes en un solo
   servidor, pero para varios servidores haría falta, por ejemplo, Redis.
+
+## Dónde quedé (6 de octubre de 2026)
+
+**Terminado:** el editor de mesas fluido en tablet y celular, en la rama
+`perf/editor-fluido` (sale de `testing` y reúne lo de `perf/editor-tactil`
+con los mensajes de commit ya limpios; `perf/editor-tactil` se deja como
+estaba, sin PR). Detalle y cifras en el README §12 («Editor fluido en
+tablet») y en el manual del host (`docs/salida-a-produccion.md`, «Editar el
+plano»).
+
+- **60 FPS con la CPU 4 veces más lenta:** arrastrar una mesa, mover el plano,
+  pellizcar y seleccionar van a 57-60 FPS en celular, tablet y computadora
+  (antes, 8-17 al arrastrar y mover). Medido con el build de producción.
+- **Una sola ventana de control que no tapa el plano:** panel fijo a la
+  derecha en tablet horizontal y computadora; barra abajo, tira del elemento
+  y panel que sube (máximo 40 %, se baja arrastrando, no se abre solo) en
+  celular y tablet vertical. Botones de 44×44 px o más (también los de
+  «Meseros activos»).
+- **Mesas nuevas dentro del recuadro** (`lib/layout/placement.ts`), y nada se
+  sale al arrastrar, pegar ni girar. `verify:editor`: 201 comprobaciones.
+- **Probado con toques** (añadir, arrastrar, girar, copiar, pegar, eliminar,
+  deshacer, rehacer y guardar) en 375×812, 812×375, 768×1024, 1024×768 y
+  1440×900, en claro y oscuro: todo bien. Lo que fallaba en la prueba anterior
+  era el guion (el indicador «N» de Next en desarrollo tapaba «Añadir», y en
+  la barra de abajo el guardado se ve en el botón «Guardado», no en un
+  aviso). El plano de `rest_centro` en `local.db` quedó igual que el seed.
+- typecheck, lint, build y los cuatro `verify` en verde. ESLint ya no revisa
+  las carpetas de build locales (`.next-*`).
+
+**Sigue pendiente decidir** qué hacer con lo ajeno que quedó en local: la rama
+`wip/perf-script-ajeno` (commit `ef8047c`, guion de FPS por CDP), el stash
+«wip-perf-script-ajeno» y, sin seguimiento, `.next-baseline/` (185 MB),
+`.perf-baseline.db`, `.perf-editor.db` y `perf-resultados/`. No se subieron
+ni se borraron.
