@@ -592,6 +592,19 @@ en pantalla. No se envían nombres reales, teléfonos ni notas de clientes. Los
 teléfonos y notas tampoco forman parte del contexto estadístico que se manda al
 proveedor.
 
+La respuesta se pinta como **Markdown** (`components/analytics/markdown.tsx`,
+con `react-markdown` y `remark-gfm`): títulos, negritas, cursivas, listas
+ordenadas y desordenadas, tablas, código inline, bloques de código y enlaces.
+No se interpreta HTML crudo (no hay `rehype-raw`), así que un `<script>` que
+aparezca en el texto se queda **como texto visible y no se ejecuta**, igual
+que los atributos `on…=`; los enlaces salen con `target="_blank"` y
+`rel="noopener noreferrer"`, y las URLs `javascript:` se vacían. Cada tabla va
+envuelta en su propio contenedor con scroll horizontal, para que en el celular
+empuje solo a la tabla. El prompt pide además al modelo que responda en
+Markdown sencillo y nunca en HTML. `npm run verify:markdown` renderiza el
+componente de verdad y comprueba el formato y el ataque (67 comprobaciones),
+y corre también en el CI.
+
 No se añadieron tablas ni columnas: el esquema de `testing` ya contiene lo
 necesario. `waitlist_entries.party_size` guarda cuántas personas hay en el
 grupo; `notes` guarda la observación del registro; `status` distingue

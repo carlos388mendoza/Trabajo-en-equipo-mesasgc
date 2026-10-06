@@ -104,6 +104,14 @@ contra una base temporal. Ejecutadas el **1 de octubre de 2026** sobre
 | `npm run lint` | pasa sobre el código del repositorio. En esta máquina hay dos carpetas `.next-preview` y `.next-perf` de pruebas antiguas, ignoradas por git pero no por `eslint.config.mjs`, que meten ruido de `node_modules` compilado; CI no las tiene. |
 | `npm run build` | pasa (Next 16.3.6). En local, si hay un `next dev` corriendo, `.next` queda bloqueado en Windows: con `NEXT_DIST_DIR` aparte. |
 
+Ejecutada el **6 de octubre de 2026** sobre la rama de la issue #59,
+`npm run verify:markdown` da **67/67**: renderiza el Markdown del asistente de
+verdad (`react-dom/server`) y comprueba, con casos de ataque, que ni
+`<script>`, ni `<iframe>`, ni atributos `on…=`, ni URLs `javascript:` llegan
+como elementos reales: se quedan como texto visible. Es el único verify nuevo
+de estas issues y ya corre en el CI (junto con `verify:editor` 204/204,
+`verify:realtime` 231/231 y `verify:auth` 452/452 tras #58).
+
 Cifras reales del lote sobre los 8 restaurantes, contadas el 1 de octubre de
 2026: **8 zonas de demostración, 86 mesas, 29 clientes esperando, 29 sentados,
 6 mesas reservadas y 12 251 de historial**; 12 403 filas en total, con 0
@@ -127,7 +135,7 @@ cubre.
 | Modo rápido de *check-in*/*check-out* con tarjetas deslizables (listo / ausente) | Sí | Modo sencillo: deslizar la carta o los botones; «Ver todas las cartas». README §11. |
 | Historial de acciones con Deshacer (Ctrl+Z) | Sí | Botón Deshacer y Ctrl+Z en el modo sencillo y en el editor. `verify:realtime`. |
 | Estadísticas: espera promedio, día más rápido y más lento, top de clientes | Sí | `/analiticas`. `verify:auth` (por rol y con filtros). |
-| Asistente de IA en lenguaje natural sobre las estadísticas | Sí | `/analiticas` → «Pregunta sobre tu servicio». Con OpenRouter y respuestas locales sin clave; nombres con alias. `verify:auth`. |
+| Asistente de IA en lenguaje natural sobre las estadísticas | Sí | `/analiticas` → «Pregunta sobre tu servicio». Con OpenRouter y respuestas locales sin clave; nombres con alias. La respuesta se pinta como Markdown (`react-markdown` + `remark-gfm`, sin `rehype-raw`: el HTML crudo queda como texto y no se ejecuta). `verify:auth` y `verify:markdown`. |
 | Resumen automático de estadísticas | Sí | `/analiticas` → «Resumen de 14 días» (variación, día más lento, mesero que más atendió). |
 | RBAC: administrador, restaurante y analítica, y varios roles por usuario | Sí | Tabla completa en `docs/rbac.md`. `verify:auth`. |
 | Administrador: crea usuarios y entra a todo | Sí | `/admin` → Usuarios. `verify:auth`. |
