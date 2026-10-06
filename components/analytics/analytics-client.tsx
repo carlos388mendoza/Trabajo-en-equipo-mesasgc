@@ -219,8 +219,8 @@ export function AnalyticsClient() {
                   <p className="mt-1 text-sm text-panel-muted">Grupos sentados y minutos promedio por día</p>
                 </div>
                 <div className="flex flex-wrap gap-3 text-xs text-panel-muted">
-                  <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-accent" />Grupos</span>
-                  <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-estado-ocupada" />Espera</span>
+                  <span className="inline-flex items-center gap-1.5"><i aria-hidden className="h-2.5 w-2.5 rounded-full bg-accent" />Clientes (grupos)</span>
+                  <span className="inline-flex items-center gap-1.5"><i aria-hidden className="h-2.5 w-2.5 rounded-full bg-estado-ocupada" />Minutos de espera</span>
                 </div>
               </div>
               <DailyChart daily={analytics.daily} />
@@ -354,21 +354,68 @@ export function AnalyticsClient() {
   );
 }
 
+/**
+ * «Volumen y tiempo de espera»: dos barras por día, cada una con su eje.
+ *
+ * Los cuatro títulos de los ejes («Clientes (grupos)» a la izquierda,
+ * «Minutos de espera» a la derecha, «Día» debajo, y el máximo de referencia
+ * de cada eje Y) van DENTRO del bloque con scroll horizontal propio, así que
+ * no le cuestan ni un píxel de ancho a la página (issue #61): el gráfico
+ * sigue midiendo 680 px y se desplaza solo en pantallas estrechas.
+ */
 function DailyChart({ daily }: { daily: DailyStat[] }) {
   const maxGroups = Math.max(1, ...daily.map((day) => day.groups));
   const maxMinutes = Math.max(1, ...daily.map((day) => day.minutes));
   return (
-    <div className="mt-6 overflow-x-auto pb-7">
-      <div className="flex h-52 min-w-[680px] items-end justify-between gap-2 border-b border-l border-app-border px-3">
-        {daily.map((day) => (
-          <div key={day.date} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
-            <div className="flex h-[85%] items-end gap-1">
-              <div title={`${day.groups} ${day.groups === 1 ? "grupo" : "grupos"}`} className="w-4 rounded-t-md bg-accent sm:w-6" style={{ height: `${Math.max(day.groups ? 5 : 0, day.groups / maxGroups * 100)}%` }} />
-              <div title={`${day.minutes} ${day.minutes === 1 ? "minuto" : "minutos"}`} className="w-4 rounded-t-md bg-estado-ocupada sm:w-6" style={{ height: `${Math.max(day.minutes ? 5 : 0, day.minutes / maxMinutes * 100)}%` }} />
+    <div className="mt-6 overflow-x-auto pb-1">
+      <div className="min-w-[680px]">
+        {/* Títulos de los dos ejes Y, con el valor más alto de cada escala. */}
+        <div className="flex items-baseline justify-between gap-4 pb-2 text-xs font-semibold text-app-muted">
+          <span className="inline-flex items-baseline gap-1.5">
+            Clientes (grupos)
+            <span className="font-normal tabular-nums">máx. {maxGroups}</span>
+          </span>
+          <span className="inline-flex items-baseline gap-1.5">
+            Minutos de espera
+            <span className="font-normal tabular-nums">máx. {maxMinutes}</span>
+          </span>
+        </div>
+
+        {/* El área de las barras: `border-l` es el eje Y izquierdo y
+            `border-b` el eje X. Cada barra lleva su aviso con las unidades. */}
+        <div className="flex h-52 items-end justify-between gap-2 border-b border-l border-app-border px-3">
+          {daily.map((day) => (
+            <div key={day.date} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end">
+              <div className="flex h-[85%] items-end gap-1">
+                <div
+                  role="img"
+                  aria-label={`${day.day}: ${day.groups} ${day.groups === 1 ? "grupo" : "grupos"} atendidos`}
+                  title={`${day.day}: ${day.groups} ${day.groups === 1 ? "grupo" : "grupos"} atendidos`}
+                  className="w-4 rounded-t-md bg-accent sm:w-6"
+                  style={{ height: `${Math.max(day.groups ? 5 : 0, day.groups / maxGroups * 100)}%` }}
+                />
+                <div
+                  role="img"
+                  aria-label={`${day.day}: ${day.minutes} ${day.minutes === 1 ? "minuto" : "minutos"} de espera promedio`}
+                  title={`${day.day}: ${day.minutes} ${day.minutes === 1 ? "minuto" : "minutos"} de espera promedio`}
+                  className="w-4 rounded-t-md bg-estado-ocupada sm:w-6"
+                  style={{ height: `${Math.max(day.minutes ? 5 : 0, day.minutes / maxMinutes * 100)}%` }}
+                />
+              </div>
             </div>
-            <span className="-mb-6 text-xs text-app-muted">{day.day}</span>
-          </div>
-        ))}
+          ))}
+        </div>
+
+        {/* Los días, en columnas con el mismo ancho que las barras de
+            arriba (`border-l` transparente para que cuadren al píxel). */}
+        <div className="flex justify-between gap-2 border-l border-transparent px-3 pt-2">
+          {daily.map((day) => (
+            <span key={day.date} className="min-w-0 flex-1 text-center text-xs text-app-muted">{day.day}</span>
+          ))}
+        </div>
+
+        {/* Título del eje X. */}
+        <div className="pt-1.5 text-center text-xs font-semibold text-app-muted">Día</div>
       </div>
     </div>
   );

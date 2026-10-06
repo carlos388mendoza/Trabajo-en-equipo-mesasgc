@@ -108,9 +108,17 @@ Ejecutada el **6 de octubre de 2026** sobre la rama de la issue #59,
 `npm run verify:markdown` da **67/67**: renderiza el Markdown del asistente de
 verdad (`react-dom/server`) y comprueba, con casos de ataque, que ni
 `<script>`, ni `<iframe>`, ni atributos `on…=`, ni URLs `javascript:` llegan
-como elementos reales: se quedan como texto visible. Es el único verify nuevo
-de estas issues y ya corre en el CI (junto con `verify:editor` 204/204,
-`verify:realtime` 231/231 y `verify:auth` 452/452 tras #58).
+como elementos reales: se quedan como texto visible. Corre en el CI (junto con
+`verify:editor` 204/204, `verify:realtime` 231/231 y `verify:auth` 452/452
+tras #58).
+
+Añadido con #60, `npm run verify:browser` (**no corre en el CI**: necesita
+Chrome) levanta la app real y mide `/analiticas` con Chrome por DevTools
+Protocol, sin dependencias nuevas. Comprueba los ejes y la leyenda del gráfico
+(#60) y, en 320, 375, 414, 768, 1024 y 1440 px en claro y oscuro, que
+`document.documentElement.scrollWidth <= window.innerWidth` (#61); si algo se
+sale, lista las hojas que empujan la página. Deja capturas en
+`.verify-browser/shots/`.
 
 Cifras reales del lote sobre los 8 restaurantes, contadas el 1 de octubre de
 2026: **8 zonas de demostración, 86 mesas, 29 clientes esperando, 29 sentados,
@@ -134,7 +142,7 @@ cubre.
 | Conflictos: bloqueo optimista, el primero gana y al segundo «Esta mesa ya fue asignada» | Sí | Dos tablets sentando en la misma mesa. `lib/tables/assign.ts`; `verify:realtime` (también con la cola sin conexión). |
 | Modo rápido de *check-in*/*check-out* con tarjetas deslizables (listo / ausente) | Sí | Modo sencillo: deslizar la carta o los botones; «Ver todas las cartas». README §11. |
 | Historial de acciones con Deshacer (Ctrl+Z) | Sí | Botón Deshacer y Ctrl+Z en el modo sencillo y en el editor. `verify:realtime`. |
-| Estadísticas: espera promedio, día más rápido y más lento, top de clientes | Sí | `/analiticas`. `verify:auth` (por rol y con filtros). |
+| Estadísticas: espera promedio, día más rápido y más lento, top de clientes | Sí | `/analiticas`. El gráfico «Volumen y tiempo de espera» lleva sus ejes etiquetados («Clientes (grupos)» a la izquierda, «Minutos de espera» a la derecha, «Día» debajo), con el máximo de cada escala, leyenda de series y avisos de barra con la unidad. `verify:auth` (por rol y con filtros) y `verify:browser`. |
 | Asistente de IA en lenguaje natural sobre las estadísticas | Sí | `/analiticas` → «Pregunta sobre tu servicio». Con OpenRouter y respuestas locales sin clave; nombres con alias. La respuesta se pinta como Markdown (`react-markdown` + `remark-gfm`, sin `rehype-raw`: el HTML crudo queda como texto y no se ejecuta). `verify:auth` y `verify:markdown`. |
 | Resumen automático de estadísticas | Sí | `/analiticas` → «Resumen de 14 días» (variación, día más lento, mesero que más atendió). |
 | RBAC: administrador, restaurante y analítica, y varios roles por usuario | Sí | Tabla completa en `docs/rbac.md`. `verify:auth`. |

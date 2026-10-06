@@ -580,6 +580,14 @@ registros reales: grupos sentados durante los últimos 14 días (zona
 resumen diario y agrupación por restaurante. Sin registros, la interfaz indica
 que todavía no hay actividad; no presenta cifras de demostración.
 
+El gráfico «Volumen y tiempo de espera» lleva los ejes etiquetados: el eje Y
+izquierdo dice «Clientes (grupos)» con el valor más alto de su escala, el
+derecho «Minutos de espera» con el suyo y el eje X «Día». La leyenda identifica
+las dos series (clientes/grupos en azul, minutos de espera en naranja) y cada
+barra lleva su aviso con la unidad («Lun: 12 grupos atendidos»). Los cuatro
+títulos viven **dentro** del bloque con scroll horizontal propio del gráfico,
+así que etiquetarlos no le cuesta ancho a la página (issue #61).
+
 El asistente (`/api/assistant`) recibe ese resumen para contestar preguntas en
 español. Si se configura `OPENROUTER_API_KEY`, consulta OpenRouter; sin esa
 clave, responde localmente las preguntas comunes sobre espera y volumen. La
