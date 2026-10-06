@@ -1,5 +1,5 @@
 // Textos y colores compartidos por las cartas del modo rápido: el montón, el
-// abanico y «Ver todas las cartas». Siempre con singular y plural.
+// abanico y «Ver clientes». Siempre con singular y plural.
 
 import { HONDURAS_TIME_ZONE, hondurasDateKey } from "@/lib/time/honduras";
 

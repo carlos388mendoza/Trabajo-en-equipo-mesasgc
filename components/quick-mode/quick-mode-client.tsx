@@ -7,7 +7,7 @@
 // - Un toque en el centro de la carta (o el botón flotante) abre el
 //   formulario de agregar cliente; un toque en una esquina abre la fila en
 //   abanico. `SwipeCard` distingue el toque del arrastre.
-// - «Ver todas las cartas» abre las de hoy o de los últimos 7 días, y desde
+// - «Ver clientes» abre las de hoy o de los últimos 7 días, y desde
 //   ahí se sienta a un cliente en una mesa o se libera la mesa.
 //
 // Todo cambio pasa por el socket de la room del restaurante, y el servidor lo
@@ -430,17 +430,33 @@ export function QuickModeClient({ restaurantId, userId }: { restaurantId: string
       for (const listener of changeListeners.current) listener(change);
     });
     // Sentar y liberar (desde esta tablet, otra, o el editor): mesa y cliente.
-    socket.on("table:assigned", ({ table, entryId }) => {
+    socket.on("table:assigned", ({ table, entryId, waiterName }) => {
       mergeTable(table);
       const known = entriesRef.current.find((item) => item.id === entryId);
       if (!known) return;
-      const seated: WaitlistEntrySnapshot = { ...known, status: "sentado", assignedTableId: table.tableId, seatedAt: Date.now(), updatedAt: Date.now() };
+      // `waiterName`: el mesero que se apuntó al sentarlo (el de la zona de su
+      // mesa). Con él, «Ver clientes» lo pinta del color de su mesero también
+      // cuando lo sentó otra tablet.
+      const seated: WaitlistEntrySnapshot = {
+        ...known,
+        status: "sentado",
+        assignedTableId: table.tableId,
+        seatedAt: Date.now(),
+        updatedAt: Date.now(),
+        waiterName: waiterName ?? known.waiterName ?? null,
+      };
       mergeEntry(seated);
-      // «Ver todas las cartas» escucha los cambios de la lista: se le cuenta.
+      // «Ver clientes» escucha los cambios de la lista: se le cuenta.
       for (const listener of changeListeners.current) listener({ action: "resolved", entry: seated, undo: undoStateRef.current });
     });
     socket.on("table:released", ({ table }) => {
       mergeTable(table);
+    });
+    // Otra tablet (o el plano en vivo) cambió la cantidad de meseros o el
+    // reparto: cada mesa tiene otro mesero y otro color. Se vuelven a leer, y
+    // con ellas la leyenda de «Ver clientes» y el selector de «Sentar».
+    socket.on("waiters:changed", () => {
+      void loadAllRef.current();
     });
 
     // El navegador sabe antes que el socket que se fue la red: se pasa a modo
@@ -717,7 +733,7 @@ export function QuickModeClient({ restaurantId, userId }: { restaurantId: string
               className="inline-flex min-h-[52px] items-center gap-2 rounded-2xl border border-app-border bg-panel px-4 font-semibold text-panel-text shadow-sm transition hover:bg-app-border/50"
             >
               <LayoutGrid aria-hidden size={19} />
-              Ver todas las cartas
+              Ver clientes
             </button>
           </div>
         </div>

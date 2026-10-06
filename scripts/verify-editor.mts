@@ -182,6 +182,21 @@ const expectFail = async (
 // Funciones puras
 // ---------------------------------------------------------------------------
 
+section("Leyenda de meseros de «Ver clientes» (lib/waiters/legend.ts)");
+{
+  const { waiterLegend, waiterColorFor } = await import("@/lib/waiters/legend");
+  const t = (waiterName: string | null, waiterColor: string | null) => ({ waiterName, waiterColor });
+  check("sin zonas de meseros, no hay leyenda", waiterLegend([t(null, null), t(null, null)]).length === 0);
+  const legend = waiterLegend([t("Marta", "#a855f7"), t("Luis", "#f59e0b"), t("Ana", "#3b82f6"), t("Luis", "#f59e0b"), t(null, null)]);
+  check(
+    "un mesero por nombre, todos los de la activa (también los de otra zona) y en el orden de su color",
+    JSON.stringify(legend) === JSON.stringify([{ name: "Ana", color: "#3b82f6" }, { name: "Luis", color: "#f59e0b" }, { name: "Marta", color: "#a855f7" }]),
+    JSON.stringify(legend),
+  );
+  check("el color de un cliente es el de su mesero", waiterColorFor(legend, "Luis") === "#f59e0b");
+  check("  sin mesero, o con uno que ya no está en la activa: sin color (gris)", waiterColorFor(legend, null) === null && waiterColorFor(legend, "Pedro") === null);
+}
+
 section("Funciones puras");
 
 check("nextLabel empieza en 1", nextLabel("mesa-sillas", []) === "Mesa 1");
