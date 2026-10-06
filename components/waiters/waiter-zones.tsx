@@ -261,7 +261,7 @@ export function WaiterSelector({ state }: { state: WaiterZonesState }) {
               disabled={!canManage || pending || editing}
               title={canManage ? `Activar «${c.name}»` : "Solo el restaurante o un administrador cambian la configuración"}
               onClick={() => (on ? undefined : state.activate(c.id))}
-              className={`flex h-10 min-w-10 items-center justify-center gap-1 rounded-lg px-3 text-sm font-semibold tabular-nums transition disabled:cursor-default ${
+              className={`flex h-11 min-w-11 items-center justify-center gap-1 rounded-lg px-3 text-sm font-semibold tabular-nums transition disabled:cursor-default ${
                 on ? "bg-accent text-accent-text" : "text-panel-muted hover:bg-app-border/60 disabled:hover:bg-transparent"
               }`}
             >

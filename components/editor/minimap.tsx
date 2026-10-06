@@ -77,7 +77,7 @@ export function Minimap({
   };
 
   return (
-    <div className="rounded-2xl bg-panel/80 p-2 shadow-lg ring-1 ring-app-border backdrop-blur-md">
+    <div className="rounded-2xl bg-panel/95 p-2 shadow-lg ring-1 ring-app-border">
       <svg
         ref={svgRef}
         role="img"

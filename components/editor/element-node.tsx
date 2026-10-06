@@ -25,6 +25,7 @@ import { type Theme, withAlpha } from "@/lib/theme/theme";
 
 import { CanvasIcon } from "./canvas-icon";
 import { typeIcon } from "./icons";
+import { halfExtent } from "@/lib/layout/placement";
 
 export const CANVAS_FONT =
   "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -80,24 +81,23 @@ type Props = {
   draggable?: boolean;
   /** Avisa al canvas de que un arrastre empezó, para que suelte el Stage. */
   onDragStart: (id: string) => void;
-  /** Se llama en cada `dragMove` con la esquina superior izquierda. */
-  onDragMove: (id: string, x: number, y: number) => void;
-  onDragEnd: () => void;
+  /**
+   * Al SOLTAR, con la esquina superior izquierda nueva. Durante el arrastre
+   * no se avisa a nadie: Konva mueve la mesa solo (ver README, «Editor fluido
+   * en tablet»).
+   */
+  onDragEnd: (id: string, x: number, y: number) => void;
+  /** Tamaño de la zona: la mesa no se puede arrastrar fuera. */
+  bounds?: { width: number; height: number };
   registerNode: (id: string, node: Konva.Group | null) => void;
 };
 
-/** Brillo suave alrededor de un trazo: lo que da el aire de "radar". */
-function glow(color: string, theme: Theme, strength = 1) {
-  return {
-    shadowColor: color,
-    shadowBlur: 10 * strength,
-    shadowOpacity: (theme.dark ? 0.75 : 0.35) * strength,
-    shadowOffsetX: 0,
-    shadowOffsetY: 0,
-    // Solo el trazo brilla; sin esto Konva calcula la sombra dos veces.
-    shadowForStrokeEnabled: true,
-  } as const;
-}
+// Sin sombras difuminadas (el antiguo brillo de «radar»): en una tablet,
+// repintarlas en cada movimiento del dedo era lo que más frenaba el editor.
+// Cada figura lleva `perfectDrawEnabled={false}`, que ahorra un lienzo
+// intermedio al dibujar relleno + borde con transparencia.
+
+
 
 /** Etiqueta con el nombre, del color de los paneles: se lee sobre cualquier fondo. */
 function LabelPill({
@@ -158,8 +158,8 @@ function ElementNodeBase({
   waiter = null,
   draggable = true,
   onDragStart,
-  onDragMove,
   onDragEnd,
+  bounds,
   registerNode,
 }: Props) {
   const waveRef = useRef<Konva.Circle | null>(null);
@@ -266,7 +266,7 @@ function ElementNodeBase({
             stroke={colors.stroke}
             strokeWidth={2.5}
             listening={false}
-            {...glow(colors.stroke, theme)}
+            perfectDrawEnabled={false}
           />
         </>
       );
@@ -298,7 +298,7 @@ function ElementNodeBase({
             stroke={colors.stroke}
             strokeWidth={2.5}
             listening={false}
-            {...glow(colors.stroke, theme)}
+            perfectDrawEnabled={false}
           />
         </>
       );
@@ -320,7 +320,7 @@ function ElementNodeBase({
           strokeWidth={2.5}
           dash={[12, 6]}
           listening={false}
-          {...glow(type.color, theme, 0.8)}
+          perfectDrawEnabled={false}
         />
       );
       iconY = height / 2 - 16;
@@ -345,7 +345,7 @@ function ElementNodeBase({
             stroke={type.color}
             strokeWidth={2.5}
             listening={false}
-            {...glow(type.color, theme, 0.8)}
+            perfectDrawEnabled={false}
           />
           <Rect
             x={4}
@@ -402,7 +402,7 @@ function ElementNodeBase({
             dash={[6, 4]}
             lineCap="round"
             listening={false}
-            {...glow(type.color, theme, 0.6)}
+            perfectDrawEnabled={false}
           />
           <Line
             points={[0, height, width, height]}
@@ -419,7 +419,7 @@ function ElementNodeBase({
             cornerRadius={2}
             fill={type.color}
             listening={false}
-            {...glow(type.color, theme, 0.8)}
+            perfectDrawEnabled={false}
           />
         </>
       );
@@ -442,7 +442,7 @@ function ElementNodeBase({
           stroke={theme.line}
           strokeWidth={1}
           listening={false}
-          {...glow(theme.line, theme, 0.7)}
+          perfectDrawEnabled={false}
         />
       );
       break;
@@ -460,7 +460,7 @@ function ElementNodeBase({
           stroke={type.color}
           strokeWidth={2}
           listening={false}
-          {...glow(type.color, theme, 0.7)}
+          perfectDrawEnabled={false}
         />
       );
       iconY = height / 2 - 12;
@@ -524,11 +524,20 @@ function ElementNodeBase({
         onDragStart(element.id);
       }}
       onDragMove={(e) => {
-        // `x`/`y` vienen en coordenadas del lienzo y apuntan al centro (por el
-        // `offset`); se devuelve la esquina, que es lo que se guarda.
-        onDragMove(element.id, e.target.x() - width / 2, e.target.y() - height / 2);
+        // Dentro de la zona, también con la mesa girada: se limita su centro
+        // (`x`/`y` apuntan al centro por el `offset`) en coordenadas del
+        // plano, así vale gire como gire la vista.
+        if (!bounds) return;
+        const node = e.target;
+        const { hx, hy } = halfExtent({ width, height, rotation: element.rotation });
+        const x = Math.min(Math.max(node.x(), hx), Math.max(hx, bounds.width - hx));
+        const y = Math.min(Math.max(node.y(), hy), Math.max(hy, bounds.height - hy));
+        if (x !== node.x() || y !== node.y()) node.position({ x, y });
       }}
-      onDragEnd={onDragEnd}
+      onDragEnd={(e) => {
+        // Se devuelve la esquina, que es lo que se guarda.
+        onDragEnd(element.id, Math.round(e.target.x() - width / 2), Math.round(e.target.y() - height / 2));
+      }}
       onClick={tap}
       onTap={tap}
     >
@@ -568,6 +577,7 @@ function ElementNodeBase({
         height={seats > 0 ? height + 36 : height}
         fill="#000000"
         opacity={0}
+        perfectDrawEnabled={false}
       />
 
       {/* Zona de mesero: un halo del color del mesero detrás de la mesa. Va
@@ -583,7 +593,7 @@ function ElementNodeBase({
           stroke={waiter.color}
           strokeWidth={3}
           listening={false}
-          {...glow(waiter.color, theme, 0.7)}
+          perfectDrawEnabled={false}
         />
       ) : null}
 
@@ -613,7 +623,7 @@ function ElementNodeBase({
               fill={colors.stroke}
               stroke={theme.mapBg}
               strokeWidth={2}
-              {...glow(colors.stroke, theme, 0.8)}
+              perfectDrawEnabled={false}
             />
             <CanvasIcon node={icon} color={colors.onStroke} size={MARKER_ICON * MS} x={0} y={0} />
           </Group>
@@ -654,7 +664,7 @@ function ElementNodeBase({
               height={OCCUPANT_HEIGHT * MS}
               cornerRadius={(OCCUPANT_HEIGHT * MS) / 2}
               fill={theme.status.ocupada.stroke}
-              {...glow(theme.status.ocupada.stroke, theme, 0.6)}
+              perfectDrawEnabled={false}
             />
             <Text
               x={-Math.max(labelWidth, OCCUPANT_MIN_WIDTH * MS) / 2 + 8}

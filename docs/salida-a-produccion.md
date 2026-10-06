@@ -381,30 +381,41 @@ Arriba, junto a «SIGUIENTE EN LA FILA», siempre dice cómo está la conexión:
 
 **Editar el plano (Panel)**
 
-Todo se hace desde **una sola ventana**, arriba del plano:
+Todo se hace desde **una sola ventana de control**, que nunca tapa el plano.
+Cambia de sitio según cómo tengas el aparato:
 
-- **Primera fila:** la **zona** (Comedor principal, Terraza…), **★ Por
-  defecto** (la zona que se abre al entrar; en otra zona sale **Marcar por
-  defecto**), **Guardar**, **Deshacer** (Ctrl+Z) y **Rehacer** (Ctrl+Shift+Z o
-  Ctrl+Y).
-- **Herramientas:** girar el plano entero, **Pegar elemento**, **Copiar plano**
-  (a otro restaurante), zoom, **Meseros activos: 2 | 3** con **Ver meseros**
-  (tiñe cada mesa del color de su mesero) y **Repartir meseros**.
-- **Elemento seleccionado:** al tocar una mesa (o cualquier elemento) aparece,
-  en la misma ventana, su **nombre**, sus **puestos**, su **mesero**, **Girar**,
-  **Copiar elemento**, **Pegar**, **Duplicar** y **Eliminar**. **Listo** (o
+- **Tablet acostada (horizontal) o computadora:** un panel fijo a la derecha.
+  - **Arriba:** la **zona** (Comedor principal, Terraza…), **★ Por defecto**
+    (la zona que se abre al entrar; en otra zona sale **Marcar por
+    defecto**), **Guardar**, **Deshacer** (Ctrl+Z) y **Rehacer**
+    (Ctrl+Shift+Z o Ctrl+Y).
+  - **Debajo** (se desliza hacia abajo si no cabe): el elemento
+    seleccionado, **Añadir** (mesas, baños, caja…), **Plano** (girar el plano
+    entero, **Pegar elemento**, **Copiar plano** a otro restaurante, zoom y
+    **Ajustar**) y **Meseros** (**Meseros activos: 2 | 3**, **Ver meseros** y
+    **Repartir meseros**).
+- **Celular o tablet de pie (vertical):** una barra abajo con **Añadir**,
+  **Deshacer**, **Rehacer**, **Guardar**, **Girar** y **Más**.
+  - **Añadir** abre un panel que sube desde abajo con los elementos. Toca
+    uno y aparece en el centro de lo que ves; el panel se cierra solo.
+  - **Más** abre ese mismo panel con la zona, el plano, el zoom y los meseros.
+  - El panel ocupa como mucho un poco menos de la mitad de la pantalla. Para
+    cerrarlo, **arrástralo hacia abajo** o toca la flecha.
+  - Al tocar una mesa, sus herramientas salen en una tira justo encima de la
+    barra; desliza la tira de lado para ver todas.
+- **Elemento seleccionado:** su **nombre**, sus **puestos**, su **mesero**,
+  **Girar**, **Copiar**, **Pegar**, **Duplicar** y **Eliminar**. **Listo** (o
   tocar el plano vacío) quita la selección.
-- **Copiar y pegar:** selecciona una mesa → **Copiar elemento** (o Ctrl+C) →
+- **Las mesas nuevas salen siempre dentro del plano**, en el centro de lo que
+  ves o, si ahí ya hay algo, en el hueco libre más cercano. Al arrastrar,
+  pegar o girar, nada se puede salir del recuadro.
+- **Copiar y pegar:** selecciona una mesa → **Copiar** (o Ctrl+C) →
   **Pegar** (o Ctrl+V). Sale una copia al lado, con otro nombre («Mesa 9») y
   las mismas medidas, giro y puestos, **libre** y sin cliente. Se mueve, se
   gira, se renombra y se elimina como cualquier mesa, y se puede pegar en
   otra zona. **Deshacer** la quita.
-- **Celular o tablet pequeña:** la ventana empieza **plegada** (solo la
-  primera fila) para ver el plano. **Herramientas** la abre y **Plegar** la
-  cierra; si tocas una mesa, sus herramientas salen igual. En el celular, los
-  elementos para añadir están dentro de **Herramientas**.
-- Nada se guarda hasta pulsar **Guardar**. Una mesa con un cliente sentado no
-  se puede eliminar.
+- Nada se guarda hasta pulsar **Guardar** (después dice «Guardado»). Una mesa
+  con un cliente sentado no se puede eliminar.
 
 **No compartas la contraseña fuera del equipo del piloto.** Si alguien nuevo
 necesita entrar, el administrador le crea su propio usuario.

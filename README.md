@@ -229,7 +229,8 @@ local, con pan arrastrando el fondo y zoom con la rueda.
 | `components/editor/lazy-konva-canvas.tsx` | **El `dynamic({ ssr: false })` de Konva**, que comparten el editor y el plano en vivo. |
 | `components/editor/konva-canvas.tsx` | Stage, pan, zoom y retícula. |
 | `components/editor/element-node.tsx` | Un elemento (memoizado, con sus sillas). |
-| `components/editor/element-palette.tsx` | Paleta con drag & drop HTML5. |
+| `components/editor/canvas-icon.tsx` | Íconos del lienzo, pasados a mapa de bits una sola vez. |
+| `lib/layout/placement.ts` | `placeInView` (dónde aparece una mesa nueva) y `clampToZone` (que nada salga de la zona), sin nada de React. |
 
 ### Por qué el `dynamic` está donde está
 
@@ -613,7 +614,14 @@ El editor está pensado para usarse con el dedo en una tablet:
 - Botones de al menos 44 px, con ícono y un texto corto debajo.
 - Zoom pellizcando con dos dedos.
 - Tiradores grandes para redimensionar.
-- Tocar un elemento de la paleta lo añade en el centro de lo que se ve.
+- Tocar un elemento de «Añadir» lo pone **dentro del recuadro**: en el centro
+  de lo que se ve (ajustado al zoom) o, si ahí ya hay algo, en el hueco libre
+  más cercano (`placeInView` en `lib/layout/placement.ts`).
+- **Nada sale de la zona:** arrastrar, pegar, girar, soltar desde la paleta y
+  redimensionar pasan por `clampToZone`, que también tiene en cuenta el giro.
+  Pegar pone la copia junto al original y dentro de la zona.
+- **60 FPS en tablet y celular** al arrastrar, mover el plano y pellizcar
+  (ver «Rendimiento» más abajo).
 
 ### Qué se ve
 
@@ -634,24 +642,29 @@ El editor está pensado para usarse con el dedo en una tablet:
   lienzo mucho mayor), hasta un 160 %. Todo es proporcional: se ve igual de
   bien en escritorio, tablet y celular, y la zona de toque sigue cubriendo la
   mesa y sus sillas.
-- **Una sola ventana de control** (desde el 5 de octubre), arriba del plano:
-  - primera fila: zona, «★ Por defecto», **Guardar**, **Deshacer** (Ctrl+Z) y
-    **Rehacer** (Ctrl+Shift+Z o Ctrl+Y);
-  - herramientas: girar el plano ↺ ↻, **Pegar elemento**, **Copiar plano**,
-    zoom, «Meseros activos», «Ver meseros» y «Repartir meseros», y el
-    indicador «En vivo»;
-  - **elemento seleccionado**, en la misma ventana y solo si hay selección:
-    nombre, puestos, mesero, girar, **Copiar elemento**, **Pegar**,
-    **Duplicar**, **Eliminar** y **Listo**. Ya no hay ventanita aparte al tocar
-    una mesa;
-  - los avisos («Tienes cambios sin guardar», «Guardado…», «Otro dispositivo
-    guardó…») también van dentro.
-
-  Se **pliega** a la primera fila: en un celular (vertical u horizontal)
-  empieza plegada y en tablet o computadora abierta; lo decide CSS, así que no
-  hay parpadeo. Con el panel plegado, tocar una mesa sigue mostrando sus
-  herramientas. En el celular, la paleta de elementos va dentro de
-  «Herramientas».
+- **Una sola ventana de control**, que cambia de sitio según la pantalla (lo
+  decide CSS con el punto `lg`, 1024 px, así que no hay parpadeo) y **nunca
+  tapa el plano**:
+  - **Tablet en horizontal y computadora:** un panel fijo a la derecha, de
+    320 px y con scroll propio; el lienzo se achica para dejarle sitio. Arriba,
+    zona, «★ Por defecto», **Guardar**, **Deshacer** (Ctrl+Z) y **Rehacer**
+    (Ctrl+Shift+Z o Ctrl+Y); debajo, el **elemento seleccionado** y las
+    secciones **Añadir**, **Plano** (girar el plano ↺ ↻, **Pegar elemento**,
+    **Copiar plano**, zoom y **Ajustar**) y **Meseros** («Meseros activos»,
+    «Ver meseros» y «Repartir meseros»).
+  - **Celular y tablet en vertical:** una barra compacta abajo con **Añadir**,
+    **Deshacer**, **Rehacer**, **Guardar**, **Girar** (la mesa elegida o, sin
+    selección, el plano) y **Más**. Justo encima, una tira de alto fijo con el
+    elemento seleccionado (nombre, puestos, mesero, girar, **Copiar**,
+    **Pegar**, **Duplicar**, **Eliminar** y **Listo**), que se desliza de lado.
+    «Añadir» y «Más» abren un panel que sube desde abajo, como mucho el 40 %
+    del alto; se baja arrastrándolo (o con la flecha o Escape) y se cierra solo
+    al añadir. **Nunca se abre solo**: añadir una mesa no lo despliega.
+  - Todos los botones miden al menos 44×44 px.
+  - Los avisos («Tienes cambios sin guardar», «Guardado…», «Otro dispositivo
+    guardó…») van en el panel lateral o en «Más»; en la barra de abajo solo
+    salen los errores y el aviso de otro dispositivo, y «Guardar» cambia a
+    «Guardado».
 - **Copiar y pegar elementos** (Ctrl+C / Ctrl+V o los botones, que funcionan
   con el dedo): la copia (`lib/layout/clipboard.ts`) tiene un id nuevo, el
   siguiente nombre de su tipo y las mismas medidas, giro y puestos, y **no**
@@ -685,8 +698,46 @@ su `key` (`components/editor/icons.ts`), igual que la forma. La columna
 - **El nombre del cliente en vivo se pide aparte.** El evento `table:assigned`
   solo trae el id del cliente. El editor llama a `getTableOccupantInfo`, una
   action de solo lectura, en vez de cambiar el evento.
-- **Las sombras solo van en el cuerpo del elemento.** En Konva son caras, y
-  con 40 mesas se nota.
+- **Sin sombras difuminadas ni filtros en el lienzo.** En Konva son de lo más
+  caro de pintar; el relieve sale de un borde, no de una sombra.
+
+### Editor fluido en tablet
+
+El 6 de octubre de 2026 el editor iba a 8-17 FPS en tablet y celular al
+arrastrar una mesa, mover el plano o pellizcar. Qué lo frenaba y qué se hizo:
+
+- **Cada movimiento redibujaba todo.** La mesa que se arrastra pasa a una capa
+  propia y se guarda como imagen (`node.cache`) mientras dura el arrastre, así
+  cada paso copia una imagen en vez de redibujar las 40 mesas. El recuadro de
+  selección se desengancha hasta soltar.
+- **React no se entera hasta soltar.** Konva mueve el nodo; el estado (y la
+  foto para Deshacer) se actualiza una sola vez, al soltar. Las mesas van con
+  `React.memo` y callbacks estables, y elegir una mesa va en `startTransition`,
+  así el panel no se re-renderiza en cada movimiento.
+- **Mover el plano y pellizcar con «cámara CSS».** Durante el gesto se mueve
+  el lienzo con una transformación CSS (lo hace la tarjeta gráfica) y Konva
+  redibuja una sola vez al soltar. El pellizco usa eventos táctiles nativos
+  (`Konva.hitOnDragEnabled = false`).
+- **Menos píxeles y figuras más baratas.** Densidad de píxeles como mucho 2
+  (`Konva.pixelRatio`), la cuadrícula en una sola figura en una capa con
+  `listening={false}`, `perfectDrawEnabled={false}` en todas las figuras, los
+  íconos pasados a mapa de bits una vez (`canvas-icon.tsx`) y sin sombras.
+- **El minimapa y el zoom de la barra** se actualizan con una pausa corta
+  (100 y 150 ms), no en cada fotograma.
+
+FPS medidos con Chrome sin ventana, el build de producción, la CPU **4 veces
+más lenta**, densidad de píxeles 2 y gestos táctiles reales (la mediana de
+fotograma es 16,7 ms en todos los casos «después»):
+
+| Pantalla | Arrastrar mesa | Mover plano | Pellizco | Seleccionar |
+|---|---|---|---|---|
+| Celular vertical 375×812 | 11 → 57 | 16 → 59 | 9 → 60 | 33 → 60 |
+| Celular horizontal 812×375 | 11 → 58 | — → 60 | 46 → 60 | 51 → 59 |
+| Tablet vertical 768×1024 | 10 → 59 | 15 → 60 | 14 → 59 | 33 → 58 |
+| Tablet horizontal 1024×768 | 10 → 60 | 17 → 60 | 8 → 60 | 37 → 58 |
+| Computadora 1280×800 | 8 → 59 | 17 → 60 | 9 → 59 | 25 → 58 |
+
+(«—»: de ese gesto no quedó medida de «antes».)
 
 ### Giro del plano completo
 
