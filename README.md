@@ -1258,10 +1258,14 @@ número) y su **color**. Se cambia de una a otra con **un toque**.
 
 ### Qué se ve
 
-- **Plano en vivo** (`/restaurante/[id]/mapa`): el selector **«Meseros
-  activos: 2 | 3 | 4»** arriba, y cada mesa teñida del color de su mesero
+- **Plano en vivo** (`/restaurante/[id]/mapa`): el contador **«Meseros
+  activos: [−] 3 [+]»** arriba, y cada mesa teñida del color de su mesero
   con su nombre encima. Debajo, la leyenda: cada mesero con sus mesas y
-  cuántas quedan «sin mesero».
+  cuántas quedan «sin mesero». Los botones **[−] y [+]** (44×44 px) bajan y
+  suben la cantidad de meseros: activan la configuración de ese número y, si
+  todavía no existe, **la crean con las mesas ya repartidas** y la activan.
+  No se puede bajar de 1 ni subir de `MAX_WAITERS` (12), y el cambio llega a
+  las demás tablets por el socket.
 - **Editar zonas** (botón del plano en vivo, o «Repartir meseros»
   desde el editor, que abre `?meseros=editar`): nombre de la configuración,
   nombre y color de cada mesero, y un **pincel**: se elige un mesero y se

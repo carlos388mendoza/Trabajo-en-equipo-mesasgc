@@ -1437,6 +1437,25 @@ section("Zonas de meseros y plano por defecto");
   check("el editor ofrece «Repartir meseros» al host", editorCentro.text.includes("Repartir meseros"));
   check("  y marcar el plano por defecto", editorCentro.text.includes("Por defecto") || editorCentro.text.includes("Marcar por defecto"));
 
+  // La cantidad de meseros se elige con botones [−] [+], no con «2 | 3 | 4».
+  const conBotones = (text: string) =>
+    text.includes('aria-label="Quitar mesero"') && text.includes('aria-label="Agregar mesero"');
+  /** El trozo de HTML del <button> con ese aria-label, para ver si va desactivado. */
+  const boton = (text: string, label: string) => {
+    const i = text.indexOf(`aria-label="${label}"`);
+    if (i < 0) return "";
+    const start = text.lastIndexOf("<button", i);
+    const end = text.indexOf(">", i);
+    return start >= 0 && end > start ? text.slice(start, end + 1) : "";
+  };
+  check("el plano en vivo sube y baja los meseros con botones [−] y [+]", conBotones(planoCentro.text));
+  check("  y el selector «2 | 3 | 4» ya no está", !planoCentro.text.includes('aria-label="Configuración de meseros activa"'));
+  check("el editor usa los mismos botones", conBotones(editorCentro.text));
+  check("analítica los ve, pero desactivados",
+    conBotones(planoAnalitica.text) &&
+      boton(planoAnalitica.text, "Quitar mesero").includes("disabled") &&
+      boton(planoAnalitica.text, "Agregar mesero").includes("disabled"));
+
   const seedConfigs = await listWaiterConfigs("rest_centro");
   check("el seed deja «2 meseros» (activa) y «3 meseros» en rest_centro", seedConfigs.length === 2 && seedConfigs.find((c) => c.waiterCount === 2)?.isActive === true, JSON.stringify(seedConfigs.map((c) => [c.name, c.isActive])));
   check("  con nombres de mesero y todas las mesas repartidas", seedConfigs.every((c) => c.zones.every((z) => !z.waiterName.startsWith("Mesero ")) && c.zones.some((z) => z.tableIds.length > 0)));

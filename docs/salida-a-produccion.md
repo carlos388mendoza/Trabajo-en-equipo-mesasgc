@@ -392,8 +392,8 @@ Cambia de sitio según cómo tengas el aparato:
   - **Debajo** (se desliza hacia abajo si no cabe): el elemento
     seleccionado, **Añadir** (mesas, baños, caja…), **Plano** (girar el plano
     entero, **Pegar elemento**, **Copiar plano** a otro restaurante, zoom y
-    **Ajustar**) y **Meseros** (**Meseros activos: 2 | 3**, **Ver meseros** y
-    **Repartir meseros**).
+    **Ajustar**) y **Meseros** (**Meseros activos: [−] 3 [+]**, **Ver meseros**
+    y **Repartir meseros**).
 - **Celular o tablet de pie (vertical):** una barra abajo con **Añadir**,
   **Deshacer**, **Rehacer**, **Guardar**, **Girar** y **Más**.
   - **Añadir** abre un panel que sube desde abajo con los elementos. Toca
