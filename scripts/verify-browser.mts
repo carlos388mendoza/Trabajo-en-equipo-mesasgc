@@ -9,6 +9,9 @@
 //    tamaños (celular y tablet, de pie y acostados, y computadora), con el
 //    usuario de restaurante y con el admin; que mida 44×44 o más, que nada lo
 //    tape, que abra el panel y que Esc lo cierre. Analítica no lo tiene.
+//  - Los textos de las mesas del plano en vivo, con la tablet acostada: que
+//    ninguno se salga de su mesa, que no se encimen con los de otra mesa y
+//    que ninguno mida menos de 12 px en pantalla.
 //  - #61: que la página NO tiene scroll horizontal en 320, 375, 414, 768,
 //    1024 ni escritorio, midiendo en cada tamaño
 //    `document.documentElement.scrollWidth` contra `window.innerWidth` (lo
@@ -566,6 +569,90 @@ await esperar(500);
 const analiticaSinBoton = (JSON.parse(String(await evaluar(botonLista))) as { existe: boolean }).existe === false;
 
 // ---------------------------------------------------------------------------
+// Plano en vivo: los textos de las mesas, dentro de su mesa y sin encimarse
+// ---------------------------------------------------------------------------
+
+// En el navegador: por cada texto visible de una mesa (`live-text`), su caja
+// REAL en pantalla (el ancho del texto, no el del hueco que se le dio). Tiene
+// que caber en el cuerpo de su mesa (`live-body`; en una redonda, dentro del
+// círculo), no tocar los textos de otra mesa y medir 12 px o más.
+const textosDelPlano = `(() => {
+  const st = Konva.stages[0];
+  const fallos = [];
+  const cajas = [];
+  let textos = 0;
+  let minimo = 99;
+  for (const g of st.find(".table-element")) {
+    const body = g.findOne(".live-body");
+    const ref = body ? body.getClientRect() : g.getClientRect({ skipStroke: true });
+    const circulo = body && body.getClassName() === "Circle"
+      ? { cx: ref.x + ref.width / 2, cy: ref.y + ref.height / 2, r: ref.width / 2 }
+      : null;
+    for (const t of g.find(".live-text, .live-badge")) {
+      if (!t.isVisible() || !t.text()) continue;
+      const tr = t.getAbsoluteTransform();
+      const ancho = Math.min(t.getTextWidth(), t.width());
+      const izq = t.align() === "center" ? (t.width() - ancho) / 2 : 0;
+      const pts = [[izq, 0], [izq + ancho, 0], [izq, t.fontSize()], [izq + ancho, t.fontSize()]].map(([x, y]) => tr.point({ x, y }));
+      const caja = { x0: Math.min(...pts.map((p) => p.x)), y0: Math.min(...pts.map((p) => p.y)), x1: Math.max(...pts.map((p) => p.x)), y1: Math.max(...pts.map((p) => p.y)) };
+      const px = t.fontSize() * t.getAbsoluteScale().y;
+      textos += 1;
+      minimo = Math.min(minimo, px);
+      cajas.push({ id: g.id(), texto: t.text(), ...caja });
+      if (t.hasName("live-badge")) continue;
+      const dentro = circulo
+        ? pts.every((p) => Math.hypot(p.x - circulo.cx, p.y - circulo.cy) <= circulo.r + 1)
+        : caja.x0 >= ref.x - 1 && caja.y0 >= ref.y - 1 && caja.x1 <= ref.x + ref.width + 1 && caja.y1 <= ref.y + ref.height + 1;
+      if (!dentro) fallos.push("se sale: «" + t.text() + "» en " + g.id());
+    }
+  }
+  for (let i = 0; i < cajas.length; i += 1) {
+    for (let j = i + 1; j < cajas.length; j += 1) {
+      const a = cajas[i], b = cajas[j];
+      if (a.id === b.id) continue;
+      const w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+      const h = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+      if (w > 0.5 && h > 0.5) fallos.push("se enciman: «" + a.texto + "» y «" + b.texto + "»");
+    }
+  }
+  if (minimo < 11.9) fallos.push("letra de " + minimo.toFixed(1) + " px");
+  return JSON.stringify({ textos, minimo: Number(minimo.toFixed(1)), fallos: fallos.slice(0, 8) });
+})()`;
+
+const filasTextos: Array<{ tamano: string; pasa: boolean; detalle: string }> = [];
+await entrarComo("chinawok@grupocomidas.test");
+for (const t of [
+  { nombre: "tablet acostada", ancho: 1180, alto: 820 },
+  { nombre: "tablet acostada", ancho: 1024, alto: 768 },
+]) {
+  await tab.send("Emulation.setDeviceMetricsOverride", {
+    width: t.ancho,
+    height: t.alto,
+    deviceScaleFactor: 1,
+    mobile: true,
+    screenOrientation: { type: "landscapePrimary", angle: 90 },
+  });
+  await tab.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+  await abrirPlano();
+  await esperar(800);
+  // Cada zona del restaurante (la de demostración es la más llena).
+  const zonas = Number(await evaluar(`document.querySelectorAll('[role=tab]').length`)) || 1;
+  for (let z = 0; z < zonas; z += 1) {
+    await evaluar(`(document.querySelectorAll('[role=tab]')[${z}]?.click(), true)`);
+    await esperar(1200);
+    const nombreZona = String(await evaluar(`document.querySelectorAll('[role=tab]')[${z}]?.textContent ?? "única"`));
+    const r = JSON.parse(String(await evaluar(textosDelPlano))) as { textos: number; minimo: number; fallos: string[] };
+    const captura = await tab.send("Page.captureScreenshot", { format: "png" });
+    writeFileSync(join(SHOTS, `plano-textos-${t.ancho}x${t.alto}-zona${z + 1}.png`), Buffer.from(captura.data as string, "base64"));
+    filasTextos.push({
+      tamano: `${t.nombre} ${t.ancho}×${t.alto} · ${nombreZona}`,
+      pasa: r.textos > 0 && r.fallos.length === 0,
+      detalle: `${r.textos} textos, el menor de ${r.minimo} px${r.fallos.length ? " · " + r.fallos.join(" | ") : ""}`,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Resultado
 // ---------------------------------------------------------------------------
 
@@ -602,7 +689,13 @@ for (const fila of filasLista) {
 if (!analiticaSinBoton) fallos += 1;
 console.log(`  ${analiticaSinBoton ? "ok  " : "FALLA"} analítica no tiene el botón (no opera)`);
 
-writeFileSync(join(DIR, "resultado.json"), JSON.stringify({ filas, ejes, filasLista, analiticaSinBoton }, null, 2));
+console.log("\nPlano en vivo: textos de las mesas (dentro de su mesa, sin encimarse, 12 px o más)");
+for (const fila of filasTextos) {
+  if (!fila.pasa) fallos += 1;
+  console.log(`  ${fila.pasa ? "ok  " : "FALLA"} ${fila.tamano.padEnd(48)} ${fila.detalle}`);
+}
+
+writeFileSync(join(DIR, "resultado.json"), JSON.stringify({ filas, ejes, filasLista, analiticaSinBoton, filasTextos }, null, 2));
 console.log(`\nCapturas en ${SHOTS}`);
 
 tab.close();
@@ -612,5 +705,5 @@ if (fallos > 0) {
   console.log(`verify:browser — ${fallos} fallo(s).`);
   process.exit(1);
 }
-console.log(`verify:browser — ${filas.length} mediciones sin scroll horizontal, ejes etiquetados y el botón «Lista de espera» en ${filasLista.length} casos.`);
+console.log(`verify:browser — ${filas.length} mediciones sin scroll horizontal, ejes etiquetados, el botón «Lista de espera» en ${filasLista.length} casos y los textos del plano en ${filasTextos.length} zonas.`);
 process.exit(0);

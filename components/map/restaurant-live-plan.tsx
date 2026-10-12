@@ -18,6 +18,7 @@ import { LivePlan, type LivePlanProps } from "@/components/map/live-plan";
 import { FALLBACK_REFRESH_MS, useOverviewSocket } from "@/components/map/use-overview-socket";
 import { type RealtimeStatus, useRestaurantSocket } from "@/components/realtime/use-restaurant-socket";
 import type { LivePlan as LivePlanData } from "@/lib/map/queries";
+import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
 
 type Props = {
   restaurantId: string;
@@ -28,8 +29,10 @@ type Props = {
   startEditingWaiters?: boolean;
   /** Modo inmersivo de la tablet en horizontal (ver `LivePlan`). */
   immersive?: LivePlanProps["immersive"];
-  /** `mesas:asignar`: puede liberar mesas desde el plano (una o todas). */
+  /** `mesas:asignar`: puede sentar y liberar mesas desde el plano (una o todas). */
   canReleaseTables?: boolean;
+  /** `rapido:modificar`: puede eliminar a un cliente desde la ficha de la mesa (ya liberada). */
+  canDeleteClients?: boolean;
 };
 
 export function RestaurantLivePlan(props: Props) {
@@ -48,7 +51,7 @@ function useFallbackTick(): number {
   return tick;
 }
 
-function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startEditingWaiters, immersive, canReleaseTables }: Props) {
+function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startEditingWaiters, immersive, canReleaseTables, canDeleteClients }: Props) {
   const [events, setEvents] = useState(0);
   const tick = useFallbackTick();
   // Varios avisos seguidos (liberar todas las mesas, limpiar pendientes,
@@ -65,7 +68,7 @@ function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startE
   useEffect(() => () => {
     if (pending.current !== null) window.clearTimeout(pending.current);
   }, []);
-  const { status, releaseTable, releaseAllTables } = useRestaurantSocket(restaurantId, {
+  const { status, assignTable, releaseTable, releaseAllTables, deleteEntry } = useRestaurantSocket(restaurantId, {
     "table:assigned": bump,
     "table:released": bump,
     "layout:updated": bump,
@@ -85,9 +88,28 @@ function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startE
       canManageWaiters={canManageWaiters}
       startEditingWaiters={startEditingWaiters}
       immersive={immersive}
-      tableActions={canReleaseTables ? { release: releaseTable, releaseAll: releaseAllTables } : undefined}
+      tableActions={{
+        release: canReleaseTables ? releaseTable : undefined,
+        releaseAll: canReleaseTables ? releaseAllTables : undefined,
+        assign: canReleaseTables && immersive?.waitlistHref ? assignTable : undefined,
+        // Para «Sentar» desde la ficha: los que siguen en la fila.
+        loadWaiting: canReleaseTables && immersive?.waitlistHref ? () => loadWaiting(restaurantId) : undefined,
+        deleteEntry: canDeleteClients ? deleteEntry : undefined,
+      }}
     />
   );
+}
+
+/** Los que esperan (en espera o listos), del primero que llegó al último. */
+async function loadWaiting(restaurantId: string): Promise<WaitlistEntrySnapshot[] | null> {
+  try {
+    const res = await fetch(`/api/restaurante/${restaurantId}/clientes`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const { entries } = (await res.json()) as { entries: WaitlistEntrySnapshot[] };
+    return entries.filter((e) => e.status === "esperando" || e.status === "listo").sort((a, b) => a.arrivedAt - b.arrivedAt);
+  } catch {
+    return null;
+  }
 }
 
 function ViaOverview({ restaurantId, initialPlan, immersive }: Props) {
