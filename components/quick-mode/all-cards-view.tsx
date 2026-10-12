@@ -18,7 +18,7 @@
 // escrito: el color no es lo único que lo dice.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Armchair, Check, Clock3, DoorOpen, LayoutGrid, RotateCcw, Search, Trash2, Undo2, UsersRound, X } from "lucide-react";
+import { Armchair, Brush, Check, CheckSquare, Clock3, DoorOpen, LayoutGrid, RotateCcw, Search, Square, Trash2, Undo2, UsersRound, X } from "lucide-react";
 
 import {
   arrivalLabel,
@@ -90,6 +90,15 @@ type AllCardsViewProps = {
   onResolve: (entryId: string, status: "listo" | "ausente") => Promise<boolean>;
   onReopen: (entryId: string) => Promise<boolean>;
   onDelete: (entryId: string) => Promise<boolean>;
+  /** Eliminar a uno sentado: libera su mesa y lo elimina, en una sola acción. */
+  onDeleteWithTable: (entryId: string) => Promise<boolean>;
+  /** Acción sobre los seleccionados; devuelve el resumen para el aviso, o null si falló. */
+  onBulk: (action: "liberar" | "ausente" | "eliminar", entryIds: string[]) => Promise<string | null>;
+  /** «Limpiar pendientes antiguos»: con `preview`, solo cuenta. */
+  onCleanup: (
+    hours: 12 | 24 | 168,
+    preview: boolean,
+  ) => Promise<{ ok: true; released: number; changed: number; preview?: { absent: number; tables: number } } | null>;
   onUndo: () => Promise<void>;
   /**
    * Lo que la tablet ya sabe (con la cola aplicada): se usa si no hay red para
@@ -122,6 +131,9 @@ function AllCardsContent({
   onResolve,
   onReopen,
   onDelete,
+  onDeleteWithTable,
+  onBulk,
+  onCleanup,
   onUndo,
   localEntries,
   applyPending,
@@ -308,8 +320,64 @@ function AllCardsContent({
     return { list, counts: c };
   }, [fromLocal, localEntries, range, now, searched, activeWaiter, filter, tables]);
 
-  const visible = useMemo(() => (local ? local.list : applyPending(entries)), [local, entries, applyPending]);
+  // Quién ocupa mesa ahora (las mesas llegan en vivo por `table:released` y
+  // `table:assigned`, que no pasan por `subscribe`): con el filtro «Ocupando
+  // mesa», quien la deja sale de la lista al momento, y los conteos se vuelven
+  // a pedir cada vez que cambia la ocupación.
+  const occupiedKey = useMemo(() => tables.map((t) => t.currentEntryId ?? "").sort().join(","), [tables]);
+  const occupiedIds = useMemo(() => new Set(occupiedKey.split(",").filter(Boolean)), [occupiedKey]);
+  const firstOccupancy = useRef(true);
+  useEffect(() => {
+    if (firstOccupancy.current) {
+      firstOccupancy.current = false;
+      return;
+    }
+    refreshCounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [occupiedKey]);
+  const visible = useMemo(() => {
+    if (local) return local.list;
+    const list = applyPending(entries);
+    return filter === "ocupando" ? list.filter((entry) => occupiedIds.has(entry.id)) : list;
+  }, [local, entries, applyPending, filter, occupiedIds]);
   const shownCounts = local ? local.counts : counts;
+
+  // Selección múltiple: casillas en cada cliente y una barra con las acciones
+  // en grupo. Se limpia al cambiar de filtro (lo elegido ya no se ve).
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [selectedFor, setSelectedFor] = useState(params);
+  if (selectedFor !== params) {
+    setSelectedFor(params);
+    setSelected(new Set());
+  }
+  const toggle = (id: string) =>
+    setSelected((current) => {
+      const nextSet = new Set(current);
+      if (nextSet.has(id)) nextSet.delete(id);
+      else nextSet.add(id);
+      return nextSet;
+    });
+  const [bulkAsk, setBulkAsk] = useState<"liberar" | "ausente" | "eliminar" | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const occupiedBy = useMemo(() => new Map(tables.filter((t) => t.currentEntryId).map((t) => [t.currentEntryId!, t])), [tables]);
+  const chosen = visible.filter((entry) => selected.has(entry.id));
+  const chosenCounts = {
+    total: chosen.length,
+    occupying: chosen.filter((entry) => occupiedBy.has(entry.id)).length,
+    waiting: chosen.filter((entry) => entry.status === "esperando" || entry.status === "listo").length,
+  };
+  async function runBulk(action: "liberar" | "ausente" | "eliminar") {
+    setBulkBusy(true);
+    const result = await onBulk(action, chosen.map((entry) => entry.id));
+    setBulkBusy(false);
+    setBulkAsk(null);
+    if (result) {
+      setMessage(`${result} Puedes deshacerlo con «Deshacer».`);
+      setSelected(new Set());
+    }
+  }
 
   async function act(entryId: string, run: () => Promise<boolean>): Promise<boolean> {
     if (busyId) return false;
@@ -368,6 +436,28 @@ function AllCardsContent({
             </Chip>
           ))}
         </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={!connected}
+            onClick={() => setCleanupOpen(true)}
+            title={connected ? "Marcar ausentes a los que siguen en la fila y liberar las mesas viejas" : "Hace falta conexión"}
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-app-border px-3.5 text-sm font-semibold text-panel-text transition hover:bg-app-border/50 disabled:opacity-40"
+          >
+            <Brush aria-hidden size={17} />
+            Limpiar pendientes antiguos
+          </button>
+          {visible.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setSelected(selected.size === visible.length ? new Set() : new Set(visible.map((entry) => entry.id)))}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-app-border px-3.5 text-sm font-semibold text-panel-muted transition hover:bg-app-border/50 hover:text-panel-text"
+            >
+              {selected.size === visible.length ? <CheckSquare aria-hidden size={17} /> : <Square aria-hidden size={17} />}
+              {selected.size === visible.length ? "Quitar selección" : `Seleccionar los ${visible.length} que se ven`}
+            </button>
+          )}
+        </div>
         {legend.length > 0 && (
           <div role="group" aria-label="Meseros: toca uno para ver solo sus clientes" className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-panel-muted">Meseros</span>
@@ -415,6 +505,31 @@ function AllCardsContent({
             {error}
           </p>
         )}
+        {message && (
+          <p role="status" className="mb-4 flex items-start justify-between gap-3 rounded-xl border border-estado-libre/40 px-4 py-3 text-sm text-panel-text">
+            <span>{message}</span>
+            <button type="button" onClick={() => setMessage("")} aria-label="Cerrar el aviso" className="-m-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-app-border/50">
+              <X aria-hidden size={16} />
+            </button>
+          </p>
+        )}
+        {selected.size > 0 && (
+          <div role="toolbar" aria-label="Acciones con los seleccionados" className="sticky top-0 z-10 mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-accent/40 bg-panel p-3 shadow-md">
+            <span className="mr-auto text-sm font-semibold text-panel-text">{plural(chosenCounts.total, "seleccionado", "seleccionados")}</span>
+            <BulkButton icon={DoorOpen} disabled={!connected || chosenCounts.occupying === 0} onClick={() => setBulkAsk("liberar")}>
+              Liberar mesas{chosenCounts.occupying ? ` (${chosenCounts.occupying})` : ""}
+            </BulkButton>
+            <BulkButton icon={X} disabled={!connected || chosenCounts.waiting === 0} onClick={() => setBulkAsk("ausente")}>
+              Marcar ausente{chosenCounts.waiting ? ` (${chosenCounts.waiting})` : ""}
+            </BulkButton>
+            <BulkButton icon={Trash2} danger disabled={!connected} onClick={() => setBulkAsk("eliminar")}>
+              Eliminar seleccionados
+            </BulkButton>
+            <button type="button" onClick={() => setSelected(new Set())} aria-label="Quitar la selección" className="flex h-11 w-11 items-center justify-center rounded-xl text-panel-muted hover:bg-app-border/50">
+              <X aria-hidden size={18} />
+            </button>
+          </div>
+        )}
         {loading && !visible.length ? (
           <p role="status" className="py-16 text-center text-panel-muted">Cargando clientes…</p>
         ) : visible.length === 0 ? (
@@ -437,6 +552,8 @@ function AllCardsContent({
                 onResolve={(status) => void act(entry.id, () => onResolve(entry.id, status))}
                 onReopen={() => void act(entry.id, () => onReopen(entry.id))}
                 onDelete={() => setConfirmDelete(entry)}
+                selected={selected.has(entry.id)}
+                onToggleSelect={() => toggle(entry.id)}
               />
             ))}
           </ul>
@@ -457,15 +574,34 @@ function AllCardsContent({
 
       <DeleteConfirm
         entry={confirmDelete}
+        tableLabel={confirmDelete ? occupiedBy.get(confirmDelete.id)?.label ?? null : null}
         busy={busyId !== null && busyId === confirmDelete?.id}
         disabled={false}
         onCancel={() => setConfirmDelete(null)}
         onConfirm={async () => {
           const target = confirmDelete;
           if (!target) return;
-          const ok = await act(target.id, () => onDelete(target.id));
+          // Sentado en una mesa: se libera y se elimina, en una sola acción.
+          const withTable = occupiedBy.has(target.id);
+          const ok = await act(target.id, () => (withTable ? onDeleteWithTable(target.id) : onDelete(target.id)));
           // Si el socket lo aceptó, la carta desaparece sola por `removed`.
           if (ok) setConfirmDelete(null);
+        }}
+      />
+      <BulkConfirm
+        action={bulkAsk}
+        counts={chosenCounts}
+        busy={bulkBusy}
+        onCancel={() => setBulkAsk(null)}
+        onConfirm={() => bulkAsk && void runBulk(bulkAsk)}
+      />
+      <CleanupDialog
+        open={cleanupOpen}
+        onClose={() => setCleanupOpen(false)}
+        onCleanup={onCleanup}
+        onDone={(text) => {
+          setMessage(text);
+          setCleanupOpen(false);
         }}
       />
     </div>
@@ -474,6 +610,8 @@ function AllCardsContent({
 
 type DeleteConfirmProps = {
   entry: WaitlistEntrySnapshot | null;
+  /** La mesa que ocupa ahora: se libera antes de eliminarlo. */
+  tableLabel: string | null;
   busy: boolean;
   disabled: boolean;
   onCancel: () => void;
@@ -486,7 +624,7 @@ type DeleteConfirmProps = {
  * doble toque: primero se elige «Eliminar», y aquí se escribe el nombre del
  * cliente que se va a quitar de la lista.
  */
-function DeleteConfirm({ entry, busy, disabled, onCancel, onConfirm }: DeleteConfirmProps) {
+function DeleteConfirm({ entry, tableLabel, busy, disabled, onCancel, onConfirm }: DeleteConfirmProps) {
   return (
     <Overlay open={entry !== null} onClose={onCancel} labelledBy="eliminar-titulo" size="form">
       <div className="p-5 sm:p-6">
@@ -494,7 +632,8 @@ function DeleteConfirm({ entry, busy, disabled, onCancel, onConfirm }: DeleteCon
           ¿Eliminar de la lista?
         </h2>
         <p className="mt-2 text-panel-muted">
-          Se quita de la lista de clientes de este restaurante. Puedes deshacerlo con
+          {tableLabel ? <strong className="text-panel-text">Se liberará la {tableLabel} y se eliminará el cliente. </strong> : null}
+          Se quita de la lista de clientes de este restaurante (y deja de contar en las estadísticas). Puedes deshacerlo con
           «Deshacer» o <kbd className="rounded bg-app-bg px-1.5 py-0.5 text-xs">Ctrl+Z</kbd> enseguida
           después.
         </p>
@@ -509,11 +648,7 @@ function DeleteConfirm({ entry, busy, disabled, onCancel, onConfirm }: DeleteCon
             </p>
           </div>
         )}
-        {entry?.status === "sentado" && (
-          <p className="mt-3 text-sm text-panel-muted">
-            Si tiene una mesa ocupada en el mapa, primero libérala: con la mesa llena no se borra.
-          </p>
-        )}
+
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button
             type="button"
@@ -569,9 +704,11 @@ type CardRowProps = {
   waiterColor: string | null;
   onSeat: () => void;
   onRelease: (tableId: string) => void;
+  selected: boolean;
+  onToggleSelect: () => void;
 };
 
-function CardRow({ entry, now, disabled, busy, table, waiterColor, onResolve, onReopen, onDelete, onSeat, onRelease }: CardRowProps) {
+function CardRow({ entry, now, disabled, busy, table, waiterColor, onResolve, onReopen, onDelete, onSeat, onRelease, selected, onToggleSelect }: CardRowProps) {
   const waiting = entry.status === "esperando";
   // Hasta cuándo esperó: la marca de listo o ausente, el aviso o la mesa. Las
   // filas de antes de `resolved_at` (migración 0006) usan su último cambio.
@@ -585,10 +722,14 @@ function CardRow({ entry, now, disabled, busy, table, waiterColor, onResolve, on
   return (
     // Sentado con mesero: una franja a la izquierda con su color.
     <li
-      className={`flex flex-col rounded-2xl border border-app-border bg-panel p-4 shadow-sm movil-horizontal:gap-1 ${served && waiterColor ? "border-l-[6px]" : ""} ${busy ? "opacity-60" : ""}`}
+      className={`flex flex-col rounded-2xl border bg-panel p-4 shadow-sm movil-horizontal:gap-1 ${selected ? "border-accent ring-2 ring-accent/40" : "border-app-border"} ${served && waiterColor ? "border-l-[6px]" : ""} ${busy ? "opacity-60" : ""}`}
       style={served && waiterColor ? { borderLeftColor: waiterColor } : undefined}
     >
       <div className="flex items-start justify-between gap-3">
+        <label className="-m-2 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl hover:bg-app-border/50">
+          <span className="sr-only">Seleccionar a {entry.customerName}</span>
+          <input type="checkbox" checked={selected} onChange={onToggleSelect} className="h-5 w-5 accent-[rgb(var(--c-accent))]" />
+        </label>
         {/* El nombre manda: dos líneas como mucho, y el completo en el `title`
             (tooltip al pasar el mouse, texto al mantener pulsado en el móvil)
             para que un nombre largo siga siendo identificable. */}
@@ -730,5 +871,172 @@ function CardRow({ entry, now, disabled, busy, table, waiterColor, onResolve, on
         </div>
       </div>
     </li>
+  );
+}
+
+function BulkButton({
+  icon: Icon,
+  children,
+  onClick,
+  disabled,
+  danger = false,
+}: {
+  icon: typeof Trash2;
+  children: ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex min-h-11 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition disabled:opacity-40 ${
+        danger ? "border-estado-ocupada/50 text-estado-ocupada hover:bg-estado-ocupada/10" : "border-app-border text-panel-text hover:bg-app-border/50"
+      }`}
+    >
+      <Icon aria-hidden size={17} />
+      {children}
+    </button>
+  );
+}
+
+/** Confirmación de una acción en grupo, con cuántos toca. */
+function BulkConfirm({
+  action,
+  counts,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  action: "liberar" | "ausente" | "eliminar" | null;
+  counts: { total: number; occupying: number; waiting: number };
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const title = action === "liberar" ? "¿Liberar mesas?" : action === "ausente" ? "¿Marcar ausentes?" : "¿Eliminar seleccionados?";
+  const text =
+    action === "liberar"
+      ? `Se liberarán ${plural(counts.occupying, "mesa", "mesas")} de los seleccionados. Siguen contando en las estadísticas.`
+      : action === "ausente"
+        ? `Se marcarán como ausentes ${plural(counts.waiting, "cliente", "clientes")} que siguen en la fila. Siguen contando en las estadísticas.`
+        : `Se eliminarán ${plural(counts.total, "cliente", "clientes")}${counts.occupying ? ` y se liberarán ${plural(counts.occupying, "mesa", "mesas")}` : ""}. Dejan de contar en las estadísticas.`;
+  return (
+    <Overlay open={action !== null} onClose={onCancel} labelledBy="grupo-titulo" size="form">
+      <div className="p-5 sm:p-6">
+        <h2 id="grupo-titulo" className="text-xl font-bold text-panel-text">{title}</h2>
+        <p className="mt-2 text-panel-text">{text}</p>
+        <p className="mt-2 text-sm text-panel-muted">Puedes deshacerlo con «Deshacer» enseguida después.</p>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onCancel} disabled={busy} className="inline-flex min-h-12 items-center justify-center rounded-xl border border-app-border px-5 font-semibold text-panel-text transition hover:bg-app-border/50 disabled:opacity-45">
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-xl px-5 font-semibold transition hover:opacity-90 disabled:opacity-45 ${
+              action === "eliminar" ? "border border-estado-ocupada bg-estado-ocupada text-app-bg" : "bg-accent text-accent-text"
+            }`}
+          >
+            {busy ? "Aplicando…" : "Aceptar"}
+          </button>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+const CLEANUP_CHOICES: { hours: 12 | 24 | 168; label: string }[] = [
+  { hours: 12, label: "Más de 12 horas" },
+  { hours: 24, label: "Más de 24 horas" },
+  { hours: 168, label: "Más de 7 días" },
+];
+
+/**
+ * «Limpiar pendientes antiguos»: se elige la antigüedad, se ve cuántos toca
+ * (consulta sin cambios) y se confirma. Marca ausentes a los que siguen en la
+ * fila (en espera o listos) y libera las mesas de los sentados de antes.
+ */
+function CleanupDialog({
+  open,
+  onClose,
+  onCleanup,
+  onDone,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCleanup: AllCardsViewProps["onCleanup"];
+  onDone: (message: string) => void;
+}) {
+  const [hours, setHours] = useState<12 | 24 | 168>(24);
+  const [preview, setPreview] = useState<{ hours: number; absent: number; tables: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  // Por referencia: la función llega nueva en cada render del modo sencillo, y
+  // el conteo solo hay que pedirlo al abrir o al cambiar la antigüedad.
+  const cleanupRef = useRef(onCleanup);
+  useEffect(() => {
+    cleanupRef.current = onCleanup;
+  });
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void cleanupRef.current(hours, true).then((result) => {
+      if (!cancelled && result?.preview) setPreview({ hours, ...result.preview });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, hours]);
+  const current = preview && preview.hours === hours ? preview : null;
+  const nothing = current !== null && current.absent === 0 && current.tables === 0;
+  return (
+    <Overlay open={open} onClose={onClose} labelledBy="limpiar-titulo" size="form">
+      <div className="p-5 sm:p-6">
+        <h2 id="limpiar-titulo" className="text-xl font-bold text-panel-text">Limpiar pendientes antiguos</h2>
+        <p className="mt-2 text-panel-muted">
+          Marca como ausentes a los que siguen en la fila y libera las mesas de los que se sentaron hace mucho. Las cifras
+          de las estadísticas se conservan.
+        </p>
+        <div role="radiogroup" aria-label="Antigüedad" className="mt-4 flex flex-wrap gap-2">
+          {CLEANUP_CHOICES.map((choice) => (
+            <Chip key={choice.hours} active={hours === choice.hours} onClick={() => setHours(choice.hours)}>
+              {choice.label}
+            </Chip>
+          ))}
+        </div>
+        <p role="status" className="mt-4 rounded-2xl border border-app-border bg-app-bg p-4 text-panel-text">
+          {!current
+            ? "Contando…"
+            : nothing
+              ? "No hay nada pendiente de esa antigüedad."
+              : `Se marcarán como ausentes ${plural(current.absent, "cliente", "clientes")} y se liberarán ${plural(current.tables, "mesa", "mesas")}.`}
+        </p>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} disabled={busy} className="inline-flex min-h-12 items-center justify-center rounded-xl border border-app-border px-5 font-semibold text-panel-text transition hover:bg-app-border/50 disabled:opacity-45">
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={busy || !current || nothing}
+            onClick={async () => {
+              setBusy(true);
+              const result = await onCleanup(hours, false);
+              setBusy(false);
+              if (result) {
+                onDone(
+                  `Listo: ${plural(result.changed, "cliente marcado", "clientes marcados")} como ausente y ${plural(result.released, "mesa liberada", "mesas liberadas")}. Puedes deshacerlo con «Deshacer».`,
+                );
+              }
+            }}
+            className="inline-flex min-h-12 items-center justify-center rounded-xl bg-accent px-5 font-semibold text-accent-text transition hover:opacity-90 disabled:opacity-45"
+          >
+            {busy ? "Limpiando…" : "Aceptar"}
+          </button>
+        </div>
+      </div>
+    </Overlay>
   );
 }

@@ -29,7 +29,7 @@
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { EyeOff, ListOrdered, Maximize2, Minimize2, X } from "lucide-react";
+import { DoorOpen, EyeOff, ListOrdered, Maximize2, Minimize2, X } from "lucide-react";
 
 import {
   WaiterActions,
@@ -45,6 +45,7 @@ import { loadLivePlan } from "@/app/mapa/actions";
 import type { CanvasHandle } from "@/components/editor/konva-canvas";
 import { KonvaCanvas } from "@/components/editor/lazy-konva-canvas";
 import { TABLET_LANDSCAPE_QUERY } from "@/lib/layout/immersive";
+import type { Ack, BatchSummary, ReleaseTableInput, TableChange } from "@/lib/realtime/events";
 import type { LivePlan as LivePlanData } from "@/lib/map/queries";
 
 const NOOP = () => {};
@@ -92,9 +93,28 @@ export type LivePlanProps = {
      */
     waitlistHref?: string;
   };
+  /**
+   * Liberar mesas desde el plano: tocar una ocupada ofrece «Liberar mesa», y
+   * «Liberar todas las mesas» las vacía (escribiendo LIBERAR). Solo llega con
+   * `mesas:asignar`; sin él el plano sigue siendo de solo lectura.
+   */
+  tableActions?: {
+    release: (payload: ReleaseTableInput) => Promise<Ack<TableChange>>;
+    releaseAll: () => Promise<Ack<BatchSummary>>;
+  };
 };
 
 /** Qué mesas cambiaron entre dos lecturas del plano. */
+// «45 min», «3 h» o «11 días»: una mesa olvidada puede llevar días ocupada,
+// y «15840 min» no se entiende de un vistazo.
+function sinceText(ms: number): string {
+  const min = Math.max(0, Math.floor(ms / 60_000));
+  if (min < 120) return `${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 48) return `${h} h`;
+  return `${Math.floor(h / 24)} días`;
+}
+
 function changedTables(before: LivePlanData | null, after: LivePlanData): string[] {
   if (!before) return [];
   const old = new Map<string, string>();
@@ -121,6 +141,7 @@ export function LivePlan({
   canManageWaiters = false,
   startEditingWaiters = false,
   immersive,
+  tableActions,
 }: LivePlanProps) {
   // Modo inmersivo. `immersiveMode` es lo que pide el usuario: "auto" (a
   // pantalla completa cuando la tablet está en horizontal, lo normal) o
@@ -266,6 +287,36 @@ export function LivePlan({
   const roundButton =
     "flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-medium text-panel-text ring-1 ring-app-border hover:bg-app-border/60";
 
+  // La mesa tocada (para «Liberar mesa») y «Liberar todas las mesas».
+  const [tappedId, setTappedId] = useState<string | null>(null);
+  const [tableBusy, setTableBusy] = useState(false);
+  const [tableMessage, setTableMessage] = useState<string | null>(null);
+  const [releaseAllOpen, setReleaseAllOpen] = useState(false);
+  const [releaseAllText, setReleaseAllText] = useState("");
+  const tapped = tappedId ? zone?.elements.find((e) => e.id === tappedId && e.currentEntryId) ?? null : null;
+  const occupiedCount = zones.reduce((n, z) => n + z.elements.filter((e) => e.currentEntryId).length, 0);
+  const releaseTapped = async () => {
+    if (!tapped || !tapped.currentEntryId || !tableActions) return;
+    setTableBusy(true);
+    const result = await tableActions.release({ tableId: tapped.id, entryId: tapped.currentEntryId });
+    setTableBusy(false);
+    setTableMessage(result.ok ? `${tapped.label} quedó libre.` : result.error);
+    if (result.ok) setTappedId(null);
+  };
+  const releaseAll = async () => {
+    if (!tableActions || releaseAllText.trim() !== "LIBERAR") return;
+    setTableBusy(true);
+    const result = await tableActions.releaseAll();
+    setTableBusy(false);
+    setReleaseAllOpen(false);
+    setReleaseAllText("");
+    setTableMessage(
+      result.ok
+        ? `Se liberaron ${result.released} ${result.released === 1 ? "mesa" : "mesas"}. Se puede deshacer con «Deshacer» en el modo sencillo.`
+        : result.error,
+    );
+  };
+
   return (
     <div
       data-inmersivo={immersiveOn ? "" : undefined}
@@ -329,6 +380,19 @@ export function LivePlan({
               </span>
             </button>
           ) : null}
+          {/* «Liberar todas las mesas» también con la tablet acostada: aquí,
+              solo el ícono (en la barra flotante no cabe el texto). */}
+          {tableActions && occupiedCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setReleaseAllOpen(true)}
+              aria-label="Liberar todas las mesas"
+              title="Liberar todas las mesas"
+              className={`${roundButton} hidden px-0 inmersivo:flex`}
+            >
+              <DoorOpen aria-hidden size={18} strokeWidth={2} />
+            </button>
+          ) : null}
           {immersive ? (
             <button
               type="button"
@@ -355,6 +419,17 @@ export function LivePlan({
         <span className="contents inmersivo:hidden">
           <WaiterActions state={waiters} />
         </span>
+        {tableActions && occupiedCount > 0 ? (
+          <button
+            type="button"
+            onClick={() => setReleaseAllOpen(true)}
+            className={`${roundButton} bg-panel inmersivo:hidden`}
+            title="Dejar todas las mesas libres (para empezar el día limpio)"
+          >
+            <DoorOpen aria-hidden size={18} strokeWidth={2} />
+            Liberar todas las mesas
+          </button>
+        ) : null}
         {plan && !plan.showNames ? (
           <span className="flex items-center gap-1.5 rounded-full bg-panel px-3 py-1.5 text-xs font-medium text-panel-muted ring-1 ring-app-border inmersivo:hidden">
             <EyeOff aria-hidden size={14} strokeWidth={2} />
@@ -410,7 +485,16 @@ export function LivePlan({
             onZoomChange={NOOP}
             controllerRef={controllerRef}
             waiterMarks={waiters.marks}
-            onElementTap={waiters.editing ? waiters.tap : undefined}
+            onElementTap={
+              waiters.editing
+                ? waiters.tap
+                : tableActions
+                  ? (id) => {
+                      setTableMessage(null);
+                      setTappedId(id);
+                    }
+                  : undefined
+            }
             onMarquee={waiters.editing && waiters.group ? waiters.marquee : undefined}
           />
         ) : (
@@ -420,6 +504,89 @@ export function LivePlan({
         )}
       </div>
       </div>
+
+      {/* La mesa ocupada que se tocó: quién está y «Liberar mesa». */}
+      {tapped || tableMessage ? (
+        <div
+          role="dialog"
+          aria-label={tapped ? `Mesa ${tapped.label}` : "Aviso"}
+          className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 mx-auto flex max-w-md flex-wrap items-center gap-3 rounded-2xl bg-panel p-4 text-panel-text shadow-2xl ring-1 ring-app-border"
+        >
+          <div className="min-w-0 flex-1">
+            {tapped ? (
+              <>
+                <p className="font-semibold">{tapped.label}</p>
+                <p className="text-sm text-panel-muted">
+                  Ocupada{tapped.occupantName ? ` por ${tapped.occupantName}` : ""}
+                  {tapped.seatedAt ? ` · desde hace ${sinceText(now - tapped.seatedAt)}` : ""}
+                </p>
+              </>
+            ) : (
+              <p role="status" className="text-sm">{tableMessage}</p>
+            )}
+          </div>
+          {tapped ? (
+            <button
+              type="button"
+              disabled={tableBusy}
+              onClick={() => void releaseTapped()}
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-text hover:bg-accent/85 disabled:opacity-50"
+            >
+              <DoorOpen aria-hidden size={17} />
+              {tableBusy ? "Liberando…" : "Liberar mesa"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              setTappedId(null);
+              setTableMessage(null);
+            }}
+            aria-label="Cerrar"
+            className="flex h-11 w-11 items-center justify-center rounded-xl hover:bg-app-border/60"
+          >
+            <X aria-hidden size={18} />
+          </button>
+        </div>
+      ) : null}
+
+      {/* «Liberar todas las mesas»: hay que escribir LIBERAR. */}
+      {releaseAllOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setReleaseAllOpen(false)}>
+          <div
+            role="dialog"
+            aria-labelledby="liberar-todas-titulo"
+            className="w-full max-w-md rounded-2xl bg-panel p-5 text-panel-text shadow-xl ring-1 ring-app-border"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="liberar-todas-titulo" className="text-lg font-semibold">¿Liberar todas las mesas?</h2>
+            <p className="mt-2 text-sm text-panel-muted">
+              Se liberarán las {occupiedCount} mesas ocupadas de este restaurante (todas las zonas). Los clientes siguen en el
+              historial y cuentan en las estadísticas. Para confirmar, escribe <strong className="text-panel-text">LIBERAR</strong>.
+            </p>
+            <input
+              value={releaseAllText}
+              onChange={(e) => setReleaseAllText(e.target.value)}
+              aria-label="Escribe LIBERAR para confirmar"
+              autoComplete="off"
+              className="mt-4 h-11 w-full rounded-xl border border-app-border bg-app-bg px-3 text-panel-text"
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setReleaseAllOpen(false)} className="h-11 rounded-xl px-4 text-sm font-medium hover:bg-app-border/60">
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={tableBusy || releaseAllText.trim() !== "LIBERAR"}
+                onClick={() => void releaseAll()}
+                className="h-11 rounded-xl bg-estado-ocupada px-4 text-sm font-semibold text-app-bg disabled:opacity-50"
+              >
+                {tableBusy ? "Liberando…" : "Liberar todas"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* La lista de espera: el modo sencillo en un panel que se pone encima
           de todo (`fixed`): a la derecha en pantallas anchas y a pantalla

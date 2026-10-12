@@ -602,6 +602,67 @@ export function QuickModeClient({ restaurantId, userId }: { restaurantId: string
     return true;
   }
 
+  /**
+   * Acciones de limpieza: tocan muchos clientes o mesas de una vez, así que
+   * van SOLO en línea (no por la cola sin conexión: no se podría saber qué
+   * deshacer si otra tablet cambió algo mientras tanto). El resultado llega
+   * a todas las tablets por los avisos de siempre.
+   */
+  async function emitOnline<T>(send: (socket: RealtimeClient) => Promise<T>): Promise<T | { ok: false; error: string }> {
+    const socket = socketRef.current;
+    if (!socket?.connected) return { ok: false, error: "Hace falta conexión para esta acción." };
+    try {
+      return await send(socket);
+    } catch {
+      return { ok: false, error: "El servidor no respondió. Inténtalo de nuevo." };
+    }
+  }
+
+  /** Eliminar a un cliente sentado: primero se libera su mesa y luego se elimina. */
+  async function deleteGuestWithTable(entryId: string): Promise<boolean> {
+    setError("");
+    const name = nameOf(entryId);
+    const result = await emitOnline((socket) => socket.timeout(20000).emitWithAck("waitlist:delete", { entryId, releaseTable: true }));
+    if (!result.ok) {
+      setError(result.error);
+      return false;
+    }
+    offerUndoForFiveSeconds();
+    showNotice(`Se liberó la mesa y se eliminó a ${name}.`, 3000);
+    void loadTables();
+    return true;
+  }
+
+  async function bulkAction(action: "liberar" | "ausente" | "eliminar", entryIds: string[]): Promise<string | null> {
+    setError("");
+    const result = await emitOnline((socket) => socket.timeout(20000).emitWithAck("waitlist:bulk", { action, entryIds }));
+    if (!result.ok) {
+      setError(result.error);
+      return null;
+    }
+    offerUndoForFiveSeconds();
+    void loadTables();
+    return action === "liberar"
+      ? `Se liberaron ${plural(result.released, "mesa", "mesas")}.`
+      : action === "ausente"
+        ? `Se marcaron ausentes ${plural(result.changed, "cliente", "clientes")}.`
+        : `Se eliminaron ${plural(result.removed, "cliente", "clientes")}${result.released ? ` y se liberaron ${plural(result.released, "mesa", "mesas")}` : ""}.`;
+  }
+
+  async function cleanup(hours: 12 | 24 | 168, preview: boolean) {
+    setError("");
+    const result = await emitOnline((socket) => socket.timeout(20000).emitWithAck("waitlist:cleanup", { hours, preview }));
+    if (!result.ok) {
+      setError(result.error);
+      return null;
+    }
+    if (!preview) {
+      offerUndoForFiveSeconds();
+      void loadTables();
+    }
+    return result;
+  }
+
   async function seatGuest(entryId: string, tableId: string): Promise<boolean> {
     setSeating(true);
     setError("");
@@ -672,7 +733,7 @@ export function QuickModeClient({ restaurantId, userId }: { restaurantId: string
         // Deshacer «agregar varios» trae a todos los que se quitaron.
         removeEntries(new Set((result.entries ?? [result.entry]).map((entry: WaitlistEntrySnapshot) => entry.id)));
         if (result.entries) showNotice(`Se quitaron los ${result.entries.length} clientes que se agregaron.`, 3000);
-      } else {
+      } else if (result.entry) {
         mergeEntry(result.entry);
       }
     } catch (cause) {
@@ -971,6 +1032,9 @@ export function QuickModeClient({ restaurantId, userId }: { restaurantId: string
         onResolve={(entryId, status) => markGuest(entryId, status, status === "listo" ? 1 : -1)}
         onReopen={reopenGuest}
         onDelete={deleteGuest}
+        onDeleteWithTable={deleteGuestWithTable}
+        onBulk={bulkAction}
+        onCleanup={cleanup}
         onSeat={(entry) => setSeatFor(entry)}
         onRelease={releaseTableOf}
         onUndo={undoLastAction}

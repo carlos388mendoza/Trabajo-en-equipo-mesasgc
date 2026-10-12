@@ -6,6 +6,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ACTIVE_WAITLIST_STATUSES, type WaitlistStatus } from "@/lib/db/enums";
 import { tables, user, waitlistEntries } from "@/lib/db/schema";
+import { undoBatch, type BatchUndoData, type TableEvent } from "./batch";
 // Cuántos clientes se pueden agregar de una vez («Varios» del formulario).
 import { MAX_BATCH_ENTRIES } from "@/lib/realtime/events";
 
@@ -46,8 +47,12 @@ type UndoRecord = {
   actionId: string;
   entryId: string;
   entryUpdatedAt: Date;
-  /** `added-many`: varios de una vez; deshacer los quita todos (`entryIds`). */
-  kind: "added" | "added-many" | "resolved" | "reopened" | "deleted";
+  /**
+   * `added-many`: varios de una vez; deshacer los quita todos (`entryIds`).
+   * `batch`: una acción en grupo de `lib/waitlist/batch.ts` (liberar mesas,
+   * marcar ausentes o eliminar varios, limpiar pendientes, liberar todas).
+   */
+  kind: "added" | "added-many" | "resolved" | "reopened" | "deleted" | "batch";
   entryIds?: string[];
   /** Estado en que dejó la fila la acción: deshacer solo vale si sigue así. */
   statusAfter: WaitlistStatus;
@@ -55,6 +60,8 @@ type UndoRecord = {
   previous?: Restorable;
   /** `deleted`: la fila tal cual, para poder volver a insertarla al deshacer. */
   previousRow?: typeof waitlistEntries.$inferSelect;
+  /** `batch`: lo que hay que devolver (ver `undoBatch`). */
+  batch?: BatchUndoData;
   busy: boolean;
 };
 
@@ -106,6 +113,25 @@ function restorable(entry: typeof waitlistEntries.$inferSelect): Restorable {
     resolvedAt: entry.resolvedAt,
     resolvedByUserId: entry.resolvedByUserId,
   };
+}
+
+/**
+ * Guarda una acción en grupo como la última del restaurante (la que deshace
+ * «Deshacer» o Ctrl+Z en cualquier tablet). Devuelve su id.
+ */
+export function registerBatchUndo(restaurantId: string, label: string, batch: BatchUndoData): string {
+  const actionId = crypto.randomUUID();
+  undoByRestaurant.set(restaurantId, {
+    actionId,
+    entryId: "",
+    entryUpdatedAt: new Date(),
+    kind: "batch",
+    statusAfter: "ausente",
+    label,
+    batch,
+    busy: false,
+  });
+  return actionId;
 }
 
 export function getWaitlistUndoState(restaurantId: string): UndoState | null {
@@ -488,9 +514,12 @@ export async function undoWaitlistAction(
   actionId: string,
 ): Promise<Result<{
   action: "removed" | "restored";
-  entry: WaitlistEntrySnapshot;
+  /** El cliente que volvió; en una acción en grupo, el primero (o ninguno). */
+  entry?: WaitlistEntrySnapshot;
   /** Solo al deshacer «agregar varios»: todos los que se quitaron (`entry` es el primero). */
   entries?: WaitlistEntrySnapshot[];
+  /** Solo al deshacer una acción en grupo: qué volvió y qué mesas se ocuparon otra vez. */
+  batch?: { restored: WaitlistEntrySnapshot[]; reoccupied: TableEvent[]; skipped: number };
 }>> {
   const record = undoByRestaurant.get(restaurantId);
   if (!record || record.actionId !== actionId || record.busy) {
@@ -499,6 +528,12 @@ export async function undoWaitlistAction(
   record.busy = true;
 
   try {
+    if (record.kind === "batch" && record.batch) {
+      const result = await undoBatch(restaurantId, record.batch);
+      if (undoByRestaurant.get(restaurantId) === record) undoByRestaurant.delete(restaurantId);
+      return { ok: true, action: "restored", entry: result.restored[0], batch: result };
+    }
+
     if (record.kind === "added-many") {
       const result = await undoAddMany(restaurantId, record);
       if (!result.ok) {

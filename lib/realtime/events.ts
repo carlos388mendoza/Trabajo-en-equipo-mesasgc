@@ -145,8 +145,42 @@ export type UndoWaitlistInput = z.infer<typeof undoWaitlistSchema>;
 export const reopenWaitlistEntrySchema = z.object({ entryId: idSchema, operationId: operationIdSchema });
 export type ReopenWaitlistEntryInput = z.infer<typeof reopenWaitlistEntrySchema>;
 
-/** Eliminar a un cliente de la lista («Ver todas las cartas»). */
-export const deleteWaitlistEntrySchema = z.object({ entryId: idSchema, operationId: operationIdSchema });
+/**
+ * Eliminar a un cliente de la lista («Ver clientes»). Con `releaseTable`, si
+ * está sentado en una mesa, primero se libera y luego se elimina, en una sola
+ * acción (pide además sentar y liberar mesas).
+ */
+export const deleteWaitlistEntrySchema = z.object({ entryId: idSchema, operationId: operationIdSchema, releaseTable: z.boolean().optional() });
+
+// --- Acciones en grupo («Ver clientes» y plano en vivo; ver lib/waitlist/batch.ts)
+
+export const BULK_ACTIONS = ["liberar", "ausente", "eliminar"] as const;
+export type BulkAction = (typeof BULK_ACTIONS)[number];
+/** Tope de clientes por acción en grupo (la pantalla carga de 50 en 50). */
+export const MAX_BULK = 200;
+/** «Limpiar pendientes antiguos»: 12 h, 24 h o 7 días. */
+export const CLEANUP_HOURS = [12, 24, 168] as const;
+export type CleanupHours = (typeof CLEANUP_HOURS)[number];
+
+export const bulkWaitlistSchema = z.object({
+  action: z.enum(BULK_ACTIONS),
+  entryIds: z.array(idSchema).min(1).max(MAX_BULK),
+});
+export type BulkWaitlistInput = z.infer<typeof bulkWaitlistSchema>;
+
+export const cleanupWaitlistSchema = z.object({
+  hours: z.union([z.literal(12), z.literal(24), z.literal(168)]),
+  /** Solo contar (para la confirmación): no cambia nada. */
+  preview: z.boolean().optional(),
+});
+export type CleanupWaitlistInput = z.infer<typeof cleanupWaitlistSchema>;
+
+/** «Liberar todas las mesas»: hay que escribir LIBERAR, también en el servidor. */
+export const releaseAllTablesSchema = z.object({ confirm: z.literal("LIBERAR") });
+export type ReleaseAllTablesInput = z.infer<typeof releaseAllTablesSchema>;
+
+/** Resumen de una acción en grupo, para el aviso y para «Deshacer». */
+export type BatchSummary = { actionId: string | null; released: number; changed: number; removed: number };
 export type DeleteWaitlistEntryInput = z.infer<typeof deleteWaitlistEntrySchema>;
 
 export type WaitlistUndoState = {
@@ -214,8 +248,20 @@ export interface ClientToServerEvents {
    * borran de su pantalla sin ninguna ruta nueva. Se puede deshacer.
    */
   "waitlist:delete": (payload: DeleteWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
+  /**
+   * Una acción sobre varios clientes (liberar sus mesas, marcarlos ausentes o
+   * eliminarlos). La room recibe los avisos de siempre, uno por cliente o mesa.
+   */
+  "waitlist:bulk": (payload: BulkWaitlistInput, ack: (res: Ack<BatchSummary>) => void) => void;
+  /** «Limpiar pendientes antiguos» (con `preview`, solo cuenta). */
+  "waitlist:cleanup": (
+    payload: CleanupWaitlistInput,
+    ack: (res: Ack<BatchSummary & { preview?: { absent: number; tables: number } }>) => void,
+  ) => void;
+  /** «Liberar todas las mesas» del restaurante. */
+  "tables:release-all": (payload: ReleaseAllTablesInput, ack: (res: Ack<BatchSummary>) => void) => void;
   /** Deshacer la última acción de la lista para ese restaurante. */
-  "waitlist:undo": (payload: UndoWaitlistInput, ack: (res: Ack<{ action: "removed" | "restored"; entry: WaitlistEntrySnapshot; entries?: WaitlistEntrySnapshot[] }>) => void) => void;
+  "waitlist:undo": (payload: UndoWaitlistInput, ack: (res: Ack<{ action: "removed" | "restored"; entry?: WaitlistEntrySnapshot; entries?: WaitlistEntrySnapshot[] }>) => void) => void;
 }
 
 /** Lo que el servidor le avisa a todos los de una room. */

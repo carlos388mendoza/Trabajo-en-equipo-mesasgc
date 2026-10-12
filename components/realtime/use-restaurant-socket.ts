@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 
 import type {
+  BatchSummary,
   Ack,
   AssignTableInput,
   ClientToServerEvents,
@@ -121,5 +122,16 @@ export function useRestaurantSocket(restaurantId: string, handlers: RealtimeHand
     [request],
   );
 
-  return { status, joinError, assignTable, releaseTable };
+  /** «Liberar todas las mesas» (el servidor también exige escribir LIBERAR). */
+  const releaseAllTables = useCallback(async (): Promise<Ack<BatchSummary>> => {
+    const socket = socketRef.current;
+    if (!socket?.connected) return { ok: false, error: "Sin conexión con el servidor." };
+    try {
+      return await socket.timeout(ACK_TIMEOUT_MS).emitWithAck("tables:release-all", { confirm: "LIBERAR" });
+    } catch {
+      return { ok: false, error: "El servidor no respondió. Inténtalo de nuevo." };
+    }
+  }, []);
+
+  return { status, joinError, assignTable, releaseTable, releaseAllTables };
 }
