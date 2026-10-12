@@ -2,8 +2,9 @@
 // colgado (clientes de hace días que siguen «en espera» o en una mesa):
 //
 //  - `bulkWaitlist`: liberar mesas, marcar ausentes o eliminar varios clientes
-//    elegidos en «Ver clientes» (también eliminar a UNO que está sentado:
-//    primero se libera su mesa y luego se elimina, en una sola acción);
+//    elegidos en «Ver clientes». Eliminar NUNCA libera mesas: quien está en
+//    una mesa no se elimina hasta que alguien la libere a propósito (ver
+//    `lib/waitlist/delete-rule.ts`; el servidor lo comprueba antes);
 //  - `cleanupStale`: «Limpiar pendientes antiguos» (marca ausentes a los que
 //    siguen en la fila y libera las mesas de los sentados con más de X horas);
 //  - `releaseAllTables`: «Liberar todas las mesas» del plano en vivo.
@@ -122,7 +123,11 @@ async function markAbsent(
   };
 }
 
-/** Elimina clientes que ya NO ocupan ninguna mesa (se liberan antes). */
+/**
+ * Elimina clientes que NO ocupan ninguna mesa. El servidor ya rechazó la orden
+ * si alguno estaba en una mesa; esta condición es la red de seguridad para la
+ * carrera (alguien lo sentó en el mismo instante): ese no se borra.
+ */
 async function removeEntries(restaurantId: string, entryIds: readonly string[]): Promise<EntryRow[]> {
   if (entryIds.length === 0) return [];
   const occupiedNow = db
@@ -155,7 +160,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * Una acción sobre varios clientes elegidos en «Ver clientes»:
  *  - `liberar`: libera las mesas que ocupan (siguen sentados en el historial);
  *  - `ausente`: marca ausentes a los que siguen en la fila (los demás, igual);
- *  - `eliminar`: libera sus mesas y los elimina de la lista.
+ *  - `eliminar`: los elimina de la lista (solo a los que no están en una mesa).
  */
 export async function bulkWaitlist(
   restaurantId: string,
@@ -165,7 +170,7 @@ export async function bulkWaitlist(
   label?: string,
 ): Promise<BatchOutcome> {
   const ids = [...new Set(entryIds)].slice(0, MAX_BULK);
-  const released = action === "ausente" ? { events: [], undo: [] } : await releaseTablesOf(restaurantId, ids);
+  const released = action === "liberar" ? await releaseTablesOf(restaurantId, ids) : { events: [], undo: [] };
   const absent = action === "ausente" ? await markAbsent(restaurantId, inArray(waitlistEntries.id, ids), userId) : { changed: [], undo: [] };
   const removed = action === "eliminar" ? await removeEntries(restaurantId, ids) : [];
   const defaultLabel =
@@ -175,6 +180,34 @@ export async function bulkWaitlist(
         ? `Marcar ausentes a ${plural(absent.changed.length, "cliente", "clientes")}`
         : `Eliminar a ${plural(removed.length, "cliente", "clientes")}`;
   return finish(restaurantId, label ?? defaultLabel, released, absent, removed);
+}
+
+/**
+ * Qué clientes de esa lista están ahora en una mesa de este restaurante, con
+ * el nombre de la mesa (para decir «está en la Mesa 3»). Vacío si ninguno.
+ */
+export async function occupiedTablesOf(restaurantId: string, entryIds: readonly string[]): Promise<Map<string, string>> {
+  if (entryIds.length === 0) return new Map();
+  const rows = await db
+    .select({ entryId: tables.currentEntryId, label: tables.label })
+    .from(tables)
+    .where(and(eq(tables.restaurantId, restaurantId), inArray(tables.currentEntryId, [...entryIds])));
+  return new Map(rows.filter((r) => r.entryId).map((r) => [r.entryId!, r.label]));
+}
+
+/**
+ * «Liberar mesa» de UNA mesa (`table:release`, desde «Ver clientes», el
+ * plano o la cola sin conexión) también se puede deshacer: vuelve a ocupar la
+ * mesa con el mismo cliente si sigue libre. Se guarda como una acción en grupo
+ * de una sola mesa.
+ */
+export async function registerReleaseUndo(restaurantId: string, event: TableEvent): Promise<string> {
+  const [row] = await db.select({ label: tables.label }).from(tables).where(eq(tables.id, event.table.tableId)).limit(1);
+  return registerBatchUndo(restaurantId, `Liberar ${row?.label ?? "la mesa"}`, {
+    changed: [],
+    removed: [],
+    released: [{ tableId: event.table.tableId, entryId: event.entryId, versionAfter: event.table.version }],
+  });
 }
 
 function cutoffFor(hours: CleanupHours, now: Date): Date {

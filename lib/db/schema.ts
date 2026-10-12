@@ -700,6 +700,27 @@ export const offlineOperations = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// Deshacer: la última acción de cada restaurante
+//
+// «Deshacer» vive en memoria del proceso (`lib/waitlist/quick-actions.ts`),
+// pero si el servidor se reinicia justo después de liberar una mesa o
+// eliminar a un cliente, se perdería. Esta tabla guarda una copia (una fila
+// por restaurante, la última acción) para poder deshacer unos minutos después
+// de un reinicio. Sin FK, igual que `offline_operations`: es un registro
+// técnico.
+// ---------------------------------------------------------------------------
+
+export const waitlistUndo = sqliteTable("waitlist_undo", {
+  restaurantId: text("restaurant_id").primaryKey(),
+  actionId: text("action_id").notNull(),
+  /** El registro entero de deshacer, en JSON (las fechas como `{ "$date": ms }`). */
+  record: text("record").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});
+
+// ---------------------------------------------------------------------------
 // Relaciones (para el API `db.query.*`)
 // ---------------------------------------------------------------------------
 

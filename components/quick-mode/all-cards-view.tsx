@@ -35,6 +35,7 @@ import type { WaitlistChange, WaitlistUndoState } from "@/lib/realtime/events";
 import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
 import type { SeatableTable } from "@/lib/tables/list";
 import { waiterColorFor, waiterLegend } from "@/lib/waiters/legend";
+import { RELEASE_FIRST_HINT, releasedNowMessage, seatedBulkMessage, seatedDeleteMessage } from "@/lib/waitlist/delete-rule";
 import { addCalendarDays, hondurasMidnightUtc, hondurasToday } from "@/lib/time/honduras";
 import {
   CARD_FILTERS,
@@ -90,8 +91,6 @@ type AllCardsViewProps = {
   onResolve: (entryId: string, status: "listo" | "ausente") => Promise<boolean>;
   onReopen: (entryId: string) => Promise<boolean>;
   onDelete: (entryId: string) => Promise<boolean>;
-  /** Eliminar a uno sentado: libera su mesa y lo elimina, en una sola acción. */
-  onDeleteWithTable: (entryId: string) => Promise<boolean>;
   /** Acción sobre los seleccionados; devuelve el resumen para el aviso, o null si falló. */
   onBulk: (action: "liberar" | "ausente" | "eliminar", entryIds: string[]) => Promise<string | null>;
   /** «Limpiar pendientes antiguos»: con `preview`, solo cuenta. */
@@ -131,7 +130,6 @@ function AllCardsContent({
   onResolve,
   onReopen,
   onDelete,
-  onDeleteWithTable,
   onBulk,
   onCleanup,
   onUndo,
@@ -368,14 +366,45 @@ function AllCardsContent({
     occupying: chosen.filter((entry) => occupiedBy.has(entry.id)).length,
     waiting: chosen.filter((entry) => entry.status === "esperando" || entry.status === "listo").length,
   };
-  async function runBulk(action: "liberar" | "ausente" | "eliminar") {
+  // Eliminar en grupo: quienes están en una mesa no se eliminan hasta liberar
+  // sus mesas (mismo texto que contesta el servidor).
+  const chosenSeated = chosen.filter((entry) => occupiedBy.has(entry.id));
+  const chosenFree = chosen.filter((entry) => !occupiedBy.has(entry.id));
+  const seatedLabels = chosenSeated
+    .map((entry) => occupiedBy.get(entry.id)!.label)
+    .sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+  const [seatedAsk, setSeatedAsk] = useState(false);
+
+  /**
+   * Una acción sobre los elegidos (o sobre `ids`). `keepSelection`: «Liberar
+   * sus mesas» desde el aviso de eliminar deja la selección como estaba, para
+   * eliminar justo después.
+   */
+  async function runBulk(action: "liberar" | "ausente" | "eliminar", ids = chosen.map((entry) => entry.id), keepSelection = false) {
     setBulkBusy(true);
-    const result = await onBulk(action, chosen.map((entry) => entry.id));
+    const result = await onBulk(action, ids);
     setBulkBusy(false);
     setBulkAsk(null);
+    setSeatedAsk(false);
     if (result) {
-      setMessage(`${result} Puedes deshacerlo con «Deshacer».`);
-      setSelected(new Set());
+      setMessage(
+        keepSelection
+          ? `${result} Ya puedes eliminar a los seleccionados.`
+          : `${result} Puedes deshacerlo con «Deshacer».`,
+      );
+      if (!keepSelection) setSelected(new Set());
+    }
+  }
+
+  // Liberar la mesa desde el aviso de «Eliminar» de un cliente: la carta se
+  // queda, ahora sin mesa, y su «Eliminar» ya funciona.
+  async function releaseThenAllowDelete(entry: WaitlistEntrySnapshot) {
+    const table = occupiedBy.get(entry.id);
+    if (!table) return;
+    const ok = await act(entry.id, () => onRelease(entry.id, table.id));
+    if (ok) {
+      setConfirmDelete(null);
+      setMessage(releasedNowMessage(table.label));
     }
   }
 
@@ -522,7 +551,7 @@ function AllCardsContent({
             <BulkButton icon={X} disabled={!connected || chosenCounts.waiting === 0} onClick={() => setBulkAsk("ausente")}>
               Marcar ausente{chosenCounts.waiting ? ` (${chosenCounts.waiting})` : ""}
             </BulkButton>
-            <BulkButton icon={Trash2} danger disabled={!connected} onClick={() => setBulkAsk("eliminar")}>
+            <BulkButton icon={Trash2} danger disabled={!connected} onClick={() => (chosenSeated.length ? setSeatedAsk(true) : setBulkAsk("eliminar"))}>
               Eliminar seleccionados
             </BulkButton>
             <button type="button" onClick={() => setSelected(new Set())} aria-label="Quitar la selección" className="flex h-11 w-11 items-center justify-center rounded-xl text-panel-muted hover:bg-app-border/50">
@@ -578,15 +607,25 @@ function AllCardsContent({
         busy={busyId !== null && busyId === confirmDelete?.id}
         disabled={false}
         onCancel={() => setConfirmDelete(null)}
+        onRelease={() => confirmDelete && void releaseThenAllowDelete(confirmDelete)}
         onConfirm={async () => {
           const target = confirmDelete;
           if (!target) return;
-          // Sentado en una mesa: se libera y se elimina, en una sola acción.
-          const withTable = occupiedBy.has(target.id);
-          const ok = await act(target.id, () => (withTable ? onDeleteWithTable(target.id) : onDelete(target.id)));
+          const ok = await act(target.id, () => onDelete(target.id));
           // Si el socket lo aceptó, la carta desaparece sola por `removed`.
           if (ok) setConfirmDelete(null);
         }}
+      />
+      <SeatedBulkDialog
+        open={seatedAsk}
+        seated={chosenSeated.length}
+        total={chosen.length}
+        labels={seatedLabels}
+        free={chosenFree.length}
+        busy={bulkBusy}
+        onCancel={() => setSeatedAsk(false)}
+        onRelease={() => void runBulk("liberar", chosenSeated.map((entry) => entry.id), true)}
+        onDeleteFree={() => void runBulk("eliminar", chosenFree.map((entry) => entry.id))}
       />
       <BulkConfirm
         action={bulkAsk}
@@ -610,11 +649,12 @@ function AllCardsContent({
 
 type DeleteConfirmProps = {
   entry: WaitlistEntrySnapshot | null;
-  /** La mesa que ocupa ahora: se libera antes de eliminarlo. */
+  /** La mesa que ocupa ahora: mientras la tenga no se elimina (primero liberarla). */
   tableLabel: string | null;
   busy: boolean;
   disabled: boolean;
   onCancel: () => void;
+  onRelease: () => void;
   onConfirm: () => void | Promise<void>;
 };
 
@@ -624,7 +664,49 @@ type DeleteConfirmProps = {
  * doble toque: primero se elige «Eliminar», y aquí se escribe el nombre del
  * cliente que se va a quitar de la lista.
  */
-function DeleteConfirm({ entry, tableLabel, busy, disabled, onCancel, onConfirm }: DeleteConfirmProps) {
+function DeleteConfirm({ entry, tableLabel, busy, disabled, onCancel, onRelease, onConfirm }: DeleteConfirmProps) {
+  // En una mesa: no se elimina. Se ofrece liberarla (a propósito) y, ya
+  // libre, su «Eliminar» lleva a la confirmación normal.
+  if (entry && tableLabel) {
+    return (
+      <Overlay open onClose={onCancel} labelledBy="eliminar-titulo" size="form">
+        <div className="p-5 sm:p-6">
+          <h2 id="eliminar-titulo" className="text-xl font-bold text-panel-text">
+            Primero libera la mesa
+          </h2>
+          <p className="mt-2 text-panel-text">{seatedDeleteMessage(tableLabel)}</p>
+          <div className="mt-4 rounded-2xl border border-app-border bg-app-bg p-4">
+            <p className="break-words text-lg font-bold leading-tight text-panel-text">{entry.customerName}</p>
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-panel-muted">
+              <UsersRound aria-hidden size={15} />
+              {people(entry.partySize)}
+              <span aria-hidden>·</span>
+              {tableLabel}
+            </p>
+          </div>
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={busy}
+              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-app-border px-5 font-semibold text-panel-text transition hover:bg-app-border/50 disabled:opacity-45"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={onRelease}
+              disabled={busy}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-accent px-5 font-semibold text-accent-text transition hover:opacity-90 disabled:opacity-45"
+            >
+              <DoorOpen aria-hidden size={18} />
+              {busy ? "Liberando…" : "Liberar mesa"}
+            </button>
+          </div>
+        </div>
+      </Overlay>
+    );
+  }
   return (
     <Overlay open={entry !== null} onClose={onCancel} labelledBy="eliminar-titulo" size="form">
       <div className="p-5 sm:p-6">
@@ -632,7 +714,6 @@ function DeleteConfirm({ entry, tableLabel, busy, disabled, onCancel, onConfirm 
           ¿Eliminar de la lista?
         </h2>
         <p className="mt-2 text-panel-muted">
-          {tableLabel ? <strong className="text-panel-text">Se liberará la {tableLabel} y se eliminará el cliente. </strong> : null}
           Se quita de la lista de clientes de este restaurante (y deja de contar en las estadísticas). Puedes deshacerlo con
           «Deshacer» o <kbd className="rounded bg-app-bg px-1.5 py-0.5 text-xs">Ctrl+Z</kbd> enseguida
           después.
@@ -860,14 +941,22 @@ function CardRow({ entry, now, disabled, busy, table, waiterColor, onResolve, on
             la única acción que no se puede recuperar con un dedo mal puesto
             (tiene confirmación), así que no compite el sitio con «Listo». */}
         <div className="mt-2">
+          {/* Con mesa se ve atenuado («Libera la mesa primero»), pero se puede
+              tocar: abre el aviso que ofrece liberarla. */}
           <button
             type="button"
             disabled={disabled}
             onClick={onDelete}
-            className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-app-border text-sm font-semibold text-panel-muted transition hover:border-estado-ocupada/50 hover:text-estado-ocupada disabled:opacity-45"
+            aria-describedby={table ? `eliminar-ayuda-${entry.id}` : undefined}
+            className={`inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-app-border text-sm font-semibold text-panel-muted transition hover:border-estado-ocupada/50 hover:text-estado-ocupada disabled:opacity-45 ${table ? "opacity-55" : ""}`}
           >
             <Trash2 aria-hidden size={16} /> Eliminar
           </button>
+          {table ? (
+            <p id={`eliminar-ayuda-${entry.id}`} className="mt-1 text-center text-xs text-panel-muted">
+              {RELEASE_FIRST_HINT}
+            </p>
+          ) : null}
         </div>
       </div>
     </li>
@@ -922,7 +1011,7 @@ function BulkConfirm({
       ? `Se liberarán ${plural(counts.occupying, "mesa", "mesas")} de los seleccionados. Siguen contando en las estadísticas.`
       : action === "ausente"
         ? `Se marcarán como ausentes ${plural(counts.waiting, "cliente", "clientes")} que siguen en la fila. Siguen contando en las estadísticas.`
-        : `Se eliminarán ${plural(counts.total, "cliente", "clientes")}${counts.occupying ? ` y se liberarán ${plural(counts.occupying, "mesa", "mesas")}` : ""}. Dejan de contar en las estadísticas.`;
+        : `Se eliminarán ${plural(counts.total, "cliente", "clientes")}. Dejan de contar en las estadísticas.`;
   return (
     <Overlay open={action !== null} onClose={onCancel} labelledBy="grupo-titulo" size="form">
       <div className="p-5 sm:p-6">
@@ -942,6 +1031,67 @@ function BulkConfirm({
             }`}
           >
             {busy ? "Aplicando…" : "Aceptar"}
+          </button>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+/**
+ * «Eliminar seleccionados» con clientes en una mesa: no se elimina a nadie.
+ * Se ofrece liberar sus mesas (la selección se queda, para eliminar después)
+ * o eliminar solo a los que no tienen mesa.
+ */
+function SeatedBulkDialog({
+  open,
+  seated,
+  total,
+  labels,
+  free,
+  busy,
+  onCancel,
+  onRelease,
+  onDeleteFree,
+}: {
+  open: boolean;
+  seated: number;
+  total: number;
+  labels: string[];
+  free: number;
+  busy: boolean;
+  onCancel: () => void;
+  onRelease: () => void;
+  onDeleteFree: () => void;
+}) {
+  return (
+    <Overlay open={open} onClose={onCancel} labelledBy="grupo-mesa-titulo" size="form">
+      <div className="p-5 sm:p-6">
+        <h2 id="grupo-mesa-titulo" className="text-xl font-bold text-panel-text">Primero libera sus mesas</h2>
+        <p className="mt-2 text-panel-text">{seatedBulkMessage(seated, total, labels)}</p>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+          <button type="button" onClick={onCancel} disabled={busy} className="inline-flex min-h-12 items-center justify-center rounded-xl border border-app-border px-5 font-semibold text-panel-text transition hover:bg-app-border/50 disabled:opacity-45">
+            Cancelar
+          </button>
+          {free > 0 && (
+            <button
+              type="button"
+              onClick={onDeleteFree}
+              disabled={busy}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-estado-ocupada px-5 font-semibold text-estado-ocupada transition hover:bg-estado-ocupada/10 disabled:opacity-45"
+            >
+              <Trash2 aria-hidden size={18} />
+              {free === 1 ? "Eliminar solo el 1 sin mesa" : `Eliminar solo los ${free} sin mesa`}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onRelease}
+            disabled={busy}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-accent px-5 font-semibold text-accent-text transition hover:opacity-90 disabled:opacity-45"
+          >
+            <DoorOpen aria-hidden size={18} />
+            {busy ? "Aplicando…" : seated === 1 ? "Liberar su mesa" : "Liberar sus mesas"}
           </button>
         </div>
       </div>
