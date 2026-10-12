@@ -36,30 +36,32 @@ import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
 import type { SeatableTable } from "@/lib/tables/list";
 import { waiterColorFor, waiterLegend } from "@/lib/waiters/legend";
 import { addCalendarDays, hondurasMidnightUtc, hondurasToday } from "@/lib/time/honduras";
+import {
+  CARD_FILTERS,
+  CARD_FILTER_LABELS,
+  CARD_RANGES,
+  CARD_RANGE_LABELS,
+  normalizeName,
+  type CardCounts,
+  type CardFilter,
+  type CardRange,
+} from "@/lib/waitlist/card-options";
 
 /**
  * Desde cuándo cuenta un rango, en el navegador (lo mismo que `rangeStart`
  * de `lib/waitlist/cards.ts`, que no se puede importar aquí: usa la base).
+ * Solo se usa sin conexión, con la copia de la tablet.
  */
 function rangeStartMs(range: CardRange, now: number): number {
+  if (range === "todos") return 0;
   const today = hondurasToday(new Date(now));
-  return hondurasMidnightUtc(range === "hoy" ? today : addCalendarDays(today, -6)).getTime();
+  const back = range === "hoy" ? 0 : range === "7dias" ? 6 : 29;
+  return hondurasMidnightUtc(addCalendarDays(today, -back)).getTime();
 }
-import type { CardRange } from "@/lib/waitlist/cards";
 
-export type StatusFilter = "todas" | Extract<WaitlistStatus, "esperando" | "listo" | "ausente">;
+export type StatusFilter = CardFilter;
 
-const RANGES: { value: CardRange; label: string }[] = [
-  { value: "hoy", label: "Hoy" },
-  { value: "7dias", label: "Últimos 7 días" },
-];
-
-const FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: "todas", label: "Todos" },
-  { value: "esperando", label: "En espera" },
-  { value: "listo", label: "Listo" },
-  { value: "ausente", label: "Ausente" },
-];
+const EMPTY_COUNTS: CardCounts = { todas: 0, esperando: 0, listo: 0, ausente: 0, ocupando: 0 };
 
 const STATUS_LABEL: Record<WaitlistStatus, string> = {
   esperando: "En espera",
@@ -132,10 +134,34 @@ function AllCardsContent({
   const [range, setRange] = useState<CardRange>("hoy");
   const [filter, setFilter] = useState<StatusFilter>(initialFilter);
   const [query, setQuery] = useState("");
+  // La búsqueda va al servidor: se espera a que el host deje de escribir.
+  const [searched, setSearched] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearched(query.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+  const [waiterFilter, setWaiterFilter] = useState<string | null>(null);
+  const legend = useMemo(() => waiterLegend(tables), [tables]);
+  // Si el mesero elegido deja de estar (se cambió la cantidad de meseros), el
+  // filtro se quita solo.
+  const activeWaiter = waiterFilter && legend.some((w) => w.name === waiterFilter) ? waiterFilter : null;
+
+  // Lo que pide la pantalla al servidor (`queryWaitlistCards`): una página de
+  // 50, los conteos de cada filtro y el cursor de «Ver más». Antes llegaban
+  // hasta 2000 clientes y se filtraban aquí, en la tablet.
+  const params = useMemo(() => {
+    const p = new URLSearchParams({ rango: range, estado: filter });
+    if (searched) p.set("q", searched);
+    if (activeWaiter) p.set("mesero", activeWaiter);
+    return p.toString();
+  }, [range, filter, searched, activeWaiter]);
   const [entries, setEntries] = useState<WaitlistEntrySnapshot[]>([]);
-  // Rango que ya llegó: mientras no coincide con el elegido, se está cargando.
-  const [loadedRange, setLoadedRange] = useState<CardRange | null>(null);
-  const loading = loadedRange !== range;
+  const [counts, setCounts] = useState<CardCounts>(EMPTY_COUNTS);
+  const [next, setNext] = useState<string | null>(null);
+  const [moreLoading, setMoreLoading] = useState(false);
+  // Filtros de lo que ya llegó: mientras no coinciden con los elegidos, se está cargando.
+  const [loadedParams, setLoadedParams] = useState<string | null>(null);
+  const loading = loadedParams !== params;
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   // La carta que se está a punto de borrar: se pide confirmación en una
@@ -150,6 +176,10 @@ function AllCardsContent({
   }, [connected]);
   const inFlight = useRef(false);
   const staleWhileLoading = useRef(false);
+  const paramsRef = useRef(params);
+  useEffect(() => {
+    paramsRef.current = params;
+  }, [params]);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,11 +188,13 @@ function AllCardsContent({
       inFlight.current = true;
       staleWhileLoading.current = false;
       try {
-        const response = await fetch(`/api/restaurante/${restaurantId}/cartas?rango=${range}`, { cache: "no-store" });
+        const response = await fetch(`/api/restaurante/${restaurantId}/cartas?${params}`, { cache: "no-store" });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "No se pudieron cargar los clientes.");
         if (cancelled || version !== loadVersion.current) return;
         setEntries(data.entries as WaitlistEntrySnapshot[]);
+        setCounts(data.counts as CardCounts);
+        setNext((data.next as string | null) ?? null);
         setFromLocal(false);
         setError("");
       } catch (cause) {
@@ -175,7 +207,7 @@ function AllCardsContent({
       } finally {
         if (!cancelled && version === loadVersion.current) {
           inFlight.current = false;
-          setLoadedRange(range);
+          setLoadedParams(params);
           // Hubo un cambio en vivo mientras llegaba: la respuesta puede traer
           // el estado de antes. Se pide otra vez.
           if (staleWhileLoading.current) void load();
@@ -188,52 +220,96 @@ function AllCardsContent({
       inFlight.current = false;
     };
     // `connected`: al volver la red se piden otra vez, ya con lo sincronizado.
-  }, [restaurantId, range, connected]);
+  }, [restaurantId, params, connected]);
 
-  // En vivo: cada cambio de la room se aplica sobre la lista que ya hay.
+  /** «Ver más»: la página siguiente, al final de la lista. */
+  async function loadMore() {
+    if (!next || moreLoading) return;
+    setMoreLoading(true);
+    const asked = params;
+    try {
+      const response = await fetch(`/api/restaurante/${restaurantId}/cartas?${asked}&antes=${encodeURIComponent(next)}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudieron cargar más clientes.");
+      if (paramsRef.current !== asked) return;
+      setEntries((items) => {
+        const seen = new Set(items.map((item) => item.id));
+        return [...items, ...(data.entries as WaitlistEntrySnapshot[]).filter((item) => !seen.has(item.id))];
+      });
+      setNext((data.next as string | null) ?? null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se pudieron cargar más clientes.");
+    } finally {
+      setMoreLoading(false);
+    }
+  }
+
+  // Los conteos de los filtros, otra vez, tras un cambio en vivo (con una
+  // pausa: varios cambios seguidos piden una sola vez).
+  const countsTimer = useRef<number | null>(null);
+  const refreshCounts = () => {
+    if (countsTimer.current !== null) window.clearTimeout(countsTimer.current);
+    countsTimer.current = window.setTimeout(async () => {
+      countsTimer.current = null;
+      const asked = paramsRef.current;
+      try {
+        const response = await fetch(`/api/restaurante/${restaurantId}/cartas?${asked}&limite=1`, { cache: "no-store" });
+        const data = await response.json();
+        if (response.ok && paramsRef.current === asked) setCounts(data.counts as CardCounts);
+      } catch {
+        // Sin red: se quedan los de antes.
+      }
+    }, 600);
+  };
+  useEffect(() => () => {
+    if (countsTimer.current !== null) window.clearTimeout(countsTimer.current);
+  }, []);
+
+  // En vivo: cada cambio de la room se aplica sobre la lista que ya hay. Uno
+  // que ya no cumple el filtro de estado sale; uno nuevo entra arriba si lo
+  // cumple.
+  const filterRef = useRef(filter);
+  useEffect(() => {
+    filterRef.current = filter;
+  }, [filter]);
   useEffect(() => subscribe(({ action, entry }) => {
     if (inFlight.current) staleWhileLoading.current = true;
+    const current = filterRef.current;
+    const fits = current === "todas" || current === "ocupando" || entry.status === current;
     setEntries((items) => {
+      const known = items.some((item) => item.id === entry.id);
       const rest = items.filter((item) => item.id !== entry.id);
-      if (action === "removed") return rest;
+      if (action === "removed" || !fits) return rest;
+      if (!known && current === "ocupando") return rest;
       return [entry, ...rest].sort((a, b) => b.arrivedAt - a.arrivedAt);
     });
+    refreshCounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [subscribe]);
 
-  const shown = useMemo(() => {
+  // Sin conexión: la copia de la tablet, filtrada aquí como antes.
+  const local = useMemo(() => {
+    if (!fromLocal) return null;
     const since = rangeStartMs(range, now);
-    const source = fromLocal
-      ? localEntries
-      : applyPending(entries);
-    return source
-      .filter((entry) => entry.arrivedAt >= since || entry.status === "esperando")
+    const needle = normalizeName(searched);
+    const inRange = localEntries
+      .filter((entry) => entry.arrivedAt >= since || entry.status === "esperando" || entry.status === "listo")
+      .filter((entry) => !activeWaiter || entry.waiterName === activeWaiter)
+      .filter((entry) => !needle || normalizeName(entry.customerName).includes(needle))
       .sort((a, b) => b.arrivedAt - a.arrivedAt);
-  }, [applyPending, entries, fromLocal, localEntries, now, range]);
-
-  // Leyenda de meseros y filtro por mesero. Si el mesero elegido deja de
-  // estar (se cambió la cantidad de meseros), el filtro se quita solo.
-  const legend = useMemo(() => waiterLegend(tables), [tables]);
-  const [waiterFilter, setWaiterFilter] = useState<string | null>(null);
-  const activeWaiter = waiterFilter && legend.some((w) => w.name === waiterFilter) ? waiterFilter : null;
-  const byWaiter = useMemo(
-    () => (activeWaiter ? shown.filter((entry) => entry.waiterName === activeWaiter) : shown),
-    [activeWaiter, shown],
-  );
-
-  const counts = useMemo(() => {
-    const result: Record<StatusFilter, number> = { todas: byWaiter.length, esperando: 0, listo: 0, ausente: 0 };
-    for (const entry of byWaiter) {
-      if (entry.status === "esperando" || entry.status === "listo" || entry.status === "ausente") result[entry.status] += 1;
+    const occupying = new Set(tables.map((t) => t.currentEntryId).filter(Boolean));
+    const c: CardCounts = { ...EMPTY_COUNTS, todas: inRange.length };
+    for (const entry of inRange) {
+      if (entry.status === "esperando" || entry.status === "listo" || entry.status === "ausente") c[entry.status] += 1;
+      if (occupying.has(entry.id)) c.ocupando += 1;
     }
-    return result;
-  }, [byWaiter]);
+    const list = inRange.filter((entry) =>
+      filter === "todas" ? true : filter === "ocupando" ? occupying.has(entry.id) : entry.status === filter);
+    return { list, counts: c };
+  }, [fromLocal, localEntries, range, now, searched, activeWaiter, filter, tables]);
 
-  const visible = useMemo(() => {
-    const needle = normalize(query.trim());
-    return byWaiter.filter((entry) =>
-      (filter === "todas" || entry.status === filter)
-      && (!needle || normalize(entry.customerName).includes(needle)));
-  }, [byWaiter, filter, query]);
+  const visible = useMemo(() => (local ? local.list : applyPending(entries)), [local, entries, applyPending]);
+  const shownCounts = local ? local.counts : counts;
 
   async function act(entryId: string, run: () => Promise<boolean>): Promise<boolean> {
     if (busyId) return false;
@@ -260,7 +336,7 @@ function AllCardsContent({
         <div className="min-w-0 flex-1">
           <h2 id="todas-cartas-titulo" className="font-bold text-panel-text">Clientes</h2>
           <p className="text-sm text-panel-muted">
-            {loading ? "Cargando…" : plural(visible.length, "cliente", "clientes")}
+            {loading ? "Cargando…" : plural(shownCounts[filter], "cliente", "clientes")}
             {activeWaiter && ` · atendidos por ${activeWaiter}`}
             {!connected && " · Sin conexión (copia de esta tablet)"}
           </p>
@@ -279,16 +355,16 @@ function AllCardsContent({
 
       <div className="space-y-3 border-b border-app-border px-5 py-4 sm:px-7">
         <div className="flex flex-wrap gap-2" role="group" aria-label="Rango de fechas">
-          {RANGES.map((option) => (
-            <Chip key={option.value} active={range === option.value} onClick={() => setRange(option.value)}>
-              {option.label}
+          {CARD_RANGES.map((option) => (
+            <Chip key={option} active={range === option} onClick={() => setRange(option)}>
+              {CARD_RANGE_LABELS[option]}
             </Chip>
           ))}
           <span aria-hidden className="mx-1 hidden w-px bg-app-border sm:block" />
-          {FILTERS.map((option) => (
-            <Chip key={option.value} active={filter === option.value} onClick={() => setFilter(option.value)}>
-              {option.label}
-              <span className="ml-1.5 tabular-nums opacity-70">{counts[option.value]}</span>
+          {CARD_FILTERS.map((option) => (
+            <Chip key={option} active={filter === option} onClick={() => setFilter(option)}>
+              {CARD_FILTER_LABELS[option]}
+              <span className="ml-1.5 tabular-nums opacity-70">{shownCounts[option]}</span>
             </Chip>
           ))}
         </div>
@@ -339,11 +415,11 @@ function AllCardsContent({
             {error}
           </p>
         )}
-        {loading && !shown.length ? (
+        {loading && !visible.length ? (
           <p role="status" className="py-16 text-center text-panel-muted">Cargando clientes…</p>
         ) : visible.length === 0 ? (
           <p className="py-16 text-center text-panel-muted">
-            {shown.length ? "Ningún cliente coincide con el filtro." : range === "hoy" ? "Hoy todavía no hay clientes." : "No hay clientes en los últimos 7 días."}
+            {shownCounts.todas ? "Ningún cliente coincide con el filtro." : range === "hoy" ? "Hoy todavía no hay clientes." : "No hay clientes en este rango."}
           </p>
         ) : (
           <ul className="grid gap-3 movil-horizontal:!grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] movil-horizontal:gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -365,6 +441,18 @@ function AllCardsContent({
             ))}
           </ul>
         )}
+        {!local && next ? (
+          <div className="mt-4 flex justify-center">
+            <button
+              type="button"
+              onClick={() => void loadMore()}
+              disabled={moreLoading}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-app-border px-5 font-semibold text-panel-text transition hover:bg-app-border/50 disabled:opacity-50"
+            >
+              {moreLoading ? "Cargando…" : `Ver más (${Math.max(0, shownCounts[filter] - visible.length)} más)`}
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <DeleteConfirm
@@ -448,10 +536,6 @@ function DeleteConfirm({ entry, busy, disabled, onCancel, onConfirm }: DeleteCon
       </div>
     </Overlay>
   );
-}
-/** Sin mayúsculas ni tildes: «jose» encuentra a «José». */
-function normalize(text: string): string {
-  return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {

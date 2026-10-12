@@ -1,13 +1,12 @@
 // Permisos sobre ESTE restaurante: leer la lista pide "rapido:ver"; añadir un
 // cliente, "rapido:modificar". Sin sesión, 401; sin permiso, 403.
-import { asc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { guardApi } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { waitlistEntries } from "@/lib/db/schema";
-import { snapshot } from "@/lib/waitlist/quick-actions";
+import { listQuickModeEntries } from "@/lib/waitlist/active";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -22,15 +21,11 @@ export async function GET(request: Request, { params }: Context) {
   const guard = await guardApi(request, "rapido:ver", id);
   if (!guard.ok) return guard.response;
   try {
-    const entries = await db
-      .select()
-      .from(waitlistEntries)
-      .where(eq(waitlistEntries.restaurantId, id))
-      .orderBy(asc(waitlistEntries.arrivedAt));
-
-    // La misma «foto» que mandan los eventos del socket (`snapshot`): el modo
-    // sencillo la guarda tal cual para seguir trabajando sin conexión.
-    return NextResponse.json({ entries: entries.map((entry) => snapshot(entry)) });
+    // Solo lo activo (en la fila, en una mesa o de hoy), no el historial: ver
+    // `lib/waitlist/active.ts`. La misma «foto» que mandan los eventos del
+    // socket (`snapshot`): el modo sencillo la guarda tal cual para seguir
+    // trabajando sin conexión.
+    return NextResponse.json({ entries: await listQuickModeEntries(id) });
   } catch (error) {
     console.error("Failed to load restaurant waitlist", error);
     return NextResponse.json({ error: "No se pudo cargar la lista de clientes." }, { status: 500 });

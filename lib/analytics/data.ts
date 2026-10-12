@@ -1,18 +1,16 @@
-import { and, asc, eq, gte, inArray, lt, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, isNotNull, isNull, lt, sql, type SQL } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { getBrandForRestaurant, type AnalyticsBrand } from "@/lib/analytics/brand";
 import { brands, restaurants, waitlistEntries } from "@/lib/db/schema";
 import {
   addCalendarDays,
-  hondurasDateKey,
   hondurasMidnightUtc,
   hondurasToday,
   hondurasWeekday,
 } from "@/lib/time/honduras";
 
 const DAYS = 14;
-const MINUTE_MS = 60_000;
 
 export type AnalyticsFilters = {
   restaurantId?: string | null;
@@ -133,27 +131,41 @@ export async function getAnalytics(
     ...(scopedBySelection ? [inArray(waitlistEntries.restaurantId, scopedIds)] : []),
   );
 
-  const [currentRows, previousRows, calledRows] = await Promise.all([
-    db.select().from(waitlistEntries)
+  // Todo se AGREGA en la base: llegan unas decenas de filas (por restaurante y
+  // día, por cliente, por mesero) en vez de cada grupo sentado de 14 y 28 días,
+  // que con datos reales son decenas de miles. La espera es la misma cuenta que
+  // antes, minuto a minuto sin redondear y nunca negativa; el día, el de
+  // Honduras (UTC−6 todo el año: no tiene horario de verano).
+  const wait = sql<number>`max(0, (${waitlistEntries.seatedAt} - ${waitlistEntries.arrivedAt}) / 60000.0)`;
+  const dayKey = sql<string>`date((${waitlistEntries.seatedAt} - 21600000) / 1000, 'unixepoch')`;
+  const [byDayRows, previousCount, calledRow, customerRows, waiterRows] = await Promise.all([
+    db.select({ restaurantId: waitlistEntries.restaurantId, day: dayKey, groups: count(), totalWait: sql<number>`sum(${wait})` })
+      .from(waitlistEntries)
       .where(conditions(currentStart, currentEnd))
-      .orderBy(asc(waitlistEntries.seatedAt)),
-    db.select().from(waitlistEntries)
-      .where(conditions(previousStart, currentStart))
-      .orderBy(asc(waitlistEntries.seatedAt)),
-    db.select({ arrivedAt: waitlistEntries.arrivedAt, calledAt: waitlistEntries.calledAt })
+      .groupBy(waitlistEntries.restaurantId, dayKey),
+    db.select({ n: count() }).from(waitlistEntries).where(conditions(previousStart, currentStart)),
+    db.select({ n: count(), totalWait: sql<number>`coalesce(sum(max(0, (${waitlistEntries.calledAt} - ${waitlistEntries.arrivedAt}) / 60000.0)), 0)` })
       .from(waitlistEntries)
       .where(calledConditions(currentStart, currentEnd)),
+    // Un cliente anonimizado por la retención (`anonymizedAt`) ya no es
+    // nadie: no cuenta para el top (todos se llamarían «Cliente anónimo»).
+    db.select({ name: waitlistEntries.customerName, groups: count(), totalWait: sql<number>`sum(${wait})` })
+      .from(waitlistEntries)
+      .where(and(conditions(currentStart, currentEnd), isNull(waitlistEntries.anonymizedAt)))
+      .groupBy(waitlistEntries.customerName),
+    db.select({ restaurantId: waitlistEntries.restaurantId, name: waitlistEntries.waiterName, groups: count(), people: sql<number>`sum(${waitlistEntries.partySize})`, totalWait: sql<number>`sum(${wait})` })
+      .from(waitlistEntries)
+      .where(and(conditions(currentStart, currentEnd), isNotNull(waitlistEntries.waiterName)))
+      .groupBy(waitlistEntries.restaurantId, waitlistEntries.waiterName),
   ]);
+  const avg = (total: number, n: number) => (n ? Math.round(Number(total) / n) : 0);
 
   const daily: DailyStat[] = Array.from({ length: DAYS }, (_, index) => {
     const date = addCalendarDays(startDate, index);
-    const dayEntries = currentRows.filter((entry) => hondurasDateKey(entry.seatedAt!) === date);
-    return {
-      day: hondurasWeekday(date),
-      date,
-      groups: dayEntries.length,
-      minutes: averageWait(dayEntries),
-    };
+    const rows = byDayRows.filter((row) => row.day === date);
+    const groups = rows.reduce((sum, row) => sum + Number(row.groups), 0);
+    const totalWait = rows.reduce((sum, row) => sum + Number(row.totalWait), 0);
+    return { day: hondurasWeekday(date), date, groups, minutes: avg(totalWait, groups) };
   });
   const activeDays = daily.filter((day) => day.groups > 0);
   const fastestDay = activeDays.reduce<DailyStat | null>(
@@ -164,77 +176,56 @@ export async function getAnalytics(
     (best, day) => !best || day.minutes > best.minutes ? day : best,
     null,
   );
-  const waits = currentRows.map((entry) => waitMinutes(entry.arrivedAt, entry.seatedAt!));
-  const changePercent = previousRows.length
-    ? Math.round(((currentRows.length - previousRows.length) / previousRows.length) * 100)
+  const totalGroups = byDayRows.reduce((sum, row) => sum + Number(row.groups), 0);
+  const totalWaitAll = byDayRows.reduce((sum, row) => sum + Number(row.totalWait), 0);
+  const previousGroups = Number(previousCount[0]?.n ?? 0);
+  const changePercent = previousGroups
+    ? Math.round(((totalGroups - previousGroups) / previousGroups) * 100)
     : null;
 
   const restaurantsStats: RestaurantStat[] = scopedRestaurants.map((restaurant) => {
-    const entries = currentRows.filter((entry) => entry.restaurantId === restaurant.id);
+    const rows = byDayRows.filter((row) => row.restaurantId === restaurant.id);
+    const groups = rows.reduce((sum, row) => sum + Number(row.groups), 0);
     return {
       id: restaurant.id,
       name: restaurant.name,
       brand: restaurant.brand,
       city: restaurant.city,
-      groups: entries.length,
-      minutes: averageWait(entries),
+      groups,
+      minutes: avg(rows.reduce((sum, row) => sum + Number(row.totalWait), 0), groups),
     };
   });
 
-  const byCustomer = new Map<string, { count: number; totalMinutes: number }>();
-  for (const entry of currentRows) {
-    // Un cliente anonimizado por la retención (`anonymizedAt`) ya no es
-    // nadie: no cuenta para el top (todos se llamarían «Cliente anónimo»).
-    if (entry.anonymizedAt) continue;
-    const current = byCustomer.get(entry.customerName) ?? { count: 0, totalMinutes: 0 };
-    current.count += 1;
-    current.totalMinutes += waitMinutes(entry.arrivedAt, entry.seatedAt!);
-    byCustomer.set(entry.customerName, current);
-  }
-  const topCustomers = [...byCustomer.entries()]
-    .map(([name, value]) => ({
-      name,
-      groups: value.count,
-      minutes: Math.round(value.totalMinutes / value.count),
-    }))
+  const topCustomers = customerRows
+    .map((row) => ({ name: row.name, groups: Number(row.groups), minutes: avg(row.totalWait, Number(row.groups)) }))
     .sort((a, b) => b.groups - a.groups || a.name.localeCompare(b.name, "es-HN"))
     .slice(0, 10);
 
   const restaurantNames = new Map(restaurantsWithBrand.map((r) => [r.id, r.name]));
-  const byWaiter = new Map<string, WaiterStat & { totalMinutes: number }>();
-  for (const entry of currentRows) {
-    if (!entry.waiterName) continue;
-    const key = `${entry.restaurantId}\u0000${entry.waiterName}`;
-    const current = byWaiter.get(key) ?? {
-      name: entry.waiterName,
-      restaurantId: entry.restaurantId,
-      restaurantName: restaurantNames.get(entry.restaurantId) ?? entry.restaurantId,
-      groups: 0,
-      people: 0,
-      minutes: 0,
-      totalMinutes: 0,
-    };
-    current.groups += 1;
-    current.people += entry.partySize;
-    current.totalMinutes += waitMinutes(entry.arrivedAt, entry.seatedAt!);
-    byWaiter.set(key, current);
-  }
-  const waiters: WaiterStat[] = [...byWaiter.values()]
-    .map(({ totalMinutes, ...w }) => ({ ...w, minutes: Math.round(totalMinutes / w.groups) }))
+  const waiters: WaiterStat[] = waiterRows
+    .map((row) => ({
+      name: row.name!,
+      restaurantId: row.restaurantId,
+      restaurantName: restaurantNames.get(row.restaurantId) ?? row.restaurantId,
+      groups: Number(row.groups),
+      people: Number(row.people),
+      minutes: avg(row.totalWait, Number(row.groups)),
+    }))
     .sort((a, b) => b.groups - a.groups || a.restaurantName.localeCompare(b.restaurantName, "es-HN") || a.name.localeCompare(b.name, "es-HN"));
 
-  const averageCallMinutes = average(calledRows.map((entry) => waitMinutes(entry.arrivedAt, entry.calledAt!)));
+  const calledGroups = Number(calledRow[0]?.n ?? 0);
+  const averageCallMinutes = avg(calledRow[0]?.totalWait ?? 0, calledGroups);
   const summary = [
-    currentRows.length
-      ? `En los últimos 14 días (hora de Honduras) se sentaron ${currentRows.length} ${currentRows.length === 1 ? "grupo" : "grupos"}; la espera promedio fue de ${minuteCount(average(waits))}.`
+    totalGroups
+      ? `En los últimos 14 días (hora de Honduras) se sentaron ${totalGroups} ${totalGroups === 1 ? "grupo" : "grupos"}; la espera promedio fue de ${minuteCount(avg(totalWaitAll, totalGroups))}.`
       : "Todavía no hay grupos sentados en los últimos 14 días.",
     slowestDay ? `El día más lento fue ${slowestDay.day}, con ${minuteCount(slowestDay.minutes)} de espera.` : "",
     topCustomers[0] ? `El cliente con más grupos acumuló ${topCustomers[0].groups} ${topCustomers[0].groups === 1 ? "grupo" : "grupos"}.` : "",
     waiters[0]
       ? `El mesero que más grupos atendió fue ${waiters[0].name} (${waiters[0].restaurantName}), con ${waiters[0].groups} ${waiters[0].groups === 1 ? "grupo" : "grupos"}.`
       : "",
-    calledRows.length
-      ? `Se avisó a ${calledRows.length} ${calledRows.length === 1 ? "grupo" : "grupos"} después de un promedio de ${minuteCount(averageCallMinutes)} desde su llegada.`
+    calledGroups
+      ? `Se avisó a ${calledGroups} ${calledGroups === 1 ? "grupo" : "grupos"} después de un promedio de ${minuteCount(averageCallMinutes)} desde su llegada.`
       : "Todavía no hay avisos registrados en los últimos 14 días.",
   ].filter(Boolean).join(" ");
 
@@ -245,10 +236,10 @@ export async function getAnalytics(
     brandsAvailable: brandRows,
     citiesAvailable: [...new Set(restaurantRows.map((restaurant) => restaurant.city).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b, "es-HN")),
     totals: {
-      groups: currentRows.length,
-      todayGroups: currentRows.filter((entry) => hondurasDateKey(entry.seatedAt!) === today).length,
-      averageWaitMinutes: average(waits),
-      calledGroups: calledRows.length,
+      groups: totalGroups,
+      todayGroups: daily.find((day) => day.date === today)?.groups ?? 0,
+      averageWaitMinutes: avg(totalWaitAll, totalGroups),
+      calledGroups,
       averageCallMinutes,
       changePercent,
       fastestDay,
@@ -260,20 +251,6 @@ export async function getAnalytics(
     waiters,
     summary,
   };
-}
-
-function waitMinutes(arrivedAt: Date, seatedAt: Date): number {
-  return Math.max(0, (seatedAt.getTime() - arrivedAt.getTime()) / MINUTE_MS);
-}
-
-function average(values: number[]): number {
-  return values.length
-    ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
-    : 0;
-}
-
-function averageWait(entries: { arrivedAt: Date; seatedAt: Date | null }[]): number {
-  return average(entries.map((entry) => waitMinutes(entry.arrivedAt, entry.seatedAt!)));
 }
 
 function minuteCount(count: number): string {

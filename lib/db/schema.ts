@@ -408,6 +408,15 @@ export const waitlistEntries = sqliteTable(
     index("waitlist_entries_table_idx").on(t.assignedTableId),
     // El banner, el conteo y el borrado filtran siempre por esto.
     index("waitlist_entries_demo_idx").on(t.isDemo),
+    // Migración 0011, solo aditiva: las consultas de cada pantalla filtran por
+    // restaurante + estado + fecha («Ver clientes», el modo sencillo y los
+    // contadores del mapa) y las estadísticas por estado + hora de sentarse y
+    // por hora de aviso. Con índices sueltos, SQLite usaba uno y recorría el
+    // resto del historial fila por fila.
+    index("waitlist_entries_rest_status_arrived_idx").on(t.restaurantId, t.status, t.arrivedAt),
+    index("waitlist_entries_rest_arrived_idx").on(t.restaurantId, t.arrivedAt),
+    index("waitlist_entries_status_seated_idx").on(t.status, t.seatedAt),
+    index("waitlist_entries_called_idx").on(t.calledAt),
   ],
 );
 
