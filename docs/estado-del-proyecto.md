@@ -93,6 +93,9 @@ PR #66).
 | Editor fluido en tablet y celular | 57-60 FPS con la CPU 4× más lenta al arrastrar, mover el plano y pellizcar; panel lateral o barra abajo que no tapa el plano; mesas nuevas dentro del recuadro y nada se sale de la zona. | `components/editor/`, `lib/layout/placement.ts`, README §12 | `perf/editor-fluido` |
 | Plano en vivo a pantalla completa en la tablet | Con la tablet en horizontal (Opera), el plano ocupa toda la pantalla sin cabecera ni menú, se encuadra solo (también al cambiar de tamaño) y lleva controles flotantes: meseros [−] N [+], **Lista** (el modo sencillo en un panel lateral) y volver a la vista normal. En vertical, celular y computadora no cambia nada. Solo el propio sitio puede meter la app en un iframe. | `components/map/live-plan.tsx`, `lib/layout/immersive.ts`, README §16 | `feat/plano-inmersivo` |
 | «Ver clientes» y colores de los meseros | «Ver todas las cartas» del modo sencillo pasa a llamarse **Ver clientes**. Arriba, la leyenda de los meseros activos (punto de color y nombre, los colores del plano en vivo); tocar uno filtra sus clientes. Cada cliente sentado lleva la franja y el nombre de su mesero; los demás, «Sin mesero». Se pone al día en vivo con el [−] [+] de los meseros. | `components/quick-mode/all-cards-view.tsx`, `lib/waiters/legend.ts`, README §11 | `feat/ver-clientes-meseros` |
+| «Lista de espera» en todas las vistas del plano | El botón con el número de clientes en espera abre la lista (el modo sencillo) en computadora, tablet y celular; se cierra con X o Esc. | `components/map/live-plan.tsx`, README §16, `verify:browser` | #73 |
+| Configuración de privacidad y retención | /admin → Configuración (solo admin): IA con alias, nombres del top 10 para analítica y cuánto se guarda el historial; la retención anonimiza sin borrar cifras. | `lib/settings/`, `docs/configuracion.md`, README §14 | #74 |
+| Preparación del piloto | Respaldo de producción en solo lectura (`npm run db:respaldo`), guion de FPS (`npm run perf:editor`), lista de verificación, manuales del host y del admin, plantilla de reporte. | `docs/piloto.md`, `docs/manual-*.md`, `docs/respaldos.md`, `scripts/` | `chore/preparar-piloto` |
 | Giro guardado y estructura | El giro del plano completo se guarda (`table_layouts.rotation`), se avisa en vivo, se copia y lo respetan el plano en vivo y el minimapa. Tipos barra, puerta y pared. | `components/editor/`, `lib/layout/`, README §12 | #14 |
 | Tiempo real | Next y Socket.IO en un solo servidor (`server.ts`), con una room por restaurante y la sala `overview` del mapa. | `lib/realtime/`, README §10, §16 | #5, #11 |
 | Conflictos | Asignación de mesa con bloqueo optimista: gana el primero y el otro recibe «Esta mesa ya fue asignada». | `lib/tables/assign.ts` | #5 |
@@ -480,55 +483,45 @@ estadísticas y datos) y entran después.
   viven en la memoria del proceso: basta para 8 restaurantes en un solo
   servidor, pero para varios servidores haría falta, por ejemplo, Redis.
 
-## Dónde quedé (6 de octubre de 2026)
+## Dónde quedé (12 de octubre de 2026)
 
-**Hecho:** plano en vivo a pantalla completa en la tablet en horizontal
-(rama `feat/plano-inmersivo`): ver README §16, «Plano en vivo a pantalla
-completa», y el manual del host. Probado en 1024×768 y 1180×820 (inmersivo),
-768×1024, 375×812, 812×375 y computadora (vista normal), en claro y oscuro:
-reajuste al cambiar el alto de 768 a 800 px, sin scroll, meseros [−] [+],
-sentar y liberar desde el panel con el plano al día, «Vista normal», girar la
-tablet.
+**Hecho el 12 de octubre** (PR #73, #74 y el de preparación del piloto):
 
-**Hecho:** «Ver clientes» (antes «Ver todas las cartas») con la leyenda y los
-colores de los meseros (rama `feat/ver-clientes-meseros`): README §11 y el
-manual del host. Probado en 375×812, 768×1024, 1024×768 y 1440×900, claro y
-oscuro: leyenda, franja del color del mesero, «Sin mesero», filtro por mesero
-y la leyenda que cambia sola con el [+] / [−] de otra tablet.
+- **Botón «Lista de espera» en todas las vistas del plano en vivo** (#73):
+  antes solo salía con la tablet acostada. Ahora va primero en la barra, con
+  el número de clientes en espera, en computadora, tablet y celular (de pie o
+  acostados). Se cierra con la X o con Esc. Lo prueba `verify:browser`.
+- **Configuración de privacidad** en /admin (#74): las 3 decisiones de la
+  dirección con valores seguros (IA con alias, analítica sin nombres del top
+  10, historial 1 año) y la retención que anonimiza sin borrar cifras.
+  Explicadas en `docs/configuracion.md`. Migración `0010`, solo aditiva.
+- **Respaldo de producción** probado: `npm run db:respaldo` (solo lectura) →
+  copia local → la app arrancó con ella y los conteos coincidieron (17 tablas,
+  12 940 filas). La copia se borró. Ver `docs/respaldos.md`.
+- **Guion de FPS** guardado en `scripts/perf/` (`npm run perf:levantar` y
+  `npm run perf:editor`, solo contra un servidor local). Se borraron la rama
+  `wip/perf-script-ajeno` y su stash.
+- **Material del piloto:** `docs/piloto.md`, `docs/manual-host.md`,
+  `docs/manual-admin.md` y la plantilla de issue «Reporte del piloto».
 
-**Terminado:** el editor de mesas fluido en tablet y celular, en la rama
-`perf/editor-fluido` (sale de `testing` y reúne lo de `perf/editor-tactil`
-con los mensajes de commit ya limpios; `perf/editor-tactil` se deja como
-estaba, sin PR). Detalle y cifras en el README §12 («Editor fluido en
-tablet») y en el manual del host (`docs/salida-a-produccion.md`, «Editar el
-plano»).
+**Estado de los servicios (12 de octubre, solo lectura):**
 
-- **60 FPS con la CPU 4 veces más lenta:** arrastrar una mesa, mover el plano,
-  pellizcar y seleccionar van a 57-60 FPS en celular, tablet y computadora
-  (antes, 8-17 al arrastrar y mover). Medido con el build de producción.
-- **Una sola ventana de control que no tapa el plano:** panel fijo a la
-  derecha en tablet horizontal y computadora; barra abajo, tira del elemento
-  y panel que sube (máximo 40 %, se baja arrastrando, no se abre solo) en
-  celular y tablet vertical. Botones de 44×44 px o más (también los de
-  «Meseros activos»).
-- **Mesas nuevas dentro del recuadro** (`lib/layout/placement.ts`), y nada se
-  sale al arrastrar, pegar ni girar. `verify:editor`: 201 comprobaciones.
-- **Probado con toques** (añadir, arrastrar, girar, copiar, pegar, eliminar,
-  deshacer, rehacer y guardar) en 375×812, 812×375, 768×1024, 1024×768 y
-  1440×900, en claro y oscuro: todo bien. Lo que fallaba en la prueba anterior
-  era el guion (el indicador «N» de Next en desarrollo tapaba «Añadir», y en
-  la barra de abajo el guardado se ve en el botón «Guardado», no en un
-  aviso). El plano de `rest_centro` en `local.db` quedó igual que el seed.
-- typecheck, lint, build y los cuatro `verify` en verde. ESLint ya no revisa
-  las carpetas de build locales (`.next-*`).
+- **Railway:** plan Hobby **en prueba**, sin método de pago. Le quedan **19
+  días** y **4,49 US$** de crédito (4,25 US$ si se descuenta el periodo en
+  curso). Consumo estimado: **unos 3 US$ al mes**, casi todo memoria.
+- **OpenRouter:** la clave tiene un límite de **50 US$** y lleva gastados
+  0,002 US$, pero la **cuenta no tiene crédito comprado** (0 US$). Sin
+  crédito, el asistente contesta con la respuesta básica (#74).
 
-**Publicado el 6 de octubre:** el editor (#56) con el #57 (`035f574`) y las
-issues #58 a #61 con el #66 (`19d8efe`); ver «En producción».
+**Lo que hace Carlos** (en este orden):
 
-**Limpieza de los restos de rendimiento (6 de octubre):** se borraron la rama
-`perf/editor-tactil` (local y en GitHub; su código está entero en `testing`)
-y, en local, `.next-baseline/`, `.perf-baseline.db`, `.perf-editor.db` y
-`perf-resultados/`. **Se conservan** la rama local `wip/perf-script-ajeno` y
-el stash «wip-perf-script-ajeno»: traen un guion de medición de FPS por CDP
-(`scripts/perf/`, `perf:levantar` y `perf:editor`) que no está en `testing`.
-Falta decidir si se sube en su propio PR o se descarta.
+1. Railway: pasar a **Hobby** con un método de pago, antes de que se acabe la
+   prueba.
+2. OpenRouter: **cargar crédito** (con 5–10 US$ sobra para el piloto).
+3. /admin: **cambiar las contraseñas** de admin, analítica y cada marca.
+4. Decidir con la dirección las **3 opciones** (`docs/configuracion.md`) y
+   guardarlas en /admin → Configuración.
+5. Dibujar los **planos reales** de los restaurantes del piloto.
+6. Configurar los **meseros reales** (cantidad, nombres y zonas).
+7. **Entrenar a los hosts** con `docs/manual-host.md`.
+8. Hacer el **piloto** con `docs/piloto.md`.
