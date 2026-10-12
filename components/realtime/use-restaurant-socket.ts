@@ -133,5 +133,19 @@ export function useRestaurantSocket(restaurantId: string, handlers: RealtimeHand
     }
   }, []);
 
-  return { status, joinError, assignTable, releaseTable, releaseAllTables };
+  /**
+   * Eliminar a un cliente (la ficha de la mesa del plano, después de
+   * liberarla). Si sigue en una mesa, el servidor lo rechaza.
+   */
+  const deleteEntry = useCallback(async (entryId: string): Promise<Ack<object>> => {
+    const socket = socketRef.current;
+    if (!socket?.connected) return { ok: false, error: "Sin conexión con el servidor." };
+    try {
+      return await socket.timeout(ACK_TIMEOUT_MS).emitWithAck("waitlist:delete", { entryId });
+    } catch {
+      return { ok: false, error: "El servidor no respondió. Inténtalo de nuevo." };
+    }
+  }, []);
+
+  return { status, joinError, assignTable, releaseTable, releaseAllTables, deleteEntry };
 }

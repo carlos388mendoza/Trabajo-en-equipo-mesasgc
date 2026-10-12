@@ -1,12 +1,15 @@
 // Escrituras del modo rápido y deshacer de una acción por restaurante.
-// La última acción vive en memoria del proceso: no requiere cambios al esquema.
+// La última acción vive en memoria del proceso, con una copia en la tabla
+// `waitlist_undo` para que «Deshacer» sobreviva unos minutos a un reinicio
+// del servidor (ver `remember` y `hydrateUndo`).
 
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { ACTIVE_WAITLIST_STATUSES, type WaitlistStatus } from "@/lib/db/enums";
-import { tables, user, waitlistEntries } from "@/lib/db/schema";
+import { tables, user, waitlistEntries, waitlistUndo } from "@/lib/db/schema";
 import { undoBatch, type BatchUndoData, type TableEvent } from "./batch";
+import { seatedDeleteMessage } from "./delete-rule";
 // Cuántos clientes se pueden agregar de una vez («Varios» del formulario).
 import { MAX_BATCH_ENTRIES } from "@/lib/realtime/events";
 
@@ -69,6 +72,86 @@ type Result<T> = ({ ok: true } & T) | { ok: false; error: string };
 
 const undoByRestaurant = new Map<string, UndoRecord>();
 
+/**
+ * Cuánto vale la copia guardada en la base tras un reinicio. «Deshacer» es
+ * para corregir enseguida; pasado este rato ya no se ofrece.
+ */
+export const UNDO_PERSIST_MS = 10 * 60 * 1000;
+
+// Las fechas viajan como `{ "$date": ms }`: `JSON.stringify` las volvería
+// texto y al leerlas no se sabría cuáles eran fechas (los `updatedAt` de las
+// condiciones de deshacer tienen que volver a ser `Date` exactas).
+function encodeRecord(record: UndoRecord): string {
+  return JSON.stringify({ ...record, busy: false }, function (this: Record<string, unknown>, key, value) {
+    const raw = this[key];
+    return raw instanceof Date ? { $date: raw.getTime() } : value;
+  });
+}
+
+function decodeRecord(text: string): UndoRecord {
+  return JSON.parse(text, (_key, value) =>
+    value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 1 && typeof value.$date === "number"
+      ? new Date(value.$date)
+      : value,
+  ) as UndoRecord;
+}
+
+// Las escrituras de cada restaurante van en fila: si dos acciones seguidas
+// guardaran a la vez, la vieja podría quedar encima de la nueva.
+const persisting = new Map<string, Promise<void>>();
+
+function persist(restaurantId: string, write: () => Promise<unknown>) {
+  const next = (persisting.get(restaurantId) ?? Promise.resolve())
+    .then(write)
+    .then(() => undefined)
+    .catch((error) => console.error("[deshacer] no se pudo guardar la copia", error));
+  persisting.set(restaurantId, next);
+}
+
+/** La nueva última acción del restaurante (en memoria y, en segundo plano, en la base). */
+function remember(restaurantId: string, record: UndoRecord) {
+  undoByRestaurant.set(restaurantId, record);
+  const text = encodeRecord(record);
+  persist(restaurantId, () =>
+    db
+      .insert(waitlistUndo)
+      .values({ restaurantId, actionId: record.actionId, record: text, createdAt: new Date() })
+      .onConflictDoUpdate({ target: waitlistUndo.restaurantId, set: { actionId: record.actionId, record: text, createdAt: new Date() } }),
+  );
+}
+
+/** Ya se deshizo: se quita, salvo que otra acción la haya reemplazado entretanto. */
+function forget(restaurantId: string, record: UndoRecord) {
+  if (undoByRestaurant.get(restaurantId) === record) undoByRestaurant.delete(restaurantId);
+  persist(restaurantId, () =>
+    db.delete(waitlistUndo).where(and(eq(waitlistUndo.restaurantId, restaurantId), eq(waitlistUndo.actionId, record.actionId))),
+  );
+}
+
+/**
+ * Tras un reinicio la memoria está vacía: se recupera la última acción de la
+ * base si es de hace menos de `UNDO_PERSIST_MS`. La llaman `restaurant:join`
+ * (para ofrecer «Deshacer» a quien vuelve a conectarse) y el propio deshacer.
+ */
+export async function hydrateUndo(restaurantId: string, now = Date.now()): Promise<void> {
+  if (undoByRestaurant.has(restaurantId)) return;
+  await persisting.get(restaurantId);
+  const [row] = await db.select().from(waitlistUndo).where(eq(waitlistUndo.restaurantId, restaurantId)).limit(1);
+  if (!row || undoByRestaurant.has(restaurantId)) return;
+  if (now - row.createdAt.getTime() > UNDO_PERSIST_MS) return;
+  try {
+    undoByRestaurant.set(restaurantId, decodeRecord(row.record));
+  } catch (error) {
+    console.error("[deshacer] copia ilegible, se ignora", error);
+  }
+}
+
+/** Solo para las pruebas: simula un reinicio del servidor (vacía la memoria). */
+export async function dropUndoMemoryForTests(): Promise<void> {
+  await Promise.all(persisting.values());
+  undoByRestaurant.clear();
+}
+
 /** Estados desde los que se puede volver a la espera: los que resolvió el modo rápido. */
 const REOPENABLE_STATUSES: readonly WaitlistStatus[] = ["listo", "ausente"];
 
@@ -121,7 +204,7 @@ function restorable(entry: typeof waitlistEntries.$inferSelect): Restorable {
  */
 export function registerBatchUndo(restaurantId: string, label: string, batch: BatchUndoData): string {
   const actionId = crypto.randomUUID();
-  undoByRestaurant.set(restaurantId, {
+  remember(restaurantId, {
     actionId,
     entryId: "",
     entryUpdatedAt: new Date(),
@@ -207,7 +290,7 @@ export async function addWaitlistEntry(
   }
 
   const actionId = crypto.randomUUID();
-  undoByRestaurant.set(restaurantId, {
+  remember(restaurantId, {
     actionId,
     entryId: entry.id,
     entryUpdatedAt: arrivedAt,
@@ -271,7 +354,7 @@ export async function addWaitlistEntries(
   const entries = inserted.map((entry) => snapshot(entry)).sort((a, b) => a.arrivedAt - b.arrivedAt);
 
   const actionId = crypto.randomUUID();
-  undoByRestaurant.set(restaurantId, {
+  remember(restaurantId, {
     actionId,
     entryId: entries[0].id,
     entryUpdatedAt: new Date(now),
@@ -356,7 +439,7 @@ export async function resolveWaitlistEntry(
   }
 
   const actionId = crypto.randomUUID();
-  undoByRestaurant.set(restaurantId, {
+  remember(restaurantId, {
     actionId,
     entryId,
     entryUpdatedAt: now,
@@ -386,6 +469,15 @@ export async function reopenWaitlistEntry(
     .limit(1);
 
   if (!current) return { ok: false, error: "Ese cliente no existe en este restaurante." };
+
+  // Primero se libera la mesa, a propósito, y después se elimina: si está en
+  // una, no se toca nada y se dice en cuál.
+  const [seatedAt] = await db
+    .select({ label: tables.label })
+    .from(tables)
+    .where(and(eq(tables.restaurantId, restaurantId), eq(tables.currentEntryId, entryId)))
+    .limit(1);
+  if (seatedAt) return { ok: false, error: seatedDeleteMessage(seatedAt.label) };
   if (!REOPENABLE_STATUSES.includes(current.status as WaitlistStatus)) {
     return {
       ok: false,
@@ -419,7 +511,7 @@ export async function reopenWaitlistEntry(
   }
 
   const actionId = crypto.randomUUID();
-  undoByRestaurant.set(restaurantId, {
+  remember(restaurantId, {
     actionId,
     entryId,
     entryUpdatedAt: now,
@@ -440,8 +532,9 @@ export async function reopenWaitlistEntry(
  * (`rapido:modificar`, comprobado en el socket), y DESHACIBLE.
  *
  * Un cliente que tiene mesa NO se borra: la mesa quedaría apuntando a una fila
- * que ya no existe (`tables.currentEntryId` no tiene FK, nadie lo avisa). Se
- * avisa y se pide liberarla primero, que es el camino que ya usa el mapa.
+ * que ya no existe (`tables.currentEntryId` no tiene FK, nadie lo avisa), y
+ * además se quiere que alguien libere la mesa a propósito. Se contesta «Este
+ * cliente está en la Mesa 3. Primero libera la mesa…» sin tocar nada.
  *
  * Un cliente de DEMOSTRACIÓN se puede borrar como cualquier otro (a veces hay
  * que limpiar una carta de mentira), pero al deshacer vuelve con su
@@ -478,7 +571,7 @@ export async function deleteWaitlistEntry(
     // No se borró: o la mesa se ocupó en este instante, o la fila cambió en
     // otra tablet. Se mira para poder decir cuál de las dos cosas pasó.
     const [occupied] = await db
-      .select({ id: tables.id })
+      .select({ label: tables.label })
       .from(tables)
       .where(and(
         eq(tables.restaurantId, restaurantId),
@@ -488,13 +581,13 @@ export async function deleteWaitlistEntry(
     return {
       ok: false,
       error: occupied
-        ? "Este cliente tiene una mesa ocupada. Libera la mesa del mapa antes de eliminarlo."
+        ? seatedDeleteMessage(occupied.label)
         : "Este cliente cambió en otro dispositivo. Vuelve a intentarlo.",
     };
   }
 
   const actionId = crypto.randomUUID();
-  undoByRestaurant.set(restaurantId, {
+  remember(restaurantId, {
     actionId,
     entryId,
     entryUpdatedAt: current.updatedAt,
@@ -521,6 +614,7 @@ export async function undoWaitlistAction(
   /** Solo al deshacer una acción en grupo: qué volvió y qué mesas se ocuparon otra vez. */
   batch?: { restored: WaitlistEntrySnapshot[]; reoccupied: TableEvent[]; skipped: number };
 }>> {
+  await hydrateUndo(restaurantId);
   const record = undoByRestaurant.get(restaurantId);
   if (!record || record.actionId !== actionId || record.busy) {
     return { ok: false, error: "La última acción ya cambió o fue deshecha." };
@@ -530,7 +624,7 @@ export async function undoWaitlistAction(
   try {
     if (record.kind === "batch" && record.batch) {
       const result = await undoBatch(restaurantId, record.batch);
-      if (undoByRestaurant.get(restaurantId) === record) undoByRestaurant.delete(restaurantId);
+      forget(restaurantId, record);
       return { ok: true, action: "restored", entry: result.restored[0], batch: result };
     }
 
@@ -540,7 +634,7 @@ export async function undoWaitlistAction(
         record.busy = false;
         return result;
       }
-      if (undoByRestaurant.get(restaurantId) === record) undoByRestaurant.delete(restaurantId);
+      forget(restaurantId, record);
       return { ok: true, action: "removed", entry: result.entries[0], entries: result.entries };
     }
 
@@ -558,7 +652,7 @@ export async function undoWaitlistAction(
         record.busy = false;
         return { ok: false, error: "El cliente ya cambió y no se puede deshacer esa acción." };
       }
-      if (undoByRestaurant.get(restaurantId) === record) undoByRestaurant.delete(restaurantId);
+      forget(restaurantId, record);
       return { ok: true, action: "removed", entry: snapshot(removed) };
     }
 
@@ -582,7 +676,7 @@ export async function undoWaitlistAction(
       // Se reinserta la fila tal cual: mismo id, misma hora de llegada, y con
       // `is_demo` / `demo_batch_id` como estaban, para no romper el lote demo.
       const [restored] = await db.insert(waitlistEntries).values(row).returning();
-      if (undoByRestaurant.get(restaurantId) === record) undoByRestaurant.delete(restaurantId);
+      forget(restaurantId, record);
       return { ok: true, action: "restored", entry: await snapshotWithName(restored) };
     }
 
@@ -605,7 +699,7 @@ export async function undoWaitlistAction(
       record.busy = false;
       return { ok: false, error: "El cliente ya cambió y no se puede deshacer esa acción." };
     }
-    if (undoByRestaurant.get(restaurantId) === record) undoByRestaurant.delete(restaurantId);
+    forget(restaurantId, record);
     return { ok: true, action: "restored", entry: await snapshotWithName(restored) };
   } catch (error) {
     record.busy = false;

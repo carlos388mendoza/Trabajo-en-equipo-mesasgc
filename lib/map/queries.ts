@@ -147,6 +147,7 @@ export async function getLivePlan(restaurantId: string, withNames: boolean): Pro
               currentEntryId: e.currentEntryId ? HIDDEN_ENTRY_ID : null,
               occupantName: null,
               seatedAt: null,
+              occupantDetail: null,
             })),
           },
     );

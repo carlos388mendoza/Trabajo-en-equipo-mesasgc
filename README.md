@@ -595,12 +595,22 @@ formulario ya no está al lado (`components/quick-mode/`):
   soltar: «Ver clientes» solo llegaba a 7 días, eliminar a un sentado se
   negaba y el plano era de solo lectura. Ahora, por el socket y siempre
   revalidando el permiso en el servidor:
-  - `waitlist:delete` con `releaseTable: true`: libera la mesa y elimina en
-    una acción («Se liberará la Mesa 3 y se eliminará el cliente»). Pide
-    `mesas:asignar` además de modificar la fila.
+  - **Primero se libera la mesa, luego se elimina** (desde el 12 de octubre
+    de 2026, en lugar de «liberar y eliminar en una acción»). `waitlist:delete`
+    de alguien que ocupa una mesa se rechaza sin tocar nada: «Este cliente
+    está en la Mesa 3. Primero libera la mesa para poder eliminarlo.»
+    (`lib/waitlist/delete-rule.ts`, los mismos textos en el servidor y en
+    la pantalla). Vale igual para lo que llega de la cola sin conexión.
   - `waitlist:bulk` (`liberar` | `ausente` | `eliminar`, hasta 200 ids):
     las casillas y la barra «N seleccionados». Solo toca clientes del
-    restaurante de la room; los ids ajenos se ignoran.
+    restaurante de la room; los ids ajenos se ignoran. `eliminar` NO libera
+    mesas: si alguno está en una, no se elimina a NADIE y se contesta «3 de
+    los 5 clientes seleccionados están en una mesa (Mesa 1, Mesa 4, Bancada
+    1). Primero libera sus mesas.»; la tablet ofrece «Liberar sus mesas»
+    (deja la selección) o «Eliminar solo los 2 sin mesa».
+  - `table:release` (liberar UNA mesa, desde «Ver clientes», el plano o la
+    cola) también se puede deshacer: vuelve a ocupar la mesa con el mismo
+    cliente si sigue libre.
   - `waitlist:cleanup` (`hours`: 12, 24 o 168; `preview` solo cuenta):
     «Limpiar pendientes antiguos». Marca ausentes a los que siguen esperando
     o listos desde antes de ese plazo y libera las mesas de los sentados hace
@@ -613,6 +623,11 @@ formulario ya no está al lado (`components/quick-mode/`):
   (`kind: "batch"` en el deshacer en memoria): vuelve a ocupar solo las
   mesas que sigan libres y reinserta a los eliminados. Ausente y liberar
   conservan las cifras de las estadísticas; eliminar las quita.
+- **Deshacer sobrevive a un reinicio** (unos minutos). La última acción de
+  cada restaurante vive en memoria, con una copia en `waitlist_undo`
+  (migración `0012`, solo aditiva: una fila por restaurante). Al entrar en
+  la room o al deshacer, si la memoria está vacía (se reinició el servidor),
+  se recupera la copia si es de hace menos de 10 minutos.
 - **Con mucho historial sigue fluido** (12 de octubre de 2026). Antes, el
   modo sencillo descargaba TODO el historial del restaurante
   (`GET /api/restaurante/[id]/clientes`: hasta 1,7 MB y casi 5000 clientes en
@@ -1215,12 +1230,33 @@ solo ve el plano de los suyos.
 - **Zoom al plano.** Al tocar un marcador, el `viewBox` se acerca a él y
   aparece el plano en vivo del restaurante: el mismo lienzo del editor, en
   solo lectura. «Volver al mapa general» (o Esc) hace el zoom inverso.
-- **Liberar desde el plano en vivo** (`/restaurante/[id]/mapa`, con
-  `mesas:asignar`: el host en los suyos, el admin en todos; analítica no).
-  Tocar una mesa ocupada abre un panel abajo («Ocupada por … · desde hace
-  3 h») con **Liberar mesa**. **Liberar todas las mesas** (en el modo a
-  pantalla completa, el botón de la puerta) pide escribir LIBERAR. El
-  editor sigue sin tocar `status` ni `current_entry_id`.
+- **Plano en vivo menos saturado** (octubre de 2026). Cada mesa lleva
+  DENTRO solo lo esencial: su nombre en grande y, si está ocupada y cabe, el
+  cliente en corto con sus personas («Ana T. · 4») y el tiempo («12 min»,
+  «1 h 20 min», «2 d», `lib/time/duration.ts`). El mesero va en el borde
+  (su color) y su inicial. Sin sillas (la mesa ocupa su sitio), sin íconos
+  y sin píldoras colgando fuera, que eran las que se encimaban con la mesa
+  de al lado. Colores sólidos: libre neutro, ocupada y reservada con su
+  color, con el texto del contraste que toque.
+  - **El texto se ajusta al zoom** (`components/editor/live-marks.ts`): los
+    tamaños se calculan en píxeles de pantalla, nunca menos de 12 px. Si no
+    cabe, se oculta el cliente y el tiempo y queda el nombre (en dos líneas
+    o en corto, «M3»). La escala va por escalones (`scaleStep`), así que las
+    mesas solo se redibujan al terminar un pellizco: el plano sigue a 60 FPS.
+  - **Ficha de la mesa** (`components/map/table-sheet.tsx`): al tocar una
+    mesa, estado, mesero, cliente, personas, llegada, tiempo y nota, con
+    **Sentar** (mesa libre; `mesas:asignar`), **Liberar mesa** y, después
+    de liberar, **Eliminar cliente** (`rapido:modificar`). Los datos del
+    cliente (`occupantDetail`) solo salen del servidor con `plano:clientes`.
+  - **Barra compacta**: lista de espera, zonas, meseros y **Más** (editar
+    zonas, nueva configuración, «Liberar todas las mesas» con LIBERAR,
+    volver a la vista normal; en el celular, también los meseros). La
+    leyenda es pequeña y plegable, y no hay minimapa. El encuadre deja aire
+    alrededor.
+  - `verify:browser` comprueba, con la tablet acostada (1180×820 y
+    1024×768) y en cada zona, que ningún texto se salga de su mesa, que no se
+    encimen con los de otra y que ninguno mida menos de 12 px.
+  El editor sigue sin tocar `status` ni `current_entry_id`.
 
 ### Tiempo real
 
@@ -1308,7 +1344,9 @@ Las tablets usan Opera, y la pantalla completa se pone desde el propio Opera
 | `components/map/live-plan.tsx` | El plano en vivo y su modo inmersivo (controles flotantes y panel de la lista de espera). |
 | `lib/layout/immersive.ts` | La media query de la tablet en horizontal, que comparten Tailwind y el plano. |
 | `components/map/world-map.tsx` | Mapa, cámara (rueda, pellizco, arrastre, botones y minimapa), marcadores y grupos, filtros, lista y zoom al plano. |
-| `components/map/live-plan.tsx` | Plano en vivo (Konva sin editar; liberar mesas con permiso). |
+| `components/map/live-plan.tsx` | Plano en vivo (Konva sin editar): barra compacta, leyenda plegable y ficha de cada mesa. |
+| `components/map/table-sheet.tsx` | Ficha de una mesa: detalle, Sentar, Liberar mesa y Eliminar cliente (después de liberar). |
+| `components/editor/live-marks.ts` | Qué texto cabe dentro de cada mesa del plano en vivo y de qué tamaño. |
 | `components/map/use-overview-socket.ts` | Socket de la sala `overview` y respaldo de 30 s. |
 
 ### Decisiones que conviene no deshacer sin pensarlo

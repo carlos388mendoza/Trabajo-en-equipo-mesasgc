@@ -372,10 +372,16 @@ las casillas y usa **Liberar mesas**, **Marcar ausente** o **Eliminar
 seleccionados** (pide confirmar y dice cuántos), o **Limpiar pendientes
 antiguos** (más de 12 h, 24 h o 7 días): los que siguen en la fila o listos
 quedan ausentes y se liberan las mesas de los sentados hace más de eso. Todo
-se puede deshacer enseguida. En el **plano en vivo**, toca una mesa ocupada →
-**Liberar mesa**, o **Liberar todas las mesas** (hay que escribir LIBERAR).
-Marcar ausente y liberar guardan las cifras; **eliminar las quita**: déjalo
-para los errores.
+se puede deshacer enseguida. En el **plano en vivo**, toca una mesa para ver
+su ficha (**Sentar**, **Liberar mesa**); **Más** → **Liberar todas las
+mesas** (hay que escribir LIBERAR). Marcar ausente y liberar guardan las
+cifras; **eliminar las quita**: déjalo para los errores.
+
+**Primero libera la mesa, luego elimina.** A un cliente que está en una mesa
+no se le puede eliminar: sale «Este cliente está en la Mesa 3. Primero libera
+la mesa para poder eliminarlo.» con **Liberar mesa** y **Cancelar**. Liberada,
+**Eliminar** funciona como siempre. En grupo, «Eliminar seleccionados» ofrece
+**Liberar sus mesas** o **Eliminar solo los N sin mesa**.
 
 **Si se va el Internet (modo sin conexión)**
 

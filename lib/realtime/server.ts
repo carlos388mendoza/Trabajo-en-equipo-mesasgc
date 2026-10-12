@@ -21,11 +21,21 @@ import {
   addWaitlistEntry,
   deleteWaitlistEntry,
   getWaitlistUndoState,
+  hydrateUndo,
   reopenWaitlistEntry,
   resolveWaitlistEntry,
   undoWaitlistAction,
 } from "@/lib/waitlist/quick-actions";
-import { bulkWaitlist, cleanupStale, previewCleanup, releaseAllTables, type BatchOutcome } from "@/lib/waitlist/batch";
+import {
+  bulkWaitlist,
+  cleanupStale,
+  occupiedTablesOf,
+  previewCleanup,
+  registerReleaseUndo,
+  releaseAllTables,
+  type BatchOutcome,
+} from "@/lib/waitlist/batch";
+import { seatedBulkMessage } from "@/lib/waitlist/delete-rule";
 
 import { canAssignTables, canJoinOverview, canJoinRestaurant, canModifyWaitlist, identifySocket } from "./auth";
 import {
@@ -100,6 +110,8 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         }
         await socket.join(roomFor(restaurantId));
         socket.data.restaurantId = restaurantId;
+        // Tras un reinicio, la última acción se recupera de la base.
+        await hydrateUndo(restaurantId);
         socket.emit("waitlist:undo-state", getWaitlistUndoState(restaurantId));
         return { ok: true };
       });
@@ -169,7 +181,12 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
           return { ok: true as const, table: result.table, entryId: result.entryId };
         });
         if (outcome.kind === "nueva" && outcome.result.ok) {
-          io.to(roomFor(restaurantId)).emit("table:released", { table: outcome.result.table, entryId: outcome.result.entryId });
+          const released = { table: outcome.result.table, entryId: outcome.result.entryId };
+          // Liberar una mesa también se puede deshacer (vuelve a ocuparla con
+          // el mismo cliente si sigue libre).
+          await registerReleaseUndo(restaurantId, released);
+          io.to(roomFor(restaurantId)).emit("table:released", released);
+          io.to(roomFor(restaurantId)).emit("waitlist:undo-state", getWaitlistUndoState(restaurantId));
           void emitOverview(restaurantId);
         }
         return outcome.result;
@@ -298,18 +315,10 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         const parsed = deleteWaitlistEntrySchema.safeParse(raw);
         if (!parsed.success) return fail("Datos del cliente no válidos.");
 
-        const { operationId, entryId, releaseTable: withTable } = parsed.data;
-        // Sentado en una mesa: se libera la mesa y se elimina, en una sola
-        // acción (pide también sentar y liberar mesas). Se deshace entera.
-        if (withTable) {
-          if (!(await canAssignTables({ userId: socket.data.userId }, restaurantId))) {
-            return fail("No tienes permiso para sentar ni liberar mesas en este restaurante.");
-          }
-          const batch = await bulkWaitlist(restaurantId, "eliminar", [entryId], socket.data.userId);
-          if (batch.removed.length === 0) return fail("Ese cliente ya no está en la lista.");
-          emitBatch(restaurantId, batch);
-          return { ok: true as const, entry: batch.removed[0], actionId: batch.actionId ?? "" };
-        }
+        // Si está en una mesa, `deleteWaitlistEntry` no toca nada y contesta
+        // «Este cliente está en la Mesa 3. Primero libera la mesa…». Vale
+        // igual para lo que llega de la cola sin conexión.
+        const { operationId, entryId } = parsed.data;
         const outcome = await runOnce({ operationId, restaurantId, userId: socket.data.userId, action: "waitlist:delete" }, async () => {
           const result = await deleteWaitlistEntry(restaurantId, entryId);
           if (!result.ok) return fail(result.error);
@@ -334,12 +343,22 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
         const parsed = bulkWaitlistSchema.safeParse(raw);
         if (!parsed.success) return fail("Datos de la acción no válidos.");
         const { action, entryIds } = parsed.data;
-        // Marcar ausente toca la lista; liberar, las mesas; eliminar, las dos.
+        // Liberar toca las mesas; marcar ausente y eliminar, la lista.
         if (action !== "liberar" && !(await canModifyWaitlist({ userId: socket.data.userId }, restaurantId))) {
           return fail("No tienes permiso para modificar la lista de espera en este restaurante.");
         }
-        if (action !== "ausente" && !(await canAssignTables({ userId: socket.data.userId }, restaurantId))) {
+        if (action === "liberar" && !(await canAssignTables({ userId: socket.data.userId }, restaurantId))) {
           return fail("No tienes permiso para sentar ni liberar mesas en este restaurante.");
+        }
+        // Eliminar en grupo: si alguno está en una mesa, no se elimina NADIE y
+        // se dice en qué mesas están (la tablet ofrece liberarlas o eliminar
+        // solo a los demás).
+        if (action === "eliminar") {
+          const seated = await occupiedTablesOf(restaurantId, entryIds);
+          if (seated.size > 0) {
+            const labels = [...seated.values()].sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+            return fail(seatedBulkMessage(seated.size, new Set(entryIds).size, labels));
+          }
         }
         const batch = await bulkWaitlist(restaurantId, action, entryIds, socket.data.userId);
         emitBatch(restaurantId, batch);

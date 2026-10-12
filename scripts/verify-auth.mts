@@ -873,9 +873,41 @@ check("sin sesión, el socket no conecta", (await connect()) === null);
     check("  pero no sin escribir LIBERAR para liberar todas", !(await emit(chinawok, "tables:release-all", { confirm: "si" })).ok);
     check("analitica no puede limpiar ni liberar todas", !(await emit(analitica, "waitlist:cleanup", { hours: 24, preview: true })).ok && !(await emit(analitica, "tables:release-all", { confirm: "LIBERAR" })).ok);
     check("analitica no puede eliminar en grupo", !(await emit(analitica, "waitlist:bulk", { action: "eliminar", entryIds: ["wl_1"] })).ok);
+
+    // Primero liberar, luego eliminar: con cualquier rol, eliminar a quien
+    // está en una mesa se rechaza (uno, en grupo o por la cola sin conexión).
+    {
+      const sentado = seatedAtCentro[0];
+      const mesa = await db.select({ id: tablesTable.id, label: tablesTable.label, version: tablesTable.version }).from(tablesTable).where(eq(tablesTable.currentEntryId, sentado.id));
+      const uno = await emit(chinawok, "waitlist:delete", { entryId: sentado.id });
+      check("chinawok no puede eliminar a uno que está en una mesa", !uno.ok && uno.error === `Este cliente está en la ${mesa[0].label}. Primero libera la mesa para poder eliminarlo.`, uno.error);
+      const cola = await emit(chinawok, "waitlist:delete", { entryId: sentado.id, operationId: crypto.randomUUID() });
+      check("  tampoco si llega de la cola sin conexión", !cola.ok && /Primero libera la mesa/.test(cola.error ?? ""), cola.error);
+      const grupo = await emit(chinawok, "waitlist:bulk", { action: "eliminar", entryIds: [sentado.id, "wl_1"] });
+      check("  ni en un grupo mixto (no elimina a nadie)", !grupo.ok && /^1 de los 2 clientes seleccionados está en una mesa/.test(grupo.error ?? ""), grupo.error);
+      const sigue = await db.select({ id: tablesTable.id }).from(tablesTable).where(eq(tablesTable.currentEntryId, sentado.id));
+      check("  y el cliente sigue en su mesa", sigue.length === 1);
+      check("analitica no puede liberar una mesa ni eliminar", !(await emit(analitica, "table:release", { tableId: mesa[0].id, entryId: sentado.id })).ok && !(await emit(analitica, "waitlist:delete", { entryId: sentado.id })).ok);
+      // Liberar y luego eliminar sí funciona (y se deshace: la base es temporal).
+      const libera = await emit(chinawok, "table:release", { tableId: mesa[0].id, entryId: sentado.id });
+      const elimina = (await emit(chinawok, "waitlist:delete", { entryId: sentado.id })) as { ok: boolean; error?: string; actionId?: string };
+      check("chinawok: liberar la mesa y luego eliminar funciona", libera.ok && elimina.ok, JSON.stringify({ libera, elimina }));
+      check("  deshacer devuelve al cliente", (await emit(chinawok, "waitlist:undo", { actionId: elimina.actionId })).ok);
+      await db.update(tablesTable).set({ currentEntryId: sentado.id, status: "ocupada" }).where(eq(tablesTable.id, mesa[0].id));
+    }
     check("pizzahut (otra marca) no entra en rest_centro, así que no puede limpiarlo", !(await emit(pizzahut, "restaurant:join", { restaurantId: "rest_centro" })).ok);
     check("admin puede limpiar en rest_norte (cuenta)", (await emit(admin, "waitlist:cleanup", { hours: 24, preview: true })).ok);
     await emit(admin, "restaurant:join", { restaurantId: "rest_norte" });
+    {
+      // El admin, en cualquier restaurante: la misma regla.
+      const [enNorte] = await db.select({ id: tablesTable.currentEntryId }).from(tablesTable).where(and(eq(tablesTable.restaurantId, "rest_norte"), isNotNull(tablesTable.currentEntryId))).limit(1);
+      if (enNorte?.id) {
+        const r = await emit(admin, "waitlist:delete", { entryId: enNorte.id });
+        check("admin tampoco elimina a uno con mesa en rest_norte sin liberarla", !r.ok && /Primero libera la mesa/.test(r.error ?? ""), r.error);
+      } else {
+        check("rest_norte tiene a alguien en una mesa para probar al admin", false);
+      }
+    }
 
     // Una mesa libre de verdad: el seed ya ocupa y reserva algunas.
     const [free] = await db

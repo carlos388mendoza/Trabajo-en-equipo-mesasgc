@@ -52,6 +52,20 @@ export type LayoutElement = {
   occupantName: string | null;
   /** Cuándo se sentó, en milisegundos. Alimenta el contador de minutos. */
   seatedAt: number | null;
+  /**
+   * El resto de lo que se sabe del cliente sentado, para la ficha de la mesa
+   * del plano en vivo (personas, llegada, nota y mesero). Solo lectura, y
+   * solo sale del servidor con `plano:clientes`, igual que el nombre.
+   */
+  occupantDetail?: OccupantDetail | null;
+};
+
+export type OccupantDetail = {
+  partySize: number;
+  /** Cuándo llegó, en milisegundos. */
+  arrivedAt: number;
+  notes: string | null;
+  waiterName: string | null;
 };
 
 /** Una zona con su estructura, tal y como la carga y guarda el editor. */
