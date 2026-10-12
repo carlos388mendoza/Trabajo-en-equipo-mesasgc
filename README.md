@@ -28,6 +28,19 @@ El workflow usa Node.js 22 y `npm ci`. Las verificaciones usan bases SQLite temp
 
 La guía paso a paso para desplegar en Railway está en [`docs/despliegue.md`](docs/despliegue.md).
 
+Para el uso real:
+
+- [`docs/piloto.md`](docs/piloto.md): lista de verificación del piloto (antes,
+  durante y después), qué hacer si se cae el internet, a quién avisar y cómo
+  reportar (plantilla «Reporte del piloto» en Issues).
+- [`docs/manual-host.md`](docs/manual-host.md): manual corto para imprimir,
+  para el host en la entrada.
+- [`docs/manual-admin.md`](docs/manual-admin.md): manual del administrador.
+- [`docs/configuracion.md`](docs/configuracion.md): las 3 opciones de
+  privacidad, explicadas para la dirección.
+- [`docs/respaldos.md`](docs/respaldos.md): sacar un respaldo de producción
+  (`npm run db:respaldo`, solo lectura) y restaurarlo.
+
 ---
 
 ## 1. Stack tecnológico
@@ -789,6 +802,29 @@ fotograma es 16,7 ms en todos los casos «después»):
 
 («—»: de ese gesto no quedó medida de «antes».)
 
+#### Medir los FPS del editor (`npm run perf:editor`)
+
+Guion propio por Chrome DevTools Protocol, sin dependencias nuevas
+(`scripts/perf/`). Mide **solo un servidor local** (se niega a medir otra
+cosa) y entra con la contraseña del seed de desarrollo:
+
+1. `npm run perf:levantar`: compila la app en modo producción en `.next-perf`
+   y la sirve en `http://127.0.0.1:3100` sobre una **copia** de `local.db`
+   (`.perf-editor.db`), porque la medición mueve, añade y gira mesas.
+   `--rebuild` vuelve a compilar; `--db-nueva`, a copiar la base.
+2. En otra terminal, `npm run perf:editor`: abre Chrome **con ventana** (sin
+   ventana no hay sincronía con la pantalla y la cifra no se puede
+   interpretar), y en celular y tablet, de pie y acostados, y computadora,
+   mide arrastrar una mesa, mover el plano, pellizcar y seleccionar con
+   gestos táctiles reales. Repite cada uno 3 veces y da la mediana.
+   - `--throttle=4`: CPU 4 veces más lenta. `--sin-throttling`: sin ralentizar.
+   - `--device=tablet-horizontal`: un solo tamaño.
+   - `--headless`: solo para depurar el guion. Las cifras no valen, y la
+     comprobación de efecto de zoom y seleccionar puede salir «SIN EFECTO».
+3. La columna **Efecto** dice cuántas pasadas movieron algo de verdad. Si sale
+   «SIN EFECTO», la cifra de esa acción no cuenta.
+4. El resultado se guarda en `perf-resultados/` (ignorado por git).
+
 ### Giro del plano completo
 
 - **Se guarda.** Los botones **Girar ↺** y **Girar ↻** giran la zona entera un
@@ -982,6 +1018,36 @@ npm run verify:auth
 - Compila en `.next-verify/`, así que puede correr mientras `npm run dev`
   sigue abierto: Next 16 no deja dos servidores sobre la misma carpeta.
 
+### Configuración de privacidad (/admin → «Configuración»)
+
+Tres decisiones de la dirección, cada una con su valor por defecto seguro (sin
+fila en `app_settings`, la app ya se comporta así). Explicadas para la
+dirección en `docs/configuracion.md`.
+
+| Opción | Por defecto | Dónde se aplica |
+|---|---|---|
+| La IA usa alias en lugar de nombres de clientes | Sí | `app/api/assistant/route.ts` → `buildOpenRouterMessages(..., { useAliases })` |
+| Analítica puede ver los nombres del top 10 | No («Cliente 1 (A. G.)») | `app/api/analiticas` y el asistente, con `canSeeTopCustomerNames` + `maskTopCustomers`, **en el servidor** y antes de hablar con la IA |
+| Guardar el historial de clientes por | 1 año (90 d, 180 d, 1 año, siempre) | `anonymizeExpiredEntries` en `lib/settings/privacy.ts` |
+
+- **Migración `0010`, solo aditiva:** la tabla `app_settings` (clave → valor,
+  quién y cuándo) y `waitlist_entries.anonymized_at`.
+- **Retención:** un solo UPDATE pone «Cliente anónimo», vacía el teléfono y
+  la nota y marca `anonymized_at`. Nunca borra filas ni cifras, nunca toca a
+  quien sigue en la fila ni a quien está en una mesa, y los datos demo solo si
+  se elige. Corre en `server.ts` un minuto después de arrancar y luego cada
+  24 h (con `unref`), y con **Aplicar ahora** en /admin. El top 10 ignora a los
+  anonimizados.
+- **Permiso `configuracion:gestionar`**, solo admin: lo comprueban las server
+  actions de `app/admin/settings-actions.ts` (validadas con Zod), y la página
+  /admin ya es solo del admin.
+- **El asistente sin crédito en OpenRouter** (o si no responde) contesta con
+  la respuesta local y una nota, en vez de un error.
+- `verify:auth` prueba todo: valores por defecto, que solo el admin cambia,
+  analítica con iniciales y luego con nombres, alias hacia la IA y la
+  retención (lo viejo sí, el demo, los que esperan, los sentados y lo
+  reciente no, sin borrar filas e idempotente).
+
 ## 15. Usuarios de prueba
 
 > **Solo para desarrollo.** El seed los crea únicamente si `NODE_ENV` no es
@@ -1139,13 +1205,26 @@ Las tablets usan Opera, y la pantalla completa se pone desde el propio Opera
 - **Controles flotantes:** la misma barra de siempre pasa a flotar arriba,
   semitransparente y sin desenfoque (un `backdrop-filter` encima del lienzo
   costaría fotogramas): nombre, «En vivo», zonas, «Meseros activos [−] N [+]»
-  (con el texto solo para el lector de pantalla), **Lista** y **contraer**. No
+  (con el texto solo para el lector de pantalla), **Lista de espera** y **contraer**. No
   se pinta una segunda barra: no hay dos «Agregar mesero».
 - **Encuadre:** `KonvaCanvas` recibe `refitOnResize` y `topInset` (la franja
   de los controles): al entrar en el modo, al asomar la barra de Opera o al
   entrar en su pantalla completa, el plano se vuelve a encuadrar solo (con
   120 ms de pausa, una vez con la medida final). El minimapa se oculta.
-- **Lista de espera:** un panel a la derecha con el **modo sencillo en un
+- **Lista de espera, en todas las vistas** (no solo en modo inmersivo): el
+  primer botón de la barra, en color de acento, con el número de clientes
+  **en espera** (`LivePlan.waiting`, el mismo número que «grupos esperando»
+  del modo sencillo; el mapa general cuenta además los «listo»). El plano se
+  vuelve a leer con `waitlist:changed`, así que el número va al día. Con la
+  tablet acostada y menos de 1100 px dice «Lista» y el número, para caber en
+  una línea. Abre un panel `fixed` encima de todo: a la derecha en pantallas
+  anchas y a pantalla completa en el celular; se cierra con la X o con Esc
+  (también con el foco dentro del iframe, salvo que haya una ventana del modo
+  sencillo abierta). `verify:browser` comprueba que el botón se vea, mida
+  44×44 o más, no lo tape nada, abra el panel y Esc lo cierre en celular y
+  tablet (de pie y acostados) y computadora, con el usuario de restaurante y
+  con el admin; y que analítica no lo tenga.
+- **El panel** lleva el **modo sencillo en un
   iframe del propio sitio**. Es la misma página de siempre, así que conserva
   el tiempo real, la cola sin conexión, los permisos (`rapido:ver`; sin él no
   hay botón) y sentar y liberar. Dentro del iframe, un script en `<head>` marca

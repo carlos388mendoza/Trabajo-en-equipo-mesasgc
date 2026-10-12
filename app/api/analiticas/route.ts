@@ -1,8 +1,14 @@
 // Permisos: solo quien tiene "analiticas:ver" (admin y analítica).
+//
+// Nombres del top 10: el admin los ve siempre; analítica solo si la dirección
+// lo permite en /admin → «Configuración» (por defecto, no: ve «Cliente 1
+// (A. G.)»). Se enmascara AQUÍ, en el servidor: ocultarlo en el navegador no
+// protegería nada, porque los nombres irían en la respuesta.
 import { NextResponse } from "next/server";
 
 import { getAnalytics } from "@/lib/analytics/data";
 import { guardApi } from "@/lib/auth/session";
+import { canSeeTopCustomerNames, maskTopCustomers } from "@/lib/settings/privacy";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +31,9 @@ export async function GET(request: Request) {
       brandId,
       city,
     });
+    if (!(await canSeeTopCustomerNames(guard.user))) {
+      analytics.topCustomers = maskTopCustomers(analytics.topCustomers);
+    }
     return NextResponse.json(analytics);
   } catch (error) {
     console.error("Failed to load analytics", error);

@@ -48,3 +48,11 @@ local.db-shm
 
 # configuración local de Claude Code (levantar la app desde el panel)
 .claude/launch.json
+
+# Respaldos de la base (`npm run db:respaldo`): llevan datos REALES de clientes.
+/respaldos/
+*.respaldo.db
+# Medición de FPS (`npm run perf:levantar` y `npm run perf:editor`)
+/.next-perf/
+.perf-editor.db*
+/perf-resultados/

@@ -97,20 +97,24 @@ clientes.
 | Rol | Nombres de clientes | Estadísticas |
 |---|---|---|
 | **Host (restaurante)** | Solo los de **su** restaurante | No |
-| **Analitica** | En el mapa y el plano en vivo, **no**. En las estadísticas, **sí**: el «top 10 de clientes» se agrupa por nombre | Todos los restaurantes |
+| **Analitica** | En el mapa y el plano en vivo, **no**. En el «top 10 de clientes», **no** por defecto: ve «Cliente 1 (A. G.)» (la dirección lo puede cambiar en /admin → Configuración) | Todos los restaurantes |
 | **Administrador** | Todos | Todos |
 
 **Decisiones pendientes de la dirección:**
 
-- [ ] **Nombres en las estadísticas.** ¿Está bien que analitica vea el
-      «top 10 de clientes» con nombre? Si no, el equipo puede quitarlo o
-      mostrarlo anónimo.
-- [ ] **Nombres fuera de la empresa.** Con `OPENROUTER_API_KEY` cargada, al
-      hacerle una pregunta al asistente se envían a OpenRouter (un servicio
-      externo) las estadísticas, **incluidos los nombres del top de
-      clientes**. Opciones: aceptarlo, pedir al equipo que los anonimice antes
-      de enviarlos, o no activar la IA.
-- [ ] **Cuánto tiempo guardar** el historial de clientes antes de borrarlo.
+Las tres primeras ya son **opciones de la app**, en **/admin →
+Configuración**, con el valor más seguro por defecto. Qué hace cada una, en
+palabras sencillas, está en `docs/configuracion.md` (para enseñárselo a la
+dirección):
+
+- [ ] **La IA usa alias en lugar de nombres de clientes** (por defecto, sí):
+      a OpenRouter, un servicio externo, le llega «Cliente 1», nunca un
+      nombre.
+- [ ] **Analítica puede ver los nombres del top 10** (por defecto, no: ve
+      «Cliente 1 (A. G.)»).
+- [ ] **Guardar el historial de clientes por** 90 días, 180 días, 1 año (por
+      defecto) o siempre. Al vencer se anonimizan el nombre, el teléfono y la
+      nota; las cifras se quedan para las estadísticas.
 - [ ] **Aviso al cliente.** Si hace falta informar al cliente de que se
       anota su nombre (por ejemplo, un cartel en la entrada), según lo que
       pida el área legal.
@@ -425,6 +429,18 @@ Cambia de sitio según cómo tengas el aparato:
 - Nada se guarda hasta pulsar **Guardar** (después dice «Guardado»). Una mesa
   con un cliente sentado no se puede eliminar.
 
+**Lista de espera desde el plano en vivo**
+
+En **Plano en vivo** el primer botón, azul, es **Lista de espera** con el
+número de clientes que esperan (por ejemplo «Lista de espera 3»). Está
+siempre: en la computadora, en la tablet y en el celular, de pie o acostados.
+
+1. Toca **Lista de espera**: se abre la lista (el mismo modo sencillo) a la
+   derecha, o a pantalla completa en el celular.
+2. Ahí agregas, avisas, sientas y liberas como siempre. El plano se pone al
+   día solo.
+3. Ciérrala con la **X** de arriba o con la tecla **Esc**.
+
 **Ver el plano en grande (tablet con Opera)**
 
 **Gira la tablet a horizontal y activa la pantalla completa de Opera para ver
@@ -439,9 +455,10 @@ el plano en grande.**
   - el nombre del restaurante, «En vivo» y las zonas (Comedor principal,
     Terraza…);
   - **[−] 3 meseros [+]** para cambiar cuántos meseros hay;
-  - **Lista**: abre a la derecha la lista de espera (el mismo modo sencillo)
-    para agregar, avisar, sentar y liberar sin salir del plano. La **X** la
-    cierra;
+  - **Lista de espera** (con la tablet acostada dice «Lista» y el número):
+    abre a la derecha la lista de espera (el mismo modo sencillo) para
+    agregar, avisar, sentar y liberar sin salir del plano. La **X** o **Esc**
+    la cierran;
   - el botón de **contraer** (dos flechas hacia dentro) vuelve a la vista
     normal. Desde la vista normal, **Plano en grande** vuelve a pantalla
     completa.

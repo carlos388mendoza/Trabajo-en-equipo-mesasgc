@@ -58,6 +58,20 @@ async function main() {
     );
   });
 
+  // Retención del historial de clientes (/admin → «Configuración»; por
+  // defecto, 1 año): un minuto después de arrancar y luego una vez al día. Solo
+  // anonimiza (nombre, teléfono y nota), nunca borra filas ni cifras; ver
+  // `lib/settings/privacy.ts`. Si falla, se apunta en el log y se reintenta al
+  // día siguiente: la app sigue igual. `unref`: no impide cerrar el proceso.
+  const { anonymizeExpiredEntries } = await import("@/lib/settings/privacy");
+  const runRetention = () => {
+    anonymizeExpiredEntries()
+      .then((run) => console.log(`> Retención (${run.retention}): ${run.anonymized} cliente(s) anonimizado(s)`))
+      .catch((err) => console.error("[retención] no se pudo aplicar", err));
+  };
+  setTimeout(runRetention, 60_000).unref();
+  setInterval(runRetention, 24 * 60 * 60 * 1000).unref();
+
   // Railway manda SIGTERM al redesplegar: cerrar los sockets deja que los
   // clientes reconecten al servidor nuevo en vez de esperar un timeout.
   // `io.close` también cierra el `httpServer`.
