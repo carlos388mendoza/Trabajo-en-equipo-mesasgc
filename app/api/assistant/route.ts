@@ -1,9 +1,18 @@
 // Permiso `asistente:usar`: solo admin y analítica pueden consultar estas estadísticas.
+//
+// Privacidad (/admin → «Configuración»):
+//  - si quien pregunta no puede ver los nombres del top 10, se enmascaran
+//    ANTES de hablar con la IA: así la respuesta tampoco los puede traer;
+//  - «La IA usa alias» (por defecto, sí) decide si el top viaja como
+//    «Cliente 1» o con su nombre.
+// Si OpenRouter falla (sin crédito, caído…), se contesta con la respuesta
+// local de siempre en vez de un error: el analista sigue teniendo su dato.
 import { NextResponse } from "next/server";
 
 import { getAnalytics, type AnalyticsData } from "@/lib/analytics/data";
 import { buildOpenRouterMessages, getAssistantSensitiveValues, restoreCustomerAliases } from "@/lib/analytics/assistant-privacy";
 import { guardApi } from "@/lib/auth/session";
+import { canSeeTopCustomerNames, getPrivacySettings, maskTopCustomers } from "@/lib/settings/privacy";
 
 export const runtime = "nodejs";
 
@@ -67,28 +76,49 @@ export async function POST(request: Request) {
   }
 
   try {
-    const statistics = await getAnalytics({ restaurantId: restaurantId || null, brandId, city });
+    const [rawStatistics, privacy, seesNames] = await Promise.all([
+      getAnalytics({ restaurantId: restaurantId || null, brandId, city }),
+      getPrivacySettings(),
+      canSeeTopCustomerNames(guard.user),
+    ]);
+    const statistics: AnalyticsData = seesNames
+      ? rawStatistics
+      : { ...rawStatistics, topCustomers: maskTopCustomers(rawStatistics.topCustomers) };
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ answer: localAnswer(body.question, statistics) });
     }
 
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": process.env.BETTER_AUTH_URL || "http://localhost:3000",
-        "X-Title": "Table Waitlist",
-      },
-      body: JSON.stringify({
-        model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
-        messages: buildOpenRouterMessages(body.question, statistics, await getAssistantSensitiveValues(statistics)),
-        max_tokens: 250,
-      }),
-    });
+    const question = body.question;
+    const fallback = () =>
+      NextResponse.json({
+        answer: `${localAnswer(question, statistics)}\n\n_El asistente de IA no respondió ahora; esta es la respuesta básica con los mismos datos._`,
+      });
+    let response: Response;
+    try {
+      response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": process.env.BETTER_AUTH_URL || "http://localhost:3000",
+          "X-Title": "Table Waitlist",
+        },
+        body: JSON.stringify({
+          model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+          messages: buildOpenRouterMessages(question, statistics, await getAssistantSensitiveValues(statistics), {
+            useAliases: privacy.aiAliases,
+          }),
+          max_tokens: 250,
+        }),
+      });
+    } catch (error) {
+      console.error("OpenRouter no respondió", error);
+      return fallback();
+    }
     if (!response.ok) {
-      return NextResponse.json({ error: "El asistente no está disponible ahora. Inténtalo de nuevo." }, { status: 502 });
+      console.error(`OpenRouter respondió ${response.status}`);
+      return fallback();
     }
     const data = await response.json();
     const answer = data.choices?.[0]?.message?.content;

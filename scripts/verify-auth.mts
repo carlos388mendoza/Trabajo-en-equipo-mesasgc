@@ -1648,6 +1648,121 @@ section("Acceso directo al modo sencillo");
 // Usuario desactivado
 // ---------------------------------------------------------------------------
 
+section("Configuración de privacidad (/admin): solo admin, valores seguros y retención");
+
+{
+  const privacy = await import("@/lib/settings/privacy");
+  const { tables: mesas } = await import("@/lib/db/schema");
+  const { buildOpenRouterMessages } = await import("@/lib/analytics/assistant-privacy");
+  const { getAnalytics } = await import("@/lib/analytics/data");
+
+  // 1. Valores por defecto seguros, sin cargar nada.
+  const inicial = await privacy.getPrivacySettings();
+  check(
+    "por defecto: la IA usa alias, analítica sin nombres del top, historial 1 año, sin tocar el demo",
+    JSON.stringify(inicial) === JSON.stringify({ aiAliases: true, analyticsSeesTopNames: false, retention: "1y", retentionIncludesDemo: false }),
+    JSON.stringify(inicial),
+  );
+
+  // 2. Solo el admin cambia la configuración (server action llamada a mano).
+  const saveId = findActionId("savePrivacySettingsAction", "admin");
+  const runId = findActionId("runRetentionNowAction", "admin");
+  check("se localizan savePrivacySettingsAction y runRetentionNowAction", saveId !== null && runId !== null);
+  const callAction = async (who: Who, id: string | null, args: unknown[]) =>
+    (await http("POST", "/admin", {
+      cookie: cookies[who],
+      body: JSON.stringify(args),
+      headers: { "Next-Action": id ?? "", "Content-Type": "text/plain;charset=UTF-8", Accept: "text/x-component" },
+    })).text;
+  const abierta = { aiAliases: false, analyticsSeesTopNames: true, retention: "90d", retentionIncludesDemo: true };
+  if (saveId && runId) {
+    for (const who of ["chinawok", "analitica", "dual"] as const) {
+      check(`${who} no puede cambiar la configuración (server action)`, (await callAction(who, saveId, [abierta])).includes("No tienes permiso"));
+      check(`  ni aplicar la retención`, (await callAction(who, runId, [])).includes("No tienes permiso"));
+    }
+    check("  y nada cambió", JSON.stringify(await privacy.getPrivacySettings()) === JSON.stringify(inicial));
+    check("el admin no puede guardar un valor inventado", (await callAction("admin", saveId, [{ ...abierta, retention: "5y" }])).includes("no es válida"));
+  }
+  const adminHtml = (await http("GET", "/admin", { cookie: cookies.admin })).text;
+  check("el admin ve «Configuración» en /admin", adminHtml.includes("Configuración") && adminHtml.includes("Guardar el historial de clientes por"));
+  check("analítica no entra en /admin (no ve la pantalla)", (await http("GET", "/admin", { cookie: cookies.analitica })).status === 307);
+
+  // 3. El top 10 de clientes: analítica ve iniciales por defecto; el admin, nombres.
+  const top = async (who: Who) =>
+    ((JSON.parse((await http("GET", "/api/analiticas", { cookie: cookies[who] })).text) as { topCustomers?: { name: string }[] }).topCustomers ?? []).map((c) => c.name);
+  const topAdmin = await top("admin");
+  const topAnalitica = await top("analitica");
+  check("hay top de clientes para probar", topAdmin.length > 0, String(topAdmin.length));
+  check(
+    "analítica ve «Cliente N (iniciales)» y ningún nombre del top",
+    topAnalitica.length === topAdmin.length && topAnalitica.every((n, i) => n === `Cliente ${i + 1} (${privacy.initials(topAdmin[i])})`) && !topAnalitica.some((n) => topAdmin.includes(n)),
+    JSON.stringify(topAnalitica.slice(0, 3)),
+  );
+  check("el admin ve los nombres", topAdmin.every((n) => !/^Cliente \d+ \(/.test(n)));
+
+  // 4. El admin abre las opciones y se aplican en el servidor.
+  if (saveId) {
+    check("el admin guarda la configuración", /"ok":true/.test(await callAction("admin", saveId, [{ ...inicial, analyticsSeesTopNames: true }])));
+    check("  con el permiso, analítica ve los nombres del top", JSON.stringify(await top("analitica")) === JSON.stringify(topAdmin));
+    await callAction("admin", saveId, [inicial]);
+    check("  y al volver al valor por defecto, otra vez iniciales", (await top("analitica")).every((n) => /^Cliente \d+ \(/.test(n)));
+  }
+
+  // 5. La IA: con alias (por defecto) no viaja ningún nombre del top; sin alias, sí.
+  const stats = await getAnalytics();
+  const conAlias = JSON.stringify(buildOpenRouterMessages("¿Quién vino más?", stats, [], { useAliases: true }));
+  const sinAlias = JSON.stringify(buildOpenRouterMessages("¿Quién vino más?", stats, [], { useAliases: false }));
+  check("con «la IA usa alias», ningún nombre del top sale hacia OpenRouter", stats.topCustomers.every((c) => !conAlias.includes(c.name)));
+  check("  y sin ella, el top viaja con sus nombres", stats.topCustomers.length > 0 && stats.topCustomers.every((c) => sinAlias.includes(c.name)));
+  const enmascarado = { ...stats, topCustomers: privacy.maskTopCustomers(stats.topCustomers) };
+  const paraAnalitica = JSON.stringify(buildOpenRouterMessages("¿Quién vino más?", enmascarado, [], { useAliases: false }));
+  check("  pero si analítica no puede ver nombres, a la IA tampoco le llegan (aunque no haya alias)", stats.topCustomers.every((c) => !paraAnalitica.includes(c.name)));
+
+  // 6. Retención: anonimiza los datos personales, nunca borra filas ni cifras.
+  const DIA = 24 * 60 * 60 * 1000;
+  const ahora = new Date();
+  const hace = (dias: number) => new Date(ahora.getTime() - dias * DIA);
+  const base = { restaurantId: "rest_centro", partySize: 3, phone: "9999-0000", notes: "Silla para bebé", createdAt: hace(400), updatedAt: hace(400) };
+  const filas = [
+    { ...base, id: "ret_viejo", customerName: "Retención Vieja", status: "sentado", arrivedAt: hace(400), seatedAt: hace(400) },
+    { ...base, id: "ret_demo", customerName: "Retención Demo", status: "sentado", arrivedAt: hace(400), seatedAt: hace(400), isDemo: true },
+    { ...base, id: "ret_espera", customerName: "Retención Esperando", status: "esperando", arrivedAt: hace(400) },
+    { ...base, id: "ret_mesa", customerName: "Retención En Mesa", status: "sentado", arrivedAt: hace(400), seatedAt: hace(400) },
+    { ...base, id: "ret_reciente", customerName: "Retención Reciente", status: "sentado", arrivedAt: hace(30), seatedAt: hace(30) },
+  ];
+  await db.insert(waitlistEntries).values(filas);
+  const [mesaLibre] = await db.select({ id: mesas.id }).from(mesas).where(and(eq(mesas.restaurantId, "rest_centro"), isNull(mesas.currentEntryId))).limit(1);
+  if (mesaLibre) await db.update(mesas).set({ currentEntryId: "ret_mesa" }).where(eq(mesas.id, mesaLibre.id));
+  const leer = async () =>
+    Object.fromEntries(
+      (await db.select().from(waitlistEntries).where(inArray(waitlistEntries.id, filas.map((x) => x.id)))).map((r) => [r.id, r]),
+    );
+  const total = async () => (await db.select({ id: waitlistEntries.id }).from(waitlistEntries)).length;
+  const antes = await total();
+
+  const r1 = await privacy.anonymizeExpiredEntries(ahora, inicial);
+  const d1 = await leer();
+  check("con 1 año: el cliente de hace 400 días queda anónimo", d1.ret_viejo.customerName === "Cliente anónimo" && d1.ret_viejo.phone === null && d1.ret_viejo.notes === null && d1.ret_viejo.anonymizedAt !== null);
+  check("  y conserva sus cifras (personas, horas, estado)", d1.ret_viejo.partySize === 3 && d1.ret_viejo.status === "sentado" && d1.ret_viejo.seatedAt?.getTime() === hace(400).getTime());
+  check("  no toca los datos de demostración", d1.ret_demo.customerName === "Retención Demo" && d1.ret_demo.phone === "9999-0000");
+  check("  ni a quien sigue en la fila", d1.ret_espera.customerName === "Retención Esperando");
+  check("  ni a quien está sentado ahora en una mesa", !mesaLibre || d1.ret_mesa.customerName === "Retención En Mesa");
+  check("  ni lo reciente", d1.ret_reciente.customerName === "Retención Reciente");
+  check("  y no borra ninguna fila", (await total()) === antes);
+  check("  cuenta lo que anonimizó", r1.anonymized >= 1, String(r1.anonymized));
+  check("correrla otra vez no cambia nada", (await privacy.anonymizeExpiredEntries(ahora, inicial)).anonymized === 0);
+  check("con «Siempre» no anonimiza nada", (await privacy.anonymizeExpiredEntries(ahora, { ...inicial, retention: "siempre" })).anonymized === 0);
+  await privacy.anonymizeExpiredEntries(ahora, { ...inicial, retentionIncludesDemo: true });
+  const d2 = await leer();
+  check("solo si se elige, también los datos de demostración", d2.ret_demo.customerName === "Cliente anónimo" && d2.ret_demo.isDemo === true);
+  check("la última ejecución queda apuntada para /admin", (await privacy.getLastRetentionRun())?.at === ahora.getTime());
+  if (runId) check("el admin puede aplicarla ahora desde /admin", /"ok":true/.test(await callAction("admin", runId, [])));
+
+  // Limpieza: la mesa vuelve a estar libre y se quitan las filas de la prueba.
+  if (mesaLibre) await db.update(mesas).set({ currentEntryId: null }).where(eq(mesas.id, mesaLibre.id));
+  await db.delete(waitlistEntries).where(inArray(waitlistEntries.id, filas.map((x) => x.id)));
+}
+
 section("Usuario desactivado");
 
 {
