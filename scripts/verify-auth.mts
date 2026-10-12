@@ -865,6 +865,18 @@ check("sin sesión, el socket no conecta", (await connect()) === null);
     check("  y el ack no trae datos de clientes", !mentionsAnyCustomer(JSON.stringify(overviewAnalitica)));
     check("admin entra en la sala overview", (await emit(admin, "overview:join", {})).ok);
 
+    // Liberar y limpiar (acciones en grupo): el host en los suyos, el admin en
+    // todos, analítica en ninguno. Solo se CUENTA (preview) o se pide algo que
+    // el servidor rechaza: no se cambian los datos del seed.
+    const limpiar = (await emit(chinawok, "waitlist:cleanup", { hours: 168, preview: true })) as { ok: boolean; preview?: { absent: number; tables: number } };
+    check("chinawok puede «Limpiar pendientes antiguos» en rest_centro (cuenta)", limpiar.ok && typeof limpiar.preview?.tables === "number", JSON.stringify(limpiar));
+    check("  pero no sin escribir LIBERAR para liberar todas", !(await emit(chinawok, "tables:release-all", { confirm: "si" })).ok);
+    check("analitica no puede limpiar ni liberar todas", !(await emit(analitica, "waitlist:cleanup", { hours: 24, preview: true })).ok && !(await emit(analitica, "tables:release-all", { confirm: "LIBERAR" })).ok);
+    check("analitica no puede eliminar en grupo", !(await emit(analitica, "waitlist:bulk", { action: "eliminar", entryIds: ["wl_1"] })).ok);
+    check("pizzahut (otra marca) no entra en rest_centro, así que no puede limpiarlo", !(await emit(pizzahut, "restaurant:join", { restaurantId: "rest_centro" })).ok);
+    check("admin puede limpiar en rest_norte (cuenta)", (await emit(admin, "waitlist:cleanup", { hours: 24, preview: true })).ok);
+    await emit(admin, "restaurant:join", { restaurantId: "rest_norte" });
+
     // Una mesa libre de verdad: el seed ya ocupa y reserva algunas.
     const [free] = await db
       .select({ id: tablesTable.id })
@@ -1650,6 +1662,15 @@ section("Acceso directo al modo sencillo");
 // ---------------------------------------------------------------------------
 // Usuario desactivado
 // ---------------------------------------------------------------------------
+
+section("Plano en vivo: liberar mesas solo con permiso");
+
+{
+  const plano = async (who: Who) => (await http("GET", "/restaurante/rest_centro/mapa", { cookie: cookies[who] })).text;
+  check("chinawok ve «Liberar todas las mesas» en su plano (hay mesas ocupadas)", (await plano("chinawok")).includes("Liberar todas las mesas"));
+  check("el admin también", (await plano("admin")).includes("Liberar todas las mesas"));
+  check("analítica no (solo mira)", !(await plano("analitica")).includes("Liberar todas las mesas"));
+}
 
 section("Configuración de privacidad (/admin): solo admin, valores seguros y retención");
 

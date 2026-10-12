@@ -28,6 +28,8 @@ type Props = {
   startEditingWaiters?: boolean;
   /** Modo inmersivo de la tablet en horizontal (ver `LivePlan`). */
   immersive?: LivePlanProps["immersive"];
+  /** `mesas:asignar`: puede liberar mesas desde el plano (una o todas). */
+  canReleaseTables?: boolean;
 };
 
 export function RestaurantLivePlan(props: Props) {
@@ -46,7 +48,7 @@ function useFallbackTick(): number {
   return tick;
 }
 
-function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startEditingWaiters, immersive }: Props) {
+function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startEditingWaiters, immersive, canReleaseTables }: Props) {
   const [events, setEvents] = useState(0);
   const tick = useFallbackTick();
   // Varios avisos seguidos (liberar todas las mesas, limpiar pendientes,
@@ -63,7 +65,7 @@ function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startE
   useEffect(() => () => {
     if (pending.current !== null) window.clearTimeout(pending.current);
   }, []);
-  const { status } = useRestaurantSocket(restaurantId, {
+  const { status, releaseTable, releaseAllTables } = useRestaurantSocket(restaurantId, {
     "table:assigned": bump,
     "table:released": bump,
     "layout:updated": bump,
@@ -83,6 +85,7 @@ function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startE
       canManageWaiters={canManageWaiters}
       startEditingWaiters={startEditingWaiters}
       immersive={immersive}
+      tableActions={canReleaseTables ? { release: releaseTable, releaseAll: releaseAllTables } : undefined}
     />
   );
 }

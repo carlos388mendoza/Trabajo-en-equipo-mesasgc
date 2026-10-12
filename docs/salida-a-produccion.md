@@ -366,6 +366,17 @@ atiende: «Ana se sentó en Mesa 4. **Lo atiende Luis.**». Una carta sentada
 tiene **Liberar Mesa N** cuando el grupo se va. Si otra tablet ocupó esa mesa
 un segundo antes, sale «Esta mesa ya fue asignada»: elige otra.
 
+**Mesas olvidadas y clientes viejos:** en **Ver clientes**, **Todos** +
+**Ocupando mesa** muestra cada mesa ocupada, aunque sea de hace días. Marca
+las casillas y usa **Liberar mesas**, **Marcar ausente** o **Eliminar
+seleccionados** (pide confirmar y dice cuántos), o **Limpiar pendientes
+antiguos** (más de 12 h, 24 h o 7 días): los que siguen en la fila o listos
+quedan ausentes y se liberan las mesas de los sentados hace más de eso. Todo
+se puede deshacer enseguida. En el **plano en vivo**, toca una mesa ocupada →
+**Liberar mesa**, o **Liberar todas las mesas** (hay que escribir LIBERAR).
+Marcar ausente y liberar guardan las cifras; **eliminar las quita**: déjalo
+para los errores.
+
 **Si se va el Internet (modo sin conexión)**
 
 Arriba, junto a «SIGUIENTE EN LA FILA», siempre dice cómo está la conexión:

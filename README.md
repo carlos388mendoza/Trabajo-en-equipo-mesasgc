@@ -590,6 +590,29 @@ formulario ya no está al lado (`components/quick-mode/`):
   `waitlist:reopen` (conserva su hora de llegada y su lugar; se puede
   deshacer). Un sentado no vuelve: tiene mesa. Se actualiza con los
   `waitlist:changed` de la room.
+- **Liberar y limpiar** (`lib/waitlist/batch.ts`, 12 de octubre de 2026). En
+  producción quedaban mesas ocupadas desde hacía días que no se podían
+  soltar: «Ver clientes» solo llegaba a 7 días, eliminar a un sentado se
+  negaba y el plano era de solo lectura. Ahora, por el socket y siempre
+  revalidando el permiso en el servidor:
+  - `waitlist:delete` con `releaseTable: true`: libera la mesa y elimina en
+    una acción («Se liberará la Mesa 3 y se eliminará el cliente»). Pide
+    `mesas:asignar` además de modificar la fila.
+  - `waitlist:bulk` (`liberar` | `ausente` | `eliminar`, hasta 200 ids):
+    las casillas y la barra «N seleccionados». Solo toca clientes del
+    restaurante de la room; los ids ajenos se ignoran.
+  - `waitlist:cleanup` (`hours`: 12, 24 o 168; `preview` solo cuenta):
+    «Limpiar pendientes antiguos». Marca ausentes a los que siguen esperando
+    o listos desde antes de ese plazo y libera las mesas de los sentados hace
+    más de eso.
+  - `tables:release-all` (`confirm: "LIBERAR"`): «Liberar todas las mesas»
+    del plano en vivo.
+  Cada mesa se libera con el mismo `UPDATE` condicional de siempre
+  (`current_entry_id` = el que estaba), así que si otra tablet la tocó
+  en medio, esa mesa se salta. Todas se deshacen como **una** acción
+  (`kind: "batch"` en el deshacer en memoria): vuelve a ocupar solo las
+  mesas que sigan libres y reinserta a los eliminados. Ausente y liberar
+  conservan las cifras de las estadísticas; eliminar las quita.
 - **Con mucho historial sigue fluido** (12 de octubre de 2026). Antes, el
   modo sencillo descargaba TODO el historial del restaurante
   (`GET /api/restaurante/[id]/clientes`: hasta 1,7 MB y casi 5000 clientes en
@@ -1192,6 +1215,12 @@ solo ve el plano de los suyos.
 - **Zoom al plano.** Al tocar un marcador, el `viewBox` se acerca a él y
   aparece el plano en vivo del restaurante: el mismo lienzo del editor, en
   solo lectura. «Volver al mapa general» (o Esc) hace el zoom inverso.
+- **Liberar desde el plano en vivo** (`/restaurante/[id]/mapa`, con
+  `mesas:asignar`: el host en los suyos, el admin en todos; analítica no).
+  Tocar una mesa ocupada abre un panel abajo («Ocupada por … · desde hace
+  3 h») con **Liberar mesa**. **Liberar todas las mesas** (en el modo a
+  pantalla completa, el botón de la puerta) pide escribir LIBERAR. El
+  editor sigue sin tocar `status` ni `current_entry_id`.
 
 ### Tiempo real
 
@@ -1279,7 +1308,7 @@ Las tablets usan Opera, y la pantalla completa se pone desde el propio Opera
 | `components/map/live-plan.tsx` | El plano en vivo y su modo inmersivo (controles flotantes y panel de la lista de espera). |
 | `lib/layout/immersive.ts` | La media query de la tablet en horizontal, que comparten Tailwind y el plano. |
 | `components/map/world-map.tsx` | Mapa, cámara (rueda, pellizco, arrastre, botones y minimapa), marcadores y grupos, filtros, lista y zoom al plano. |
-| `components/map/live-plan.tsx` | Plano en vivo (Konva en solo lectura). |
+| `components/map/live-plan.tsx` | Plano en vivo (Konva sin editar; liberar mesas con permiso). |
 | `components/map/use-overview-socket.ts` | Socket de la sala `overview` y respaldo de 30 s. |
 
 ### Decisiones que conviene no deshacer sin pensarlo

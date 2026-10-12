@@ -64,7 +64,25 @@ Un usuario puede tener más de un rol y más de un restaurante.
 3. Desde su fila: **Modo sencillo**, **Plano** (el editor), **Editar** y
    **Desactivar**. Desactivar no borra nada; sus hosts dejan de tener acceso.
 
-## 3. Configuración (privacidad)
+## 3. Liberar mesas y eliminar clientes viejos (cualquier restaurante)
+
+El admin puede hacer en **todos** los restaurantes lo mismo que el host en
+los suyos (manual del host, «Ver clientes» y «Plano en vivo»):
+
+1. Elige el restaurante arriba (o en el mapa) y abre **Modo sencillo** →
+   **Ver clientes**.
+2. **Todos** + **Ocupando mesa**: salen las mesas ocupadas, aunque sean de
+   hace días.
+3. Marca las casillas → **Liberar mesas**; o **Limpiar pendientes antiguos**
+   (12 h, 24 h o 7 días) para cerrar lo viejo de una vez.
+4. **Eliminar** solo para errores: borra al cliente de las estadísticas.
+   Marcar ausente y liberar mesa guardan las cifras.
+5. En el **Plano en vivo**: toca una mesa ocupada → **Liberar mesa**, o
+   **Liberar todas las mesas** (escribe LIBERAR).
+
+Analítica no ve estos botones y el servidor se lo rechaza.
+
+## 4. Configuración (privacidad)
 
 Tres opciones que decide la dirección, cada una con el valor más seguro por
 defecto. Están explicadas en palabras sencillas en `docs/configuracion.md`.
@@ -80,7 +98,7 @@ defecto. Están explicadas en palabras sencillas en `docs/configuracion.md`.
 3. **Aplicar ahora** anonimiza de inmediato lo que ya venció. Si no, se hace
    sola una vez al día.
 
-## 4. Si nadie puede entrar a /admin (recuperación)
+## 5. Si nadie puede entrar a /admin (recuperación)
 
 Si el admin olvidó su contraseña, se cambia desde la terminal, con la CLI de
 Railway, contra la base de producción:
@@ -102,7 +120,7 @@ Para crear un usuario desde la terminal (por ejemplo, el primer admin):
 
 Más detalle: `docs/despliegue.md` (sección 3) y `docs/salida-a-produccion.md`.
 
-## 5. Respaldos
+## 6. Respaldos
 
 Antes de cada publicación con cambios en la base, y una vez a la semana
 durante el piloto, saca un respaldo. Los pasos están en
