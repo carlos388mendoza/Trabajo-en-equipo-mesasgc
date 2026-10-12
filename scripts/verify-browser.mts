@@ -5,6 +5,10 @@
 //  - #60: que el gráfico «Volumen y tiempo de espera» lleva sus ejes
 //    etiquetados («Clientes (grupos)» a la izquierda, «Minutos de espera» a
 //    la derecha, «Día» debajo), la leyenda de series y tooltips con unidades.
+//  - El botón «Lista de espera» del plano en vivo: que se vea en TODOS los
+//    tamaños (celular y tablet, de pie y acostados, y computadora), con el
+//    usuario de restaurante y con el admin; que mida 44×44 o más, que nada lo
+//    tape, que abra el panel y que Esc lo cierre. Analítica no lo tiene.
 //  - #61: que la página NO tiene scroll horizontal en 320, 375, 414, 768,
 //    1024 ni escritorio, midiendo en cada tamaño
 //    `document.documentElement.scrollWidth` contra `window.innerWidth` (lo
@@ -464,6 +468,101 @@ for (const ancho of ANCHOS) {
 }
 
 // ---------------------------------------------------------------------------
+// Plano en vivo: el botón «Lista de espera» en todos los tamaños
+// ---------------------------------------------------------------------------
+
+async function entrarComo(correo: string): Promise<void> {
+  const respuesta = await fetch(`${BASE}/api/auth/sign-in/email`, {
+    method: "POST",
+    headers: { "content-type": "application/json", Origin: BASE },
+    body: JSON.stringify({ email: correo, password: PASSWORD }),
+  });
+  if (!respuesta.ok) throw new Error(`login de ${correo}: ${respuesta.status}`);
+  const cruda = (respuesta.headers.get("set-cookie") ?? "").split(";")[0];
+  await tab.send("Network.clearBrowserCookies");
+  await tab.send("Network.setCookie", { name: cruda.slice(0, cruda.indexOf("=")), value: cruda.slice(cruda.indexOf("=") + 1), url: BASE, path: "/" });
+}
+
+async function abrirPlano(): Promise<void> {
+  const cargado = new Promise<void>((resolve) => {
+    const off = tab.on("Page.loadEventFired", () => {
+      off();
+      resolve();
+    });
+    setTimeout(() => {
+      off();
+      resolve();
+    }, 90_000);
+  });
+  await tab.send("Page.navigate", { url: `${BASE}/restaurante/rest_centro/mapa` });
+  await cargado;
+  const limite = Date.now() + 90_000;
+  while (Date.now() < limite) {
+    if ((await evaluar(`!!(window.Konva && Konva.stages.length)`)) === true) return;
+    await esperar(400);
+  }
+  throw new Error("el plano en vivo no cargó a tiempo");
+}
+
+const botonLista = `(() => {
+  const btn = document.querySelector('[aria-controls="panel-lista-espera"]');
+  if (!btn) return JSON.stringify({ existe: false });
+  const r = btn.getBoundingClientRect();
+  const visible = r.width > 0 && r.height > 0 && r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth;
+  const encima = visible ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null;
+  return JSON.stringify({ existe: true, visible, tapado: visible ? !btn.contains(encima) : true, ancho: Math.round(r.width), alto: Math.round(r.height), texto: btn.innerText.replace(/\\s+/g, " ").trim() });
+})()`;
+const panelAbierto = `(() => { const p = document.querySelector("#panel-lista-espera"); if (!p) return false; const r = p.getBoundingClientRect(); return r.width > 0 && r.left < innerWidth - 10 && r.right <= innerWidth + 1; })()`;
+
+const TAMANOS_PLANO: Array<{ nombre: string; ancho: number; alto: number; tactil: boolean }> = [
+  { nombre: "celular de pie", ancho: 375, alto: 812, tactil: true },
+  { nombre: "celular acostado", ancho: 812, alto: 375, tactil: true },
+  { nombre: "tablet de pie", ancho: 768, alto: 1024, tactil: true },
+  { nombre: "tablet acostada", ancho: 1024, alto: 768, tactil: true },
+  { nombre: "computadora", ancho: 1440, alto: 900, tactil: false },
+];
+const filasLista: Array<{ quien: string; tamano: string; pasa: boolean; detalle: string }> = [];
+
+for (const quien of ["chinawok", "admin"]) {
+  await entrarComo(`${quien}@grupocomidas.test`);
+  for (const t of TAMANOS_PLANO) {
+    await tab.send("Emulation.setDeviceMetricsOverride", {
+      width: t.ancho,
+      height: t.alto,
+      deviceScaleFactor: 1,
+      mobile: t.tactil,
+      screenOrientation: t.ancho > t.alto ? { type: "landscapePrimary", angle: 90 } : { type: "portraitPrimary", angle: 0 },
+    });
+    await tab.send("Emulation.setTouchEmulationEnabled", { enabled: t.tactil, maxTouchPoints: t.tactil ? 5 : 1 });
+    await abrirPlano();
+    await esperar(800);
+    const boton = JSON.parse(String(await evaluar(botonLista))) as { existe: boolean; visible?: boolean; tapado?: boolean; ancho?: number; alto?: number; texto?: string };
+    let abre = false;
+    let cierraEsc = false;
+    if (boton.existe && boton.visible && !boton.tapado) {
+      await evaluar(`document.querySelector('[aria-controls="panel-lista-espera"]').click(), true`);
+      await esperar(700);
+      abre = (await evaluar(panelAbierto)) === true;
+      const captura = await tab.send("Page.captureScreenshot", { format: "png" });
+      writeFileSync(join(SHOTS, `plano-lista-${quien}-${t.ancho}x${t.alto}.png`), Buffer.from(captura.data as string, "base64"));
+      await tab.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+      await tab.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+      await esperar(500);
+      cierraEsc = (await evaluar(panelAbierto)) === false;
+    }
+    const pasa = boton.existe && !!boton.visible && !boton.tapado && (boton.ancho ?? 0) >= 44 && (boton.alto ?? 0) >= 44 && abre && cierraEsc;
+    filasLista.push({ quien, tamano: `${t.nombre} ${t.ancho}×${t.alto}`, pasa, detalle: JSON.stringify({ ...boton, abre, cierraEsc }) });
+  }
+}
+// Analítica no opera: sin botón.
+await entrarComo("analitica@grupocomidas.test");
+await tab.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+await tab.send("Emulation.setTouchEmulationEnabled", { enabled: false, maxTouchPoints: 1 });
+await abrirPlano();
+await esperar(500);
+const analiticaSinBoton = (JSON.parse(String(await evaluar(botonLista))) as { existe: boolean }).existe === false;
+
+// ---------------------------------------------------------------------------
 // Resultado
 // ---------------------------------------------------------------------------
 
@@ -492,7 +591,15 @@ for (const fila of filas) {
   }
 }
 
-writeFileSync(join(DIR, "resultado.json"), JSON.stringify({ filas, ejes }, null, 2));
+console.log("\nPlano en vivo: botón «Lista de espera»");
+for (const fila of filasLista) {
+  if (!fila.pasa) fallos += 1;
+  console.log(`  ${fila.pasa ? "ok  " : "FALLA"} ${fila.quien.padEnd(9)} ${fila.tamano.padEnd(26)} ${fila.pasa ? "" : fila.detalle}`);
+}
+if (!analiticaSinBoton) fallos += 1;
+console.log(`  ${analiticaSinBoton ? "ok  " : "FALLA"} analítica no tiene el botón (no opera)`);
+
+writeFileSync(join(DIR, "resultado.json"), JSON.stringify({ filas, ejes, filasLista, analiticaSinBoton }, null, 2));
 console.log(`\nCapturas en ${SHOTS}`);
 
 tab.close();
@@ -502,5 +609,5 @@ if (fallos > 0) {
   console.log(`verify:browser — ${fallos} fallo(s).`);
   process.exit(1);
 }
-console.log(`verify:browser — ${filas.length} mediciones sin scroll horizontal y ejes etiquetados.`);
+console.log(`verify:browser — ${filas.length} mediciones sin scroll horizontal, ejes etiquetados y el botón «Lista de espera» en ${filasLista.length} casos.`);
 process.exit(0);

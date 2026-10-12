@@ -137,14 +137,35 @@ export function LivePlan({
   }
   const immersiveOn = Boolean(immersive) && immersiveMode === "auto";
   const immersiveActive = immersiveOn && tabletLandscape;
-  // El panel de la lista de espera. El iframe se crea la primera vez que se
+  // El panel de la lista de espera, en TODAS las vistas (computadora, tablet y
+  // celular, de pie o acostados). El iframe se crea la primera vez que se
   // abre y luego se queda (cerrado, fuera de la pantalla): así no se recarga
   // cada vez y su cola sin conexión sigue trabajando.
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [waitlistMounted, setWaitlistMounted] = useState(false);
+  const closeWaitlistRef = useRef<HTMLButtonElement | null>(null);
   const openWaitlist = () => {
     setWaitlistMounted(true);
     setWaitlistOpen(true);
+  };
+  // Esc lo cierra: en esta página y también con el foco dentro del panel (el
+  // iframe es del propio sitio), salvo que dentro haya abierta una ventana del
+  // modo sencillo, que se cierra primero con su propio Esc.
+  useEffect(() => {
+    if (!waitlistOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setWaitlistOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    closeWaitlistRef.current?.focus();
+    return () => window.removeEventListener("keydown", onKey);
+  }, [waitlistOpen]);
+  const listenInsideWaitlist = (frame: HTMLIFrameElement) => {
+    const doc = frame.contentDocument;
+    if (!doc) return;
+    doc.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !doc.querySelector("[role=dialog]")) setWaitlistOpen(false);
+    });
   };
 
   const [plan, setPlan] = useState<LivePlanData | null>(initialPlan);
@@ -287,17 +308,25 @@ export function LivePlan({
         <div className="contents inmersivo:!ml-auto inmersivo:!flex inmersivo:items-center inmersivo:gap-1.5 inmersivo:!bg-transparent inmersivo:!shadow-none inmersivo:[&>*]:bg-panel/80 inmersivo:[&>*]:shadow-md">
           <WaiterSelector state={waiters} />
           {immersive?.waitlistHref ? (
+            // Siempre visible y el primero de la barra: es lo que más se usa.
+            // Con la tablet acostada y poco ancho dice solo «Lista» (el número
+            // sigue), para que quepa con lo demás en una línea.
             <button
               type="button"
               onClick={() => (waitlistOpen ? setWaitlistOpen(false) : openWaitlist())}
               aria-expanded={waitlistOpen}
-              aria-label="Lista de espera"
+              aria-label={`Lista de espera: ${plan?.waiting ?? 0} esperando`}
               title="Lista de espera: agregar, avisar, sentar y liberar"
               aria-controls="panel-lista-espera"
-              className={`${roundButton} hidden inmersivo:flex`}
+              className="order-first flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-accent px-3.5 text-sm font-semibold text-accent-text shadow-sm transition hover:bg-accent/85 inmersivo:order-none inmersivo:!bg-accent/90"
             >
               <ListOrdered aria-hidden size={18} strokeWidth={2} />
-              Lista
+              <span>
+                Lista<span className="max-[1099px]:inmersivo:hidden"> de espera</span>
+              </span>
+              <span aria-hidden className="min-w-6 rounded-full bg-accent-text/20 px-1.5 text-center tabular-nums">
+                {plan?.waiting ?? 0}
+              </span>
             </button>
           ) : null}
           {immersive ? (
@@ -392,29 +421,37 @@ export function LivePlan({
       </div>
       </div>
 
-      {/* La lista de espera: el modo sencillo en un panel a la derecha. Solo
-          en modo inmersivo; en la vista normal se usa su pestaña de siempre. */}
+      {/* La lista de espera: el modo sencillo en un panel que se pone encima
+          de todo (`fixed`): a la derecha en pantallas anchas y a pantalla
+          completa en el celular. Se cierra con la X o con Esc. */}
       {immersive?.waitlistHref && waitlistMounted ? (
         <aside
           id="panel-lista-espera"
           aria-label="Lista de espera"
           inert={!waitlistOpen}
-          className={`absolute bottom-0 right-0 top-0 z-30 hidden w-[min(26rem,46vw)] flex-col border-l border-app-border bg-panel shadow-2xl transition-transform duration-200 inmersivo:flex ${
-            waitlistOpen ? "translate-x-0" : "translate-x-full"
+          className={`fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-app-border bg-panel pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-2xl transition-transform duration-200 sm:w-[min(26rem,92vw)] ${
+            waitlistOpen ? "translate-x-0" : "pointer-events-none translate-x-full"
           }`}
         >
           <div className="flex shrink-0 items-center gap-2 border-b border-app-border px-3 py-1.5">
             <h2 className="flex-1 text-sm font-semibold text-panel-text">Lista de espera</h2>
             <button
+              ref={closeWaitlistRef}
               type="button"
               onClick={() => setWaitlistOpen(false)}
               aria-label="Cerrar la lista de espera"
+              title="Cerrar (Esc)"
               className="flex h-11 w-11 items-center justify-center rounded-xl text-panel-text hover:bg-app-border/60"
             >
               <X aria-hidden size={20} strokeWidth={2} />
             </button>
           </div>
-          <iframe src={immersive.waitlistHref} title="Lista de espera (modo sencillo)" className="min-h-0 w-full flex-1 border-0 bg-app-bg" />
+          <iframe
+            src={immersive.waitlistHref}
+            title="Lista de espera (modo sencillo)"
+            onLoad={(event) => listenInsideWaitlist(event.currentTarget)}
+            className="min-h-0 w-full flex-1 border-0 bg-app-bg"
+          />
         </aside>
       ) : null}
     </div>
