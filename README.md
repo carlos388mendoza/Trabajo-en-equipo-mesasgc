@@ -1139,13 +1139,26 @@ Las tablets usan Opera, y la pantalla completa se pone desde el propio Opera
 - **Controles flotantes:** la misma barra de siempre pasa a flotar arriba,
   semitransparente y sin desenfoque (un `backdrop-filter` encima del lienzo
   costaría fotogramas): nombre, «En vivo», zonas, «Meseros activos [−] N [+]»
-  (con el texto solo para el lector de pantalla), **Lista** y **contraer**. No
+  (con el texto solo para el lector de pantalla), **Lista de espera** y **contraer**. No
   se pinta una segunda barra: no hay dos «Agregar mesero».
 - **Encuadre:** `KonvaCanvas` recibe `refitOnResize` y `topInset` (la franja
   de los controles): al entrar en el modo, al asomar la barra de Opera o al
   entrar en su pantalla completa, el plano se vuelve a encuadrar solo (con
   120 ms de pausa, una vez con la medida final). El minimapa se oculta.
-- **Lista de espera:** un panel a la derecha con el **modo sencillo en un
+- **Lista de espera, en todas las vistas** (no solo en modo inmersivo): el
+  primer botón de la barra, en color de acento, con el número de clientes
+  **en espera** (`LivePlan.waiting`, el mismo número que «grupos esperando»
+  del modo sencillo; el mapa general cuenta además los «listo»). El plano se
+  vuelve a leer con `waitlist:changed`, así que el número va al día. Con la
+  tablet acostada y menos de 1100 px dice «Lista» y el número, para caber en
+  una línea. Abre un panel `fixed` encima de todo: a la derecha en pantallas
+  anchas y a pantalla completa en el celular; se cierra con la X o con Esc
+  (también con el foco dentro del iframe, salvo que haya una ventana del modo
+  sencillo abierta). `verify:browser` comprueba que el botón se vea, mida
+  44×44 o más, no lo tape nada, abra el panel y Esc lo cierre en celular y
+  tablet (de pie y acostados) y computadora, con el usuario de restaurante y
+  con el admin; y que analítica no lo tenga.
+- **El panel** lleva el **modo sencillo en un
   iframe del propio sitio**. Es la misma página de siempre, así que conserva
   el tiempo real, la cola sin conexión, los permisos (`rapido:ver`; sin él no
   hay botón) y sentar y liberar. Dentro del iframe, un script en `<head>` marca
