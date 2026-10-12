@@ -4,11 +4,12 @@
 // /restaurante/[id]/mapa y sus server actions, que antes comprueban el
 // permiso. Aquí solo se decide QUÉ datos salen, según `withNames`.
 
-import { asc, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { getElementTypes, getLayout, getLayoutsForRestaurant } from "@/lib/db/queries/layouts";
-import { brands, restaurants } from "@/lib/db/schema";
+import { brands, restaurants, waitlistEntries } from "@/lib/db/schema";
+import type { WaitlistStatus } from "@/lib/db/enums";
 import type { ElementTypeInfo, LayoutPayload } from "@/lib/layout/types";
 import { restaurantPosition } from "@/lib/map/projection";
 import { type WaiterConfig, listWaiterConfigs } from "@/lib/waiters/configs";
@@ -104,6 +105,14 @@ export type LivePlan = {
    * y colores: no son datos de clientes, así que salen también para analítica.
    */
   waiterConfigs: WaiterConfig[];
+  /**
+   * Cuántos clientes siguen en espera: el mismo número que «grupos
+   * esperando» del modo sencillo, que es lo que abre el botón «Lista de
+   * espera» del plano en vivo. (El mapa general cuenta además los «listo»,
+   * ya avisados; aquí no, para que el botón y el panel digan lo mismo.) Es un
+   * número, no un dato de cliente: sale también para analítica.
+   */
+  waiting: number;
 };
 
 /**
@@ -116,10 +125,14 @@ export async function getLivePlan(restaurantId: string, withNames: boolean): Pro
   const restaurant = await getMapRestaurant(restaurantId);
   if (!restaurant) return null;
 
-  const [summaries, types, waiterConfigs] = await Promise.all([
+  const [summaries, types, waiterConfigs, counters] = await Promise.all([
     getLayoutsForRestaurant(restaurantId),
     getElementTypes(),
     listWaiterConfigs(restaurantId),
+    db
+      .select({ n: count() })
+      .from(waitlistEntries)
+      .where(and(eq(waitlistEntries.restaurantId, restaurantId), eq(waitlistEntries.status, "esperando" satisfies WaitlistStatus))),
   ]);
   const loaded = await Promise.all(summaries.map((z) => getLayout(z.id, restaurantId)));
   const zones = loaded
@@ -139,5 +152,5 @@ export async function getLivePlan(restaurantId: string, withNames: boolean): Pro
     );
 
   const defaultZoneId = summaries.find((z) => z.isDefault)?.id ?? null;
-  return { restaurant, showNames: withNames, types, zones, defaultZoneId, waiterConfigs };
+  return { restaurant, showNames: withNames, types, zones, defaultZoneId, waiterConfigs, waiting: Number(counters[0]?.n ?? 0) };
 }

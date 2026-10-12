@@ -57,6 +57,9 @@ function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startE
     "structure:changed": bump,
     // Otra tablet activó, guardó o borró una configuración de meseros.
     "waiters:changed": bump,
+    // Alguien entró a la fila, se resolvió o se deshizo: cambia el número del
+    // botón «Lista de espera».
+    "waitlist:changed": bump,
   });
   return (
     <LivePlan
