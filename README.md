@@ -982,6 +982,36 @@ npm run verify:auth
 - Compila en `.next-verify/`, así que puede correr mientras `npm run dev`
   sigue abierto: Next 16 no deja dos servidores sobre la misma carpeta.
 
+### Configuración de privacidad (/admin → «Configuración»)
+
+Tres decisiones de la dirección, cada una con su valor por defecto seguro (sin
+fila en `app_settings`, la app ya se comporta así). Explicadas para la
+dirección en `docs/configuracion.md`.
+
+| Opción | Por defecto | Dónde se aplica |
+|---|---|---|
+| La IA usa alias en lugar de nombres de clientes | Sí | `app/api/assistant/route.ts` → `buildOpenRouterMessages(..., { useAliases })` |
+| Analítica puede ver los nombres del top 10 | No («Cliente 1 (A. G.)») | `app/api/analiticas` y el asistente, con `canSeeTopCustomerNames` + `maskTopCustomers`, **en el servidor** y antes de hablar con la IA |
+| Guardar el historial de clientes por | 1 año (90 d, 180 d, 1 año, siempre) | `anonymizeExpiredEntries` en `lib/settings/privacy.ts` |
+
+- **Migración `0010`, solo aditiva:** la tabla `app_settings` (clave → valor,
+  quién y cuándo) y `waitlist_entries.anonymized_at`.
+- **Retención:** un solo UPDATE pone «Cliente anónimo», vacía el teléfono y
+  la nota y marca `anonymized_at`. Nunca borra filas ni cifras, nunca toca a
+  quien sigue en la fila ni a quien está en una mesa, y los datos demo solo si
+  se elige. Corre en `server.ts` un minuto después de arrancar y luego cada
+  24 h (con `unref`), y con **Aplicar ahora** en /admin. El top 10 ignora a los
+  anonimizados.
+- **Permiso `configuracion:gestionar`**, solo admin: lo comprueban las server
+  actions de `app/admin/settings-actions.ts` (validadas con Zod), y la página
+  /admin ya es solo del admin.
+- **El asistente sin crédito en OpenRouter** (o si no responde) contesta con
+  la respuesta local y una nota, en vez de un error.
+- `verify:auth` prueba todo: valores por defecto, que solo el admin cambia,
+  analítica con iniciales y luego con nombres, alias hacia la IA y la
+  retención (lo viejo sí, el demo, los que esperan, los sentados y lo
+  reciente no, sin borrar filas e idempotente).
+
 ## 15. Usuarios de prueba
 
 > **Solo para desarrollo.** El seed los crea únicamente si `NODE_ENV` no es

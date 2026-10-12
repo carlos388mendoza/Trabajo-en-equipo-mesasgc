@@ -557,7 +557,7 @@ section("Permisos de los datos de demostración");
   // Los permisos del demo no cambian los de antes: el admin sigue teniendo
   // todo y el resto, lo de siempre.
   const { ALL_ACTIONS } = await import("@/lib/auth/rbac");
-  check("los permisos del admin son los de siempre, con los del demo y meseros:gestionar", can(admin, "usuarios:gestionar") && can(admin, "catalogo:gestionar") && can(admin, "meseros:gestionar") && ALL_ACTIONS.length === 15, `${ALL_ACTIONS.length}`);
+  check("los permisos del admin son los de siempre, con los del demo, meseros:gestionar y configuracion:gestionar", can(admin, "usuarios:gestionar") && can(admin, "catalogo:gestionar") && can(admin, "meseros:gestionar") && can(admin, "configuracion:gestionar") && ALL_ACTIONS.length === 16, `${ALL_ACTIONS.length}`);
   check("el demo no le da el mapa general a un host", !can(restaurante, "mapa:ver") && !can(restaurante, "analiticas:ver"));
 }
 

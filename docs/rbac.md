@@ -43,6 +43,7 @@ Los accesos directos de la cabecera salen solo con `rapido:ver` («Modo sencillo
 |---|---|:---:|:---:|:---:|
 | `usuarios:gestionar` | Crear, editar, restablecer contraseña y desactivar usuarios (`app/admin/actions.ts`) | Sí | — | — |
 | `catalogo:gestionar` | Crear, editar y desactivar marcas y restaurantes (`app/admin/catalog-actions.ts`) | Sí | — | — |
+| `configuracion:gestionar` | Cambiar la configuración de privacidad y retención en /admin → «Configuración» (`app/admin/settings-actions.ts`; ver `docs/configuracion.md`) | Sí | — | — |
 | `editor:ver` | Ver el plano; nombre del cliente en vivo | Sí | Suyos | — |
 | `editor:guardar` | Guardar, copiar y pegar la estructura, y **elegir el plano por defecto** (`setDefaultLayoutAction`) | Sí | Suyos | — |
 | `meseros:gestionar` | Crear, editar, borrar y **activar** configuraciones de zonas de meseros (`app/restaurante/[id]/meseros/actions.ts`). Verlas solo pide `plano:ver` | Sí | Suyos | — |

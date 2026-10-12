@@ -71,6 +71,13 @@
       "when": 1790958463622,
       "tag": "0009_zonas_meseros",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1791818521750,
+      "tag": "0010_configuracion_privacidad",
+      "breakpoints": true
     }
   ]
 }

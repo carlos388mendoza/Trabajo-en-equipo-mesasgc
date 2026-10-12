@@ -183,6 +183,9 @@ export async function getAnalytics(
 
   const byCustomer = new Map<string, { count: number; totalMinutes: number }>();
   for (const entry of currentRows) {
+    // Un cliente anonimizado por la retención (`anonymizedAt`) ya no es
+    // nadie: no cuenta para el top (todos se llamarían «Cliente anónimo»).
+    if (entry.anonymizedAt) continue;
     const current = byCustomer.get(entry.customerName) ?? { count: 0, totalMinutes: 0 };
     current.count += 1;
     current.totalMinutes += waitMinutes(entry.arrivedAt, entry.seatedAt!);

@@ -295,6 +295,27 @@ export const tables = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// Configuración de la app (/admin → «Configuración»)
+// ---------------------------------------------------------------------------
+
+/**
+ * Opciones que decide la dirección (migración 0010, solo aditiva): una fila
+ * por opción, con su valor como texto. Sin fila, vale el valor por defecto
+ * seguro de `lib/settings/privacy.ts`, así que una base recién creada ya se
+ * comporta bien sin cargar nada. Solo el admin las cambia
+ * (`configuracion:gestionar`).
+ */
+export const appSettings = sqliteTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+  /** Quién la cambió. Sin FK, igual que `seatedByUserId`: es auditoría. */
+  updatedByUserId: text("updated_by_user_id"),
+});
+
+// ---------------------------------------------------------------------------
 // Lista de espera
 // ---------------------------------------------------------------------------
 
@@ -366,6 +387,14 @@ export const waitlistEntries = sqliteTable(
     isDemo: integer("is_demo", { mode: "boolean" }).notNull().default(false),
     /** Lote de demo que creó el cliente, o null si es real. */
     demoBatchId: text("demo_batch_id"),
+    /**
+     * Cuándo se borraron sus datos personales por la retención del historial
+     * (migración 0010, solo aditiva; ver `lib/settings/privacy.ts`). El nombre
+     * pasa a «Cliente anónimo» y el teléfono y la nota se vacían; la fila y
+     * sus cifras (personas, horas, mesa, mesero) se quedan para las
+     * estadísticas. Null: no se ha tocado.
+     */
+    anonymizedAt: integer("anonymized_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

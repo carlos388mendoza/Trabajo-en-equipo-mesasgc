@@ -36,15 +36,23 @@ export async function getAssistantSensitiveValues(statistics: AnalyticsData): Pr
     .filter(Boolean)))];
 }
 
-/** Construye exactamente los mensajes que se serializan y se envían a OpenRouter. */
+/**
+ * Construye exactamente los mensajes que se serializan y se envían a OpenRouter.
+ *
+ * `useAliases` es la opción «La IA usa alias en lugar de nombres de clientes»
+ * de /admin → «Configuración» (por defecto, sí). Desactivada, el top de
+ * clientes viaja con su nombre; los teléfonos, las notas y los demás nombres
+ * siguen saliendo como «[dato privado]».
+ */
 export function buildOpenRouterMessages(
   question: string,
   statistics: AnalyticsData,
   sensitiveValues: string[],
+  { useAliases = true }: { useAliases?: boolean } = {},
 ) {
   const aliases = statistics.topCustomers.map((customer, index) => ({
     name: customer.name,
-    alias: `Cliente ${index + 1}`,
+    alias: useAliases ? `Cliente ${index + 1}` : customer.name,
   }));
   const allowedTerms = [
     ...statistics.restaurantsAvailable.flatMap((restaurant) => [restaurant.name, restaurant.brand?.name ?? ""]),

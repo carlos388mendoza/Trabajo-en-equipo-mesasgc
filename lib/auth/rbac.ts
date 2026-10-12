@@ -20,6 +20,12 @@ export type Action =
   | "usuarios:gestionar"
   /** Crear, editar y desactivar marcas y restaurantes (/admin). */
   | "catalogo:gestionar"
+  /**
+   * Cambiar las opciones de privacidad y retención (/admin → «Configuración»):
+   * alias de la IA, nombres del top 10 para analítica y cuánto se guarda el
+   * historial de clientes. Solo admin.
+   */
+  | "configuracion:gestionar"
   /** Ver el editor de mesas (modo completo). */
   | "editor:ver"
   /** Guardar o copiar la estructura del local, y elegir su plano por defecto. */
@@ -61,6 +67,7 @@ export type Action =
 export const ALL_ACTIONS: readonly Action[] = [
   "usuarios:gestionar",
   "catalogo:gestionar",
+  "configuracion:gestionar",
   "editor:ver",
   "editor:guardar",
   "meseros:gestionar",
