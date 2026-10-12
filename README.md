@@ -28,6 +28,19 @@ El workflow usa Node.js 22 y `npm ci`. Las verificaciones usan bases SQLite temp
 
 La guía paso a paso para desplegar en Railway está en [`docs/despliegue.md`](docs/despliegue.md).
 
+Para el uso real:
+
+- [`docs/piloto.md`](docs/piloto.md): lista de verificación del piloto (antes,
+  durante y después), qué hacer si se cae el internet, a quién avisar y cómo
+  reportar (plantilla «Reporte del piloto» en Issues).
+- [`docs/manual-host.md`](docs/manual-host.md): manual corto para imprimir,
+  para el host en la entrada.
+- [`docs/manual-admin.md`](docs/manual-admin.md): manual del administrador.
+- [`docs/configuracion.md`](docs/configuracion.md): las 3 opciones de
+  privacidad, explicadas para la dirección.
+- [`docs/respaldos.md`](docs/respaldos.md): sacar un respaldo de producción
+  (`npm run db:respaldo`, solo lectura) y restaurarlo.
+
 ---
 
 ## 1. Stack tecnológico
@@ -788,6 +801,29 @@ fotograma es 16,7 ms en todos los casos «después»):
 | Computadora 1280×800 | 8 → 59 | 17 → 60 | 9 → 59 | 25 → 58 |
 
 («—»: de ese gesto no quedó medida de «antes».)
+
+#### Medir los FPS del editor (`npm run perf:editor`)
+
+Guion propio por Chrome DevTools Protocol, sin dependencias nuevas
+(`scripts/perf/`). Mide **solo un servidor local** (se niega a medir otra
+cosa) y entra con la contraseña del seed de desarrollo:
+
+1. `npm run perf:levantar`: compila la app en modo producción en `.next-perf`
+   y la sirve en `http://127.0.0.1:3100` sobre una **copia** de `local.db`
+   (`.perf-editor.db`), porque la medición mueve, añade y gira mesas.
+   `--rebuild` vuelve a compilar; `--db-nueva`, a copiar la base.
+2. En otra terminal, `npm run perf:editor`: abre Chrome **con ventana** (sin
+   ventana no hay sincronía con la pantalla y la cifra no se puede
+   interpretar), y en celular y tablet, de pie y acostados, y computadora,
+   mide arrastrar una mesa, mover el plano, pellizcar y seleccionar con
+   gestos táctiles reales. Repite cada uno 3 veces y da la mediana.
+   - `--throttle=4`: CPU 4 veces más lenta. `--sin-throttling`: sin ralentizar.
+   - `--device=tablet-horizontal`: un solo tamaño.
+   - `--headless`: solo para depurar el guion. Las cifras no valen, y la
+     comprobación de efecto de zoom y seleccionar puede salir «SIN EFECTO».
+3. La columna **Efecto** dice cuántas pasadas movieron algo de verdad. Si sale
+   «SIN EFECTO», la cifra de esa acción no cuenta.
+4. El resultado se guarda en `perf-resultados/` (ignorado por git).
 
 ### Giro del plano completo
 

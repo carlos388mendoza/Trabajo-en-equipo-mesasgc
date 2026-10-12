@@ -20,6 +20,7 @@
     "verify:demo": "tsx scripts/verify-demo.mts",
     "db:demo": "tsx scripts/db-demo.mts",
     "db:demo:borrar": "tsx scripts/db-demo-borrar.mts",
+    "db:respaldo": "tsx scripts/backup/exportar-turso.mts",
     "demo:host": "node scripts/demo-host.mjs",
     "db:migrate": "drizzle-kit migrate",
     "db:catalog": "tsx scripts/db-catalog.mts",
@@ -28,7 +29,9 @@
     "create-user": "tsx scripts/create-user.mts",
     "reset-password": "tsx scripts/reset-password.mts",
     "verify:auth": "tsx scripts/verify-auth.mts",
-    "verify:browser": "tsx scripts/verify-browser.mts"
+    "verify:browser": "tsx scripts/verify-browser.mts",
+    "perf:levantar": "tsx scripts/perf/levantar-perf.mts",
+    "perf:editor": "tsx scripts/perf/medir-editor.mts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
