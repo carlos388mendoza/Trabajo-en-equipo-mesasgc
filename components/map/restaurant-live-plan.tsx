@@ -11,7 +11,7 @@
 //
 // En los dos casos hay además un respaldo cada 30 s.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Radio, WifiOff } from "lucide-react";
 
 import { LivePlan, type LivePlanProps } from "@/components/map/live-plan";
@@ -28,6 +28,8 @@ type Props = {
   startEditingWaiters?: boolean;
   /** Modo inmersivo de la tablet en horizontal (ver `LivePlan`). */
   immersive?: LivePlanProps["immersive"];
+  /** `mesas:asignar`: puede liberar mesas desde el plano (una o todas). */
+  canReleaseTables?: boolean;
 };
 
 export function RestaurantLivePlan(props: Props) {
@@ -46,11 +48,24 @@ function useFallbackTick(): number {
   return tick;
 }
 
-function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startEditingWaiters, immersive }: Props) {
+function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startEditingWaiters, immersive, canReleaseTables }: Props) {
   const [events, setEvents] = useState(0);
   const tick = useFallbackTick();
-  const bump = () => setEvents((n) => n + 1);
-  const { status } = useRestaurantSocket(restaurantId, {
+  // Varios avisos seguidos (liberar todas las mesas, limpiar pendientes,
+  // agregar varios) piden el plano UNA vez, 400 ms después del último: cada
+  // petición recalcula el plano entero en el servidor y redibuja el lienzo.
+  const pending = useRef<number | null>(null);
+  const bump = () => {
+    if (pending.current !== null) window.clearTimeout(pending.current);
+    pending.current = window.setTimeout(() => {
+      pending.current = null;
+      setEvents((n) => n + 1);
+    }, 400);
+  };
+  useEffect(() => () => {
+    if (pending.current !== null) window.clearTimeout(pending.current);
+  }, []);
+  const { status, releaseTable, releaseAllTables } = useRestaurantSocket(restaurantId, {
     "table:assigned": bump,
     "table:released": bump,
     "layout:updated": bump,
@@ -70,6 +85,7 @@ function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startE
       canManageWaiters={canManageWaiters}
       startEditingWaiters={startEditingWaiters}
       immersive={immersive}
+      tableActions={canReleaseTables ? { release: releaseTable, releaseAll: releaseAllTables } : undefined}
     />
   );
 }

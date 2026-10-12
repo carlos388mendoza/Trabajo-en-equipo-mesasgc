@@ -78,6 +78,13 @@
       "when": 1791818521750,
       "tag": "0010_configuracion_privacidad",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1791822636749,
+      "tag": "0011_indices_listas",
+      "breakpoints": true
     }
   ]
 }

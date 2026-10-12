@@ -29,6 +29,10 @@ export default async function PlanoEnVivoPage({
   const plan = await getLivePlan(id, can(user, "plano:clientes", id));
   if (!plan) notFound();
 
+  // Liberar mesas (una al tocarla, o todas): restaurante en los suyos y admin
+  // en todos; analítica no. El socket lo vuelve a comprobar en cada evento.
+  const canRelease = can(user, "mesas:asignar", id);
+
   // Quien puede entrar en la room del restaurante se entera por ella; quien
   // no (analitica, que no ve nombres), por los contadores de la sala overview.
   const live = can(user, "editor:ver", id) || can(user, "rapido:ver", id) ? "restaurante" : "overview";
@@ -41,8 +45,9 @@ export default async function PlanoEnVivoPage({
         <h1 className="text-2xl font-bold">{plan.restaurant.name}</h1>
         <p className="text-sm text-app-muted">
           Plano en vivo{plan.restaurant.brand ? ` · ${plan.restaurant.brand.name}` : ""}
-          {plan.restaurant.city ? ` · ${plan.restaurant.city}` : ""}. Solo lectura: las mesas se sientan
-          desde el modo sencillo. Cada mesa lleva el color y el nombre de su mesero.
+          {plan.restaurant.city ? ` · ${plan.restaurant.city}` : ""}. Las mesas se sientan desde el modo sencillo
+          {canRelease ? "; aquí puedes liberar una mesa ocupada tocándola" : " (aquí solo se mira)"}. Cada mesa lleva el color
+          y el nombre de su mesero.
         </p>
       </div>
       <div className="min-h-0 flex-1">
@@ -54,6 +59,7 @@ export default async function PlanoEnVivoPage({
           // Analítica ve las zonas de meseros, pero no las cambia.
           canManageWaiters={can(user, "meseros:gestionar", id)}
           startEditingWaiters={meseros === "editar"}
+          canReleaseTables={canRelease}
           // La lista de espera del modo inmersivo es el modo sencillo: solo
           // con `rapido:ver` (analítica no lo tiene, así que no ve el botón).
           immersive={{

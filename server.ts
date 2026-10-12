@@ -63,14 +63,19 @@ async function main() {
   // anonimiza (nombre, teléfono y nota), nunca borra filas ni cifras; ver
   // `lib/settings/privacy.ts`. Si falla, se apunta en el log y se reintenta al
   // día siguiente: la app sigue igual. `unref`: no impide cerrar el proceso.
-  const { anonymizeExpiredEntries } = await import("@/lib/settings/privacy");
-  const runRetention = () => {
-    anonymizeExpiredEntries()
-      .then((run) => console.log(`> Retención (${run.retention}): ${run.anonymized} cliente(s) anonimizado(s)`))
-      .catch((err) => console.error("[retención] no se pudo aplicar", err));
-  };
-  setTimeout(runRetention, 60_000).unref();
-  setInterval(runRetention, 24 * 60 * 60 * 1000).unref();
+  // `RETENTION_JOB=off` solo lo usan las pruebas que levantan este servidor
+  // (`verify:auth`, `verify:browser`): escriben en la misma base SQLite a la
+  // vez y el UPDATE de la retención la bloquearía. Ellas la prueban llamándola.
+  if (process.env.RETENTION_JOB !== "off") {
+    const { anonymizeExpiredEntries } = await import("@/lib/settings/privacy");
+    const runRetention = () => {
+      anonymizeExpiredEntries()
+        .then((run) => console.log(`> Retención (${run.retention}): ${run.anonymized} cliente(s) anonimizado(s)`))
+        .catch((err) => console.error("[retención] no se pudo aplicar", err));
+    };
+    setTimeout(runRetention, 60_000).unref();
+    setInterval(runRetention, 24 * 60 * 60 * 1000).unref();
+  }
 
   // Railway manda SIGTERM al redesplegar: cerrar los sockets deja que los
   // clientes reconecten al servidor nuevo en vez de esperar un timeout.

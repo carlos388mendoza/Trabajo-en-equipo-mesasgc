@@ -617,6 +617,62 @@ section("Ver clientes: volver a la espera");
   ]));
 }
 
+{
+  // «Ver clientes» paginado y filtrado en el servidor, y la lista ligera del
+  // modo sencillo (solo lo activo, no el historial).
+  const { queryWaitlistCards } = await import("@/lib/waitlist/cards");
+  const { listQuickModeEntries } = await import("@/lib/waitlist/active");
+  const { and, isNull, like } = await import("drizzle-orm");
+  const { hondurasMidnightUtc, hondurasToday, addCalendarDays } = await import("@/lib/time/honduras");
+  const now = new Date();
+  const today = hondurasToday(now);
+  const at = (daysAgo: number, minute = 0) => new Date(hondurasMidnightUtc(addCalendarDays(today, -daysAgo)).getTime() + 10 * 3_600_000 + minute * 60_000);
+  const pag = Array.from({ length: 60 }, (_, i) => ({ ...cliente(`pag-${String(i).padStart(2, "0")}`, REST, "ausente"), arrivedAt: at(0, i) }));
+  await db.insert(waitlistEntries).values([
+    ...pag,
+    { ...cliente("pag-viejo-sentado", REST, "sentado"), arrivedAt: at(40), seatedAt: at(40) },
+    { ...cliente("pag-viejo-listo", REST, "listo"), arrivedAt: at(40) },
+    { ...cliente("pag-viejo-ausente", REST, "ausente"), arrivedAt: at(40) },
+    { ...cliente("pag-viejo-espera", REST, "esperando"), arrivedAt: at(40) },
+    { ...cliente("pag-25dias", REST, "ausente"), arrivedAt: at(25) },
+    { ...cliente("pag-José", REST, "ausente"), customerName: "José Núñez", arrivedAt: at(0, 90) },
+  ]);
+  const [libre] = await db.select({ id: tables.id }).from(tables).where(and(eq(tables.restaurantId, REST), isNull(tables.currentEntryId))).limit(1);
+  if (libre) await db.update(tables).set({ currentEntryId: "pag-viejo-sentado", status: "ocupada" }).where(eq(tables.id, libre.id));
+  const ids = (rows: { id: string }[]) => rows.map((r) => r.id).filter((id) => id.startsWith("pag-"));
+
+  const p1 = await queryWaitlistCards(REST, { range: "hoy", filter: "todas" }, now);
+  check("«Ver clientes» trae 50 por página y dice si hay más", p1.entries.length === 50 && p1.next !== null, `${p1.entries.length}, ${p1.next}`);
+  const p2 = await queryWaitlistCards(REST, { range: "hoy", filter: "todas", before: (await import("@/lib/waitlist/card-options")).decodeCardCursor(p1.next) }, now);
+  const juntos = [...p1.entries, ...p2.entries].map((e) => e.id);
+  check("  «Ver más» trae el resto, sin repetir ninguno", new Set(juntos).size === juntos.length && juntos.length === p1.counts.todas, `${juntos.length} de ${p1.counts.todas}`);
+  check("  la más reciente primero", p1.entries[0].arrivedAt >= p1.entries[49].arrivedAt);
+  check(
+    "en «hoy» salen siempre los que esperan, los listos y los que ocupan mesa, aunque sean de hace 40 días",
+    ["pag-viejo-sentado", "pag-viejo-listo", "pag-viejo-espera"].every((id) => juntos.includes(id)) && !juntos.includes("pag-viejo-ausente"),
+    JSON.stringify(ids([...p1.entries, ...p2.entries]).filter((id) => id.includes("viejo"))),
+  );
+  const ocupando = await queryWaitlistCards(REST, { range: "hoy", filter: "ocupando" }, now);
+  check("«Ocupando mesa» trae a quien ocupa una mesa, aunque sea viejo", !libre || (ids(ocupando.entries).includes("pag-viejo-sentado") && ocupando.counts.ocupando >= 1), JSON.stringify(ids(ocupando.entries)));
+  const mes = await queryWaitlistCards(REST, { range: "30dias", filter: "ausente", limit: 100 }, now);
+  check("«Últimos 30 días» llega a 25 días atrás, no a 40", ids(mes.entries).includes("pag-25dias") && !ids(mes.entries).includes("pag-viejo-ausente"));
+  const todos = await queryWaitlistCards(REST, { range: "todos", filter: "ausente", limit: 100 }, now);
+  check("«Todos» llega a lo de hace 40 días", ids(todos.entries).includes("pag-viejo-ausente"));
+  const jose = await queryWaitlistCards(REST, { range: "hoy", filter: "todas", query: "jose nunez" }, now);
+  check("buscar «jose nunez» encuentra a «José Núñez» (sin tildes ni mayúsculas)", JSON.stringify(ids(jose.entries)) === JSON.stringify(["pag-José"]), JSON.stringify(ids(jose.entries)));
+  check("  y los conteos son los de la búsqueda", jose.counts.todas === 1 && jose.counts.ausente === 1, JSON.stringify(jose.counts));
+  const ajenos = await queryWaitlistCards(REST_2, { range: "todos", filter: "todas", limit: 100 }, now);
+  check("  ninguno de otro restaurante", ids(ajenos.entries).length === 0);
+
+  const sencillo = ids(await listQuickModeEntries(REST, now));
+  check("el modo sencillo carga lo activo y lo de hoy", ["pag-viejo-espera", "pag-viejo-listo", "pag-00"].every((id) => sencillo.includes(id)));
+  check("  y a quien ocupa una mesa, aunque sea viejo", !libre || sencillo.includes("pag-viejo-sentado"));
+  check("  pero no el historial (ausentes de otros días)", !sencillo.includes("pag-viejo-ausente") && !sencillo.includes("pag-25dias"), JSON.stringify(sencillo.filter((id) => id.includes("viejo") || id.includes("25"))));
+
+  if (libre) await db.update(tables).set({ currentEntryId: null, status: "libre" }).where(eq(tables.id, libre.id));
+  await db.delete(waitlistEntries).where(like(waitlistEntries.id, "pag-%"));
+}
+
 // ---------------------------------------------------------------------------
 // «Ver clientes»: eliminar un cliente de la fila
 // ---------------------------------------------------------------------------
@@ -1382,6 +1438,98 @@ section("Zonas de meseros: quién atiende al sentar, y el cambio de configuraci�
       await ask(hostB, "table:release", { tableId, entryId });
     }
   }
+}
+
+section("Liberar y limpiar: acciones en grupo, eliminar sentados, liberar todas y deshacer");
+
+{
+  const { and: y, eq: igual, inArray: entre, sql } = await import("drizzle-orm");
+  const H = 3_600_000;
+  const hace = (horas: number) => new Date(Date.now() - horas * H);
+  await ask(hostA, "restaurant:join", { restaurantId: REST });
+  await ask(hostB, "restaurant:join", { restaurantId: REST });
+  await db.insert(tables).values([mesa("lim-1"), mesa("lim-2"), mesa("lim-3"), mesa("lim-4"), mesa("lim-ajena", REST_2, "layout-2")]);
+  await db.insert(waitlistEntries).values([
+    { ...cliente("lim-espera-vieja"), arrivedAt: hace(72) },
+    { ...cliente("lim-listo-viejo", REST, "listo"), arrivedAt: hace(48) },
+    { ...cliente("lim-espera-nueva"), arrivedAt: hace(1) },
+    { ...cliente("lim-sentado-viejo", REST, "sentado"), arrivedAt: hace(241), seatedAt: hace(240) },
+    { ...cliente("lim-sentado-nuevo", REST, "sentado"), arrivedAt: hace(2), seatedAt: hace(1) },
+    { ...cliente("lim-ajeno", REST_2, "sentado"), arrivedAt: hace(240), seatedAt: hace(240) },
+  ]);
+  await db.update(tables).set({ currentEntryId: "lim-sentado-viejo", status: "ocupada" }).where(igual(tables.id, "lim-1"));
+  await db.update(tables).set({ currentEntryId: "lim-sentado-nuevo", status: "ocupada" }).where(igual(tables.id, "lim-2"));
+  await db.update(tables).set({ currentEntryId: "lim-ajeno", status: "ocupada" }).where(igual(tables.id, "lim-ajena"));
+  const estado = async (id: string) => (await db.select({ s: waitlistEntries.status }).from(waitlistEntries).where(igual(waitlistEntries.id, id)))[0]?.s ?? null;
+  const ocupa = async (tableId: string) => (await db.select({ e: tables.currentEntryId }).from(tables).where(igual(tables.id, tableId)))[0]?.e ?? null;
+  const filas = async () => (await db.select({ id: waitlistEntries.id }).from(waitlistEntries)).length;
+
+  // Permisos: analítica no opera; un host de otro restaurante no toca este.
+  check("analítica no puede limpiar (no entra en la room)", !(await ask(analitica, "waitlist:cleanup", { hours: 24 })).ok);
+  check("  ni liberar todas las mesas", !(await ask(analitica, "tables:release-all", { confirm: "LIBERAR" })).ok);
+  check("  ni acciones en grupo", !(await ask(analitica, "waitlist:bulk", { action: "eliminar", entryIds: ["lim-espera-vieja"] })).ok);
+  await ask(otro, "restaurant:join", { restaurantId: REST_2 });
+  const ajena = await ask(otro, "waitlist:bulk", { action: "eliminar", entryIds: ["lim-espera-vieja", "lim-sentado-viejo"] });
+  // (Ese host se desactivó más arriba en esta prueba: según el momento, el
+  // servidor lo rechaza o actúa solo en SU restaurante. En los dos casos, aquí
+  // no cambia nada, que es lo que importa.)
+  check("un host de otro restaurante no toca los clientes de este", (await estado("lim-espera-vieja")) === "esperando" && (await ocupa("lim-1")) === "lim-sentado-viejo", JSON.stringify(ajena));
+
+  // «Limpiar pendientes antiguos» (24 h): primero cuenta, luego aplica.
+  const preview = (await ask(hostA, "waitlist:cleanup", { hours: 24, preview: true })) as AnyAck & { preview?: { absent: number; tables: number } };
+  check("limpiar (24 h) cuenta antes: 2 en la fila y 1 mesa", preview.ok && preview.preview?.absent === 2 && preview.preview?.tables === 1, JSON.stringify(preview));
+  check("  contar no cambia nada", (await estado("lim-espera-vieja")) === "esperando" && (await ocupa("lim-1")) === "lim-sentado-viejo");
+  check("  un plazo inventado se rechaza", !(await ask(hostA, "waitlist:cleanup", { hours: 5 })).ok);
+  const liberadasB = counter(hostB, "table:released");
+  const cambiosB = counter(hostB, "waitlist:changed");
+  const antes = await filas();
+  const limpio = (await ask(hostA, "waitlist:cleanup", { hours: 24 })) as AnyAck & { changed?: number; released?: number; actionId?: string };
+  await settle();
+  check("limpiar marca ausentes a los viejos de la fila y libera la mesa vieja", limpio.ok && limpio.changed === 2 && limpio.released === 1, JSON.stringify(limpio));
+  check("  los viejos quedan ausentes; el nuevo sigue en la fila", (await estado("lim-espera-vieja")) === "ausente" && (await estado("lim-listo-viejo")) === "ausente" && (await estado("lim-espera-nueva")) === "esperando");
+  check("  la mesa vieja quedó libre; la nueva sigue ocupada", (await ocupa("lim-1")) === null && (await ocupa("lim-2")) === "lim-sentado-nuevo");
+  check("  no toca otro restaurante", (await ocupa("lim-ajena")) === "lim-ajeno");
+  check("  no borra ninguna fila (las cifras se quedan)", (await filas()) === antes);
+  check("  la otra tablet se entera en vivo", liberadasB.length >= 1 && cambiosB.length >= 2, `${liberadasB.length} mesas, ${cambiosB.length} cambios`);
+  const deshacer = await ask(hostB, "waitlist:undo", { actionId: limpio.actionId });
+  await settle();
+  check("deshacer la limpieza (desde otra tablet) devuelve todo", deshacer.ok && (await estado("lim-espera-vieja")) === "esperando" && (await estado("lim-listo-viejo")) === "listo" && (await ocupa("lim-1")) === "lim-sentado-viejo", JSON.stringify(deshacer));
+
+  // Acciones en grupo.
+  const ausentes = (await ask(hostA, "waitlist:bulk", { action: "ausente", entryIds: ["lim-espera-vieja", "lim-espera-nueva", "lim-sentado-nuevo"] })) as AnyAck & { changed?: number };
+  check("«Marcar ausente» en grupo: solo los que siguen en la fila", ausentes.ok && ausentes.changed === 2 && (await estado("lim-sentado-nuevo")) === "sentado", JSON.stringify(ausentes));
+  await ask(hostA, "waitlist:undo", { actionId: (ausentes as { actionId?: string }).actionId });
+  const liberar = (await ask(hostA, "waitlist:bulk", { action: "liberar", entryIds: ["lim-sentado-viejo", "lim-sentado-nuevo", "lim-espera-vieja"] })) as AnyAck & { released?: number };
+  check("«Liberar mesas» en grupo libera las dos mesas", liberar.ok && liberar.released === 2 && (await ocupa("lim-1")) === null && (await ocupa("lim-2")) === null);
+  check("  y los clientes siguen en el historial como sentados", (await estado("lim-sentado-viejo")) === "sentado" && (await estado("lim-sentado-nuevo")) === "sentado");
+  await ask(hostA, "waitlist:undo", { actionId: (liberar as { actionId?: string }).actionId });
+  check("  deshacer vuelve a ocupar las mesas", (await ocupa("lim-1")) === "lim-sentado-viejo" && (await ocupa("lim-2")) === "lim-sentado-nuevo");
+
+  // Eliminar a uno sentado: libera y elimina en una sola acción.
+  const sinMesa = await ask(hostA, "waitlist:delete", { entryId: "lim-sentado-viejo" });
+  check("eliminar sin liberar sigue avisando que tiene mesa", !sinMesa.ok && String(sinMesa.error).includes("mesa"));
+  const conMesa = await ask(hostA, "waitlist:delete", { entryId: "lim-sentado-viejo", releaseTable: true });
+  check("eliminar a uno sentado libera su mesa y lo elimina", conMesa.ok && (await ocupa("lim-1")) === null && (await estado("lim-sentado-viejo")) === null, JSON.stringify(conMesa));
+  await ask(hostA, "waitlist:undo", { actionId: (conMesa as { actionId?: string }).actionId });
+  check("  deshacer lo devuelve a su mesa", (await estado("lim-sentado-viejo")) === "sentado" && (await ocupa("lim-1")) === "lim-sentado-viejo");
+
+  const eliminar = (await ask(hostA, "waitlist:bulk", { action: "eliminar", entryIds: ["lim-espera-vieja", "lim-sentado-nuevo"] })) as AnyAck & { removed?: number; released?: number };
+  check("«Eliminar seleccionados» quita a los dos y libera la mesa del sentado", eliminar.ok && eliminar.removed === 2 && eliminar.released === 1 && (await ocupa("lim-2")) === null);
+  await ask(hostA, "waitlist:undo", { actionId: (eliminar as { actionId?: string }).actionId });
+  check("  deshacer los devuelve (y la mesa)", (await estado("lim-espera-vieja")) === "esperando" && (await ocupa("lim-2")) === "lim-sentado-nuevo");
+
+  // «Liberar todas las mesas»: hay que escribir LIBERAR.
+  check("liberar todas sin escribir LIBERAR se rechaza", !(await ask(hostA, "tables:release-all", { confirm: "liberar" })).ok && (await ocupa("lim-1")) === "lim-sentado-viejo");
+  const todas = (await ask(hostA, "tables:release-all", { confirm: "LIBERAR" })) as AnyAck & { released?: number; actionId?: string };
+  const ocupadasRest = await db.select({ id: tables.id }).from(tables).where(y(igual(tables.restaurantId, REST), sql`${tables.currentEntryId} is not null`));
+  check("«Liberar todas las mesas» deja libres todas las de este restaurante", todas.ok && ocupadasRest.length === 0 && (todas.released ?? 0) >= 2, JSON.stringify(todas));
+  check("  y no toca las de otro restaurante", (await ocupa("lim-ajena")) === "lim-ajeno");
+  await ask(hostA, "waitlist:undo", { actionId: todas.actionId });
+  check("  deshacer las vuelve a ocupar", (await ocupa("lim-1")) === "lim-sentado-viejo" && (await ocupa("lim-2")) === "lim-sentado-nuevo");
+
+  // Limpieza de la prueba.
+  await db.update(tables).set({ currentEntryId: null, status: "libre" }).where(entre(tables.id, ["lim-1", "lim-2", "lim-3", "lim-4", "lim-ajena"]));
+  await db.delete(waitlistEntries).where(entre(waitlistEntries.id, ["lim-espera-vieja", "lim-listo-viejo", "lim-espera-nueva", "lim-sentado-viejo", "lim-sentado-nuevo", "lim-ajeno"]));
 }
 
 hostA.close();
