@@ -11,7 +11,7 @@
 //
 // En los dos casos hay además un respaldo cada 30 s.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Radio, WifiOff } from "lucide-react";
 
 import { LivePlan, type LivePlanProps } from "@/components/map/live-plan";
@@ -49,7 +49,20 @@ function useFallbackTick(): number {
 function ViaRestaurantRoom({ restaurantId, initialPlan, canManageWaiters, startEditingWaiters, immersive }: Props) {
   const [events, setEvents] = useState(0);
   const tick = useFallbackTick();
-  const bump = () => setEvents((n) => n + 1);
+  // Varios avisos seguidos (liberar todas las mesas, limpiar pendientes,
+  // agregar varios) piden el plano UNA vez, 400 ms después del último: cada
+  // petición recalcula el plano entero en el servidor y redibuja el lienzo.
+  const pending = useRef<number | null>(null);
+  const bump = () => {
+    if (pending.current !== null) window.clearTimeout(pending.current);
+    pending.current = window.setTimeout(() => {
+      pending.current = null;
+      setEvents((n) => n + 1);
+    }, 400);
+  };
+  useEffect(() => () => {
+    if (pending.current !== null) window.clearTimeout(pending.current);
+  }, []);
   const { status } = useRestaurantSocket(restaurantId, {
     "table:assigned": bump,
     "table:released": bump,
