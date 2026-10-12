@@ -46,6 +46,9 @@ const env = {
   TURSO_DATABASE_URL: `file:${DB_FILE}`,
   TURSO_AUTH_TOKEN: "",
   BETTER_AUTH_SECRET: "verify-auth-secreto-solo-para-esta-prueba-000",
+  // Sin la retención diaria de `server.ts`: escribiría en esta base a la vez
+  // que la prueba (SQLite: «database is locked»). Se prueba aparte, llamándola.
+  RETENTION_JOB: "off",
   BETTER_AUTH_URL: BASE,
   PORT: String(port),
   NEXT_DIST_DIR: DIST_DIR,
