@@ -1,6 +1,7 @@
 // Textos y colores compartidos por las cartas del modo rápido: el montón, el
 // abanico y «Ver clientes». Siempre con singular y plural.
 
+import { formatDuration } from "@/lib/time/duration";
 import { HONDURAS_TIME_ZONE, hondurasDateKey } from "@/lib/time/honduras";
 
 export function plural(count: number, one: string, many: string): string {
@@ -11,8 +12,12 @@ export function people(count: number): string {
   return plural(count, "persona", "personas");
 }
 
+/**
+ * «5 minutos» hasta la hora; después, en corto y legible: «1 h 20 min»,
+ * «3 d» (un cliente olvidado no puede decir «11136 minutos»).
+ */
 export function minutes(count: number): string {
-  return plural(count, "minuto", "minutos");
+  return count < 60 ? plural(count, "minuto", "minutos") : formatDuration(count);
 }
 
 /** Minutos enteros entre dos instantes, nunca negativos. */

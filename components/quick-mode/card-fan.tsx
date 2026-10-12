@@ -17,6 +17,7 @@ import { Clock3, UsersRound, X } from "lucide-react";
 
 import { DemoTag } from "@/components/quick-mode/demo-tag";
 import { minutes, minutesBetween, people, waitColor } from "@/components/quick-mode/format";
+import { formatDuration } from "@/lib/time/duration";
 
 export const FAN_LIMIT = 7;
 
@@ -220,7 +221,7 @@ function FullFace({ guest, waited, position, maxWidth }: FaceProps & { maxWidth?
       </span>
       <span className={`mt-1 inline-flex items-center gap-1.5 text-sm font-semibold ${waitColor(waited)}`}>
         <Clock3 aria-hidden size={15} className="shrink-0" />
-        {waited} min
+        {formatDuration(waited)}
       </span>
     </span>
   );

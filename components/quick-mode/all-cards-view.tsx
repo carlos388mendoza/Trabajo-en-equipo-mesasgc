@@ -419,7 +419,10 @@ function AllCardsContent({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    // En una pantalla baja (celular acostado) los filtros solos llenan el
+    // panel y la lista no se vería: ahí se desplaza el panel entero, filtros
+    // y lista juntos (la barra de los seleccionados sigue pegada arriba).
+    <div className="flex min-h-0 flex-1 flex-col [@media(max-height:500px)]:overflow-y-auto [@media(max-height:500px)]:overscroll-contain">
       {/* Agarradera, cabecera y filtros: la zona que arrastra el panel hacia
           arriba o hacia abajo (`touch-none`: el dedo mueve el panel, no la
           página). Sus botones y el buscador se siguen pudiendo tocar. La lista
@@ -528,7 +531,7 @@ function AllCardsContent({
       </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 sm:px-7">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 [@media(max-height:500px)]:flex-none [@media(max-height:500px)]:overflow-visible pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 sm:px-7">
         {error && (
           <p role="alert" className="mb-4 rounded-xl border border-estado-ocupada/40 px-4 py-3 text-sm text-panel-text">
             {error}
