@@ -48,13 +48,37 @@ La carta de arriba es **el siguiente en la fila**.
 ### Ver clientes
 
 1. Toca **Ver clientes** (arriba).
-2. Ves a todos los de **hoy** (o **Últimos 7 días**): en espera, listos,
-   ausentes y sentados.
+2. Ves a todos los de **hoy**. Arriba cambias a **Últimos 7 días**,
+   **Últimos 30 días** o **Todos**. Los que siguen esperando y los que ocupan
+   una mesa salen siempre, aunque lleven días.
+   Filtra por estado: **En espera**, **Listo**, **Ausente** u **Ocupando
+   mesa**. Salen de 50 en 50: abajo, **Ver más**.
 3. Arriba están los **meseros** con su color. Toca uno para ver solo sus
    clientes.
 4. Desde ahí: **Listo**, **Ausente**, **Volver a la espera**, **Sentar**,
-   **Liberar mesa** o **Eliminar** (pide confirmar).
+   **Liberar mesa** o **Eliminar** (pide confirmar). Eliminar a uno que está
+   sentado también libera su mesa: «Se liberará la Mesa 3 y se eliminará el
+   cliente».
 5. Para cerrar, **baja el panel** arrastrándolo, o toca fuera.
+
+### Varios a la vez
+
+1. Marca la **casilla** de cada cliente (o **Seleccionar los N que se ven**).
+2. Abajo sale la barra: **Liberar mesas**, **Marcar ausente** o **Eliminar
+   seleccionados**. Pide confirmar y dice cuántos.
+3. Si te equivocaste: **Deshacer** (arriba).
+
+### Limpiar lo viejo (mesas olvidadas)
+
+1. En **Ver clientes**, toca **Limpiar pendientes antiguos**.
+2. Elige **Más de 12 horas**, **24 horas** o **7 días**.
+3. Te dice cuántos clientes quedarán **ausentes** (los que siguen en la fila o
+   listos) y cuántas **mesas se liberan** (sentados hace más de eso).
+4. **Aceptar**. Si no era eso: **Deshacer**.
+
+**¿Ausente, liberar o eliminar?** Marcar ausente y liberar **guardan las
+cifras** de las estadísticas. **Eliminar las quita**: úsalo solo para errores
+(un cliente agregado dos veces, un nombre de prueba).
 
 ### Sentar y liberar
 
@@ -78,6 +102,15 @@ libre, rojo = ocupada. Cada mesa lleva el color y el nombre de su mesero.
 2. Se abre la lista: agrega, avisa, sienta y libera igual que en el modo
    sencillo. El plano cambia solo.
 3. Ciérrala con la **X** o con **Esc**.
+
+### Liberar mesas desde el plano
+
+1. **Toca una mesa roja** (ocupada): dice quién está y desde hace cuánto.
+2. Toca **Liberar mesa**.
+3. Para dejar **todas** libres (al cerrar, o si quedaron mesas olvidadas):
+   **Liberar todas las mesas**, escribe **LIBERAR** y confirma. En el plano a
+   pantalla completa es el botón de la puerta, arriba.
+4. Se puede **Deshacer** desde el modo sencillo.
 
 ### Cambiar cuántos meseros hay
 
