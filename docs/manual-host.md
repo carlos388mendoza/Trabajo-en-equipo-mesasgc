@@ -56,17 +56,38 @@ La carta de arriba es **el siguiente en la fila**.
 3. Arriba están los **meseros** con su color. Toca uno para ver solo sus
    clientes.
 4. Desde ahí: **Listo**, **Ausente**, **Volver a la espera**, **Sentar**,
-   **Liberar mesa** o **Eliminar** (pide confirmar). Eliminar a uno que está
-   sentado también libera su mesa: «Se liberará la Mesa 3 y se eliminará el
-   cliente».
+   **Liberar mesa** o **Eliminar** (pide confirmar).
 5. Para cerrar, **baja el panel** arrastrándolo, o toca fuera.
+
+### Eliminar a un cliente: primero libera su mesa
+
+Un cliente que está en una mesa **no se elimina** hasta que alguien libera
+la mesa a propósito. Su botón **Eliminar** se ve atenuado y dice «Libera la
+mesa primero».
+
+1. Toca **Eliminar** en el cliente.
+2. Si está en una mesa, sale: «Este cliente está en la Mesa 3. Primero libera
+   la mesa para poder eliminarlo.» Toca **Liberar mesa** (o **Cancelar**).
+3. Sale «Mesa 3 liberada. Ya puedes eliminar al cliente.»
+4. Toca otra vez **Eliminar** → **Aceptar**.
+5. Si no tenía mesa, se salta los pasos 2 y 3: **Eliminar** → **Aceptar**.
+
+Las dos cosas se pueden **Deshacer** (arriba), una cada vez: deshacer
+«Liberar mesa» lo vuelve a sentar en la misma mesa si sigue libre.
 
 ### Varios a la vez
 
 1. Marca la **casilla** de cada cliente (o **Seleccionar los N que se ven**).
 2. Abajo sale la barra: **Liberar mesas**, **Marcar ausente** o **Eliminar
    seleccionados**. Pide confirmar y dice cuántos.
-3. Si te equivocaste: **Deshacer** (arriba).
+3. Si entre los elegidos hay clientes en una mesa, **Eliminar seleccionados**
+   no elimina a nadie y dice: «3 de los 5 clientes seleccionados están en una
+   mesa (Mesa 1, Mesa 4, Bancada 1). Primero libera sus mesas.» Elige:
+   - **Liberar sus mesas**: las libera y deja la selección; luego toca otra
+     vez **Eliminar seleccionados**.
+   - **Eliminar solo los 2 sin mesa**: elimina a los demás.
+   - **Cancelar**.
+4. Si te equivocaste: **Deshacer** (arriba).
 
 ### Limpiar lo viejo (mesas olvidadas)
 
@@ -93,8 +114,30 @@ cifras** de las estadísticas. **Eliminar las quita**: úsalo solo para errores
 
 ## 2. Plano en vivo
 
-Toca **Plano en vivo** (dentro del restaurante). Ves todas las mesas: verde =
-libre, rojo = ocupada. Cada mesa lleva el color y el nombre de su mesero.
+Toca **Plano en vivo** (dentro del restaurante). Cada mesa dice lo
+esencial, en grande:
+
+- **blanca** (u oscura de noche) = libre, **roja** = ocupada, **gris** =
+  reservada;
+- su **nombre** («Mesa 3»); si está ocupada y hay sitio, el cliente en corto
+  y sus personas («Ana T. · 4») y cuánto lleva («12 min», «1 h 20 min»,
+  «2 d»);
+- el **borde** y la **inicial** del color de su mesero.
+
+Si alejas el zoom y ya no cabe, queda solo el nombre de la mesa (o «M3»).
+Acerca con dos dedos y vuelven el cliente y el tiempo. Abajo a la derecha,
+**Leyenda** explica los colores.
+
+### La ficha de la mesa
+
+**Toca una mesa** y se abre su ficha: estado, mesero, cliente, personas, hora
+de llegada, cuánto lleva y la nota.
+
+- **Mesa libre:** **Sentar** → elige a quién de la fila.
+- **Mesa ocupada:** **Liberar mesa**. Para eliminar al cliente, primero
+  liberar: después de **Liberar mesa** sale «Mesa 3 liberada. Ya puedes
+  eliminar al cliente.» y **Eliminar cliente** → **Aceptar**.
+- Ciérrala con la **X** o con **Esc**.
 
 ### Lista de espera desde el plano
 
@@ -103,14 +146,14 @@ libre, rojo = ocupada. Cada mesa lleva el color y el nombre de su mesero.
    sencillo. El plano cambia solo.
 3. Ciérrala con la **X** o con **Esc**.
 
-### Liberar mesas desde el plano
+### Liberar todas las mesas
 
-1. **Toca una mesa roja** (ocupada): dice quién está y desde hace cuánto.
-2. Toca **Liberar mesa**.
-3. Para dejar **todas** libres (al cerrar, o si quedaron mesas olvidadas):
-   **Liberar todas las mesas**, escribe **LIBERAR** y confirma. En el plano a
-   pantalla completa es el botón de la puerta, arriba.
-4. Se puede **Deshacer** desde el modo sencillo.
+1. Arriba a la derecha, toca **Más** → **Liberar todas las mesas**.
+2. Escribe **LIBERAR** y confirma.
+3. Se puede **Deshacer** desde el modo sencillo.
+
+En **Más** también están **Editar zonas** y la nueva configuración de
+meseros (y, en el celular, **Meseros activos**).
 
 ### Cambiar cuántos meseros hay
 
@@ -122,8 +165,8 @@ libre, rojo = ocupada. Cada mesa lleva el color y el nombre de su mesero.
 
 1. **Acuesta la tablet** (horizontal): el plano ocupa toda la pantalla.
 2. En el menú de Opera, activa la **pantalla completa**.
-3. Arriba quedan los botones: **Lista**, **[−] meseros [+]** y **contraer**
-   (vuelve a la vista normal).
+3. Arriba queda una barra pequeña: **Lista**, las zonas, **[−] meseros [+]**
+   y **Más** (ahí está **Volver a la vista normal**).
 4. Pon la tablet **de pie** para volver a la vista normal.
 
 ---
