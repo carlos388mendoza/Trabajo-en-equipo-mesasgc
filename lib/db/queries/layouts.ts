@@ -14,7 +14,7 @@ import {
   tables,
   waitlistEntries,
 } from "@/lib/db/schema";
-import type { ElementTypeInfo, LayoutPayload, LayoutSummary } from "@/lib/layout/types";
+import type { ElementTypeInfo, LayoutPayload, LayoutSummary, OccupantDetail } from "@/lib/layout/types";
 
 /** Catálogo completo de tipos: alimenta la paleta del editor. */
 export async function getElementTypes(): Promise<ElementTypeInfo[]> {
@@ -71,7 +71,11 @@ export async function getLayout(
     // que lleva. Es solo lectura: el guardado del editor no lo manda.
     with: {
       tables: {
-        with: { currentEntry: { columns: { customerName: true, seatedAt: true } } },
+        with: {
+          currentEntry: {
+            columns: { customerName: true, seatedAt: true, partySize: true, arrivedAt: true, notes: true, waiterName: true },
+          },
+        },
       },
     },
   });
@@ -104,12 +108,18 @@ export async function getLayout(
 }
 
 function occupantOf(
-  entry: { customerName: string; seatedAt: Date | null } | null | undefined,
-): { occupantName: string | null; seatedAt: number | null } {
+  entry:
+    | { customerName: string; seatedAt: Date | null; partySize: number; arrivedAt: Date; notes: string | null; waiterName: string | null }
+    | null
+    | undefined,
+): { occupantName: string | null; seatedAt: number | null; occupantDetail: OccupantDetail | null } {
   return {
     occupantName: entry?.customerName ?? null,
     // En milisegundos: los datos que van al Client Component son JSON plano.
     seatedAt: entry?.seatedAt ? entry.seatedAt.getTime() : null,
+    occupantDetail: entry
+      ? { partySize: entry.partySize, arrivedAt: entry.arrivedAt.getTime(), notes: entry.notes, waiterName: entry.waiterName }
+      : null,
   };
 }
 

@@ -77,8 +77,16 @@ los suyos (manual del host, «Ver clientes» y «Plano en vivo»):
    (12 h, 24 h o 7 días) para cerrar lo viejo de una vez.
 4. **Eliminar** solo para errores: borra al cliente de las estadísticas.
    Marcar ausente y liberar mesa guardan las cifras.
-5. En el **Plano en vivo**: toca una mesa ocupada → **Liberar mesa**, o
-   **Liberar todas las mesas** (escribe LIBERAR).
+5. **Primero se libera la mesa, luego se elimina.** A un cliente que está
+   en una mesa no se le puede eliminar: «Este cliente está en la Mesa 3.
+   Primero libera la mesa para poder eliminarlo.» → **Liberar mesa** →
+   **Eliminar** → **Aceptar**. En grupo: «Liberar sus mesas» o «Eliminar solo
+   los N sin mesa». El servidor lo exige también (no se puede saltar).
+6. En el **Plano en vivo**: toca una mesa → su ficha (**Sentar**, **Liberar
+   mesa**, y después **Eliminar cliente**). **Más** → **Liberar todas las
+   mesas** (escribe LIBERAR).
+7. **Deshacer** vale para la última acción del restaurante, también si el
+   servidor se reinició hace menos de 10 minutos.
 
 Analítica no ve estos botones y el servidor se lo rechaza.
 

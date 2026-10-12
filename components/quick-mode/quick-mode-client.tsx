@@ -618,21 +618,6 @@ export function QuickModeClient({ restaurantId, userId }: { restaurantId: string
     }
   }
 
-  /** Eliminar a un cliente sentado: primero se libera su mesa y luego se elimina. */
-  async function deleteGuestWithTable(entryId: string): Promise<boolean> {
-    setError("");
-    const name = nameOf(entryId);
-    const result = await emitOnline((socket) => socket.timeout(20000).emitWithAck("waitlist:delete", { entryId, releaseTable: true }));
-    if (!result.ok) {
-      setError(result.error);
-      return false;
-    }
-    offerUndoForFiveSeconds();
-    showNotice(`Se liberó la mesa y se eliminó a ${name}.`, 3000);
-    void loadTables();
-    return true;
-  }
-
   async function bulkAction(action: "liberar" | "ausente" | "eliminar", entryIds: string[]): Promise<string | null> {
     setError("");
     const result = await emitOnline((socket) => socket.timeout(20000).emitWithAck("waitlist:bulk", { action, entryIds }));
@@ -646,7 +631,7 @@ export function QuickModeClient({ restaurantId, userId }: { restaurantId: string
       ? `Se liberaron ${plural(result.released, "mesa", "mesas")}.`
       : action === "ausente"
         ? `Se marcaron ausentes ${plural(result.changed, "cliente", "clientes")}.`
-        : `Se eliminaron ${plural(result.removed, "cliente", "clientes")}${result.released ? ` y se liberaron ${plural(result.released, "mesa", "mesas")}` : ""}.`;
+        : `Se eliminaron ${plural(result.removed, "cliente", "clientes")}.`;
   }
 
   async function cleanup(hours: 12 | 24 | 168, preview: boolean) {
@@ -703,6 +688,8 @@ export function QuickModeClient({ restaurantId, userId }: { restaurantId: string
       void loadTables();
       return false;
     }
+    // Liberar también se puede deshacer (el servidor lo guarda como la última acción).
+    if (result.kind === "ack") offerUndoForFiveSeconds();
     showNotice(result.kind === "ack" ? `${label} quedó libre.` : `${label} quedó libre (sin conexión, se enviará al volver).`, 2600);
     return true;
   }
@@ -1032,7 +1019,6 @@ export function QuickModeClient({ restaurantId, userId }: { restaurantId: string
         onResolve={(entryId, status) => markGuest(entryId, status, status === "listo" ? 1 : -1)}
         onReopen={reopenGuest}
         onDelete={deleteGuest}
-        onDeleteWithTable={deleteGuestWithTable}
         onBulk={bulkAction}
         onCleanup={cleanup}
         onSeat={(entry) => setSeatFor(entry)}

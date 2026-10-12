@@ -43,11 +43,11 @@ export default async function PlanoEnVivoPage({
     <div className="flex h-[calc(100vh-9.5rem)] min-h-[30rem] flex-col gap-3 con-plano-inmersivo:h-auto con-plano-inmersivo:min-h-0">
       <div className="con-plano-inmersivo:hidden">
         <h1 className="text-2xl font-bold">{plan.restaurant.name}</h1>
-        <p className="text-sm text-app-muted">
+        <p className="hidden text-sm text-app-muted sm:block">
           Plano en vivo{plan.restaurant.brand ? ` · ${plan.restaurant.brand.name}` : ""}
-          {plan.restaurant.city ? ` · ${plan.restaurant.city}` : ""}. Las mesas se sientan desde el modo sencillo
-          {canRelease ? "; aquí puedes liberar una mesa ocupada tocándola" : " (aquí solo se mira)"}. Cada mesa lleva el color
-          y el nombre de su mesero.
+          {plan.restaurant.city ? ` · ${plan.restaurant.city}` : ""}.
+          {canRelease ? " Toca una mesa para ver su ficha: sentar, liberar y más." : " Toca una mesa para ver su ficha (aquí solo se mira)."} El borde
+          y la inicial de cada mesa son de su mesero.
         </p>
       </div>
       <div className="min-h-0 flex-1">
@@ -60,6 +60,7 @@ export default async function PlanoEnVivoPage({
           canManageWaiters={can(user, "meseros:gestionar", id)}
           startEditingWaiters={meseros === "editar"}
           canReleaseTables={canRelease}
+          canDeleteClients={can(user, "rapido:modificar", id)}
           // La lista de espera del modo inmersivo es el modo sencillo: solo
           // con `rapido:ver` (analítica no lo tiene, así que no ve el botón).
           immersive={{

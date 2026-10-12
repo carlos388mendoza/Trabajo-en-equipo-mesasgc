@@ -146,11 +146,10 @@ export const reopenWaitlistEntrySchema = z.object({ entryId: idSchema, operation
 export type ReopenWaitlistEntryInput = z.infer<typeof reopenWaitlistEntrySchema>;
 
 /**
- * Eliminar a un cliente de la lista («Ver clientes»). Con `releaseTable`, si
- * está sentado en una mesa, primero se libera y luego se elimina, en una sola
- * acción (pide además sentar y liberar mesas).
+ * Eliminar a un cliente de la lista («Ver clientes» o el plano). Si está en
+ * una mesa se rechaza: primero hay que liberarla (`lib/waitlist/delete-rule.ts`).
  */
-export const deleteWaitlistEntrySchema = z.object({ entryId: idSchema, operationId: operationIdSchema, releaseTable: z.boolean().optional() });
+export const deleteWaitlistEntrySchema = z.object({ entryId: idSchema, operationId: operationIdSchema });
 
 // --- Acciones en grupo («Ver clientes» y plano en vivo; ver lib/waitlist/batch.ts)
 
@@ -250,7 +249,8 @@ export interface ClientToServerEvents {
   "waitlist:delete": (payload: DeleteWaitlistEntryInput, ack: (res: Ack<{ entry: WaitlistEntrySnapshot; actionId: string }>) => void) => void;
   /**
    * Una acción sobre varios clientes (liberar sus mesas, marcarlos ausentes o
-   * eliminarlos). La room recibe los avisos de siempre, uno por cliente o mesa.
+   * eliminarlos; eliminar se rechaza entero si alguno está en una mesa). La
+   * room recibe los avisos de siempre, uno por cliente o mesa.
    */
   "waitlist:bulk": (payload: BulkWaitlistInput, ack: (res: Ack<BatchSummary>) => void) => void;
   /** «Limpiar pendientes antiguos» (con `preview`, solo cuenta). */

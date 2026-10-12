@@ -1403,6 +1403,48 @@ section("Colocación dentro del recuadro y límites");
 }
 
 // ---------------------------------------------------------------------------
+section("Plano en vivo: texto dentro de las mesas y tiempos legibles");
+// ---------------------------------------------------------------------------
+
+{
+  const { liveTextLines, compactLabel, scaleStep, visibleBox, LIVE_MIN_FONT, estimateText } = await import("@/components/editor/live-marks");
+  const { formatDuration, shortName, initialOf } = await import("@/lib/time/duration");
+
+  check("formatDuration: 12 min", formatDuration(12) === "12 min");
+  check("formatDuration: 1 h 20 min", formatDuration(80) === "1 h 20 min");
+  check("formatDuration: 2 h (sin «0 min»)", formatDuration(120) === "2 h");
+  check("formatDuration: 2 d (nunca «11136 min»)", formatDuration(2 * 24 * 60 + 5) === "2 d" && formatDuration(11136) === "7 d");
+  check("shortName: «Ana Torres López» → «Ana T.»", shortName("Ana Torres López") === "Ana T.");
+  check("shortName: como mucho 12 letras con «…»", shortName("Maximiliano Rodríguez").length <= 12 && shortName("Maximiliano Rodríguez").endsWith("…"));
+  check("initialOf: la inicial del mesero en mayúscula", initialOf("luis") === "L");
+  check("compactLabel: «Mesa 12» → «M12», «Bancada terraza» → «BT»", compactLabel("Mesa 12") === "M12" && compactLabel("Bancada terraza") === "BT");
+
+  // Una mesa redonda de 103 unidades (75 + las sillas) a escala 1,1.
+  const grande = liveTextLines({ w: 103, h: 103 }, true, 1.1, { label: "Mesa 1", who: ["Pedro R. · 4"], time: "7 d" });
+  check("mesa grande: nombre, cliente y tiempo", grande.length === 3 && grande[1].text === "Pedro R. · 4" && grande[2].text === "7 d", JSON.stringify(grande.map((l) => l.text)));
+  const enPantalla = (l: { font: number }, scale: number) => l.font * scale;
+  check("  ninguna letra baja de 12 px en pantalla", grande.every((l) => enPantalla(l, 1.1) >= LIVE_MIN_FONT - 1e-9));
+  check("  cada línea cabe en su ancho", grande.every((l) => estimateText(l.text, l.font * 1.1, l.bold) <= l.width * 1.1 + 0.5));
+  check(
+    "  las líneas no se pisan entre sí",
+    grande.every((l, i) => i === 0 || l.y >= grande[i - 1].y + grande[i - 1].font - 1e-9),
+  );
+  check("  y quedan dentro de la mesa (alto)", grande[0].y >= -103 / 2 && grande[2].y + grande[2].font <= 103 / 2);
+
+  // La misma mesa con el zoom alejado: solo el nombre (o su forma corta).
+  const lejos = liveTextLines({ w: 103, h: 103 }, true, 0.4, { label: "Mesa 1", who: ["Pedro R. · 4"], time: "7 d" });
+  check("zoom alejado: se ocultan el cliente y el tiempo", lejos.length === 1, JSON.stringify(lejos.map((l) => l.text)));
+  check("  y la letra sigue siendo de 12 px", enPantalla(lejos[0], 0.4) >= LIVE_MIN_FONT - 1e-9);
+  const minima = liveTextLines({ w: 60, h: 60 }, true, 0.4, { label: "Terraza 3" });
+  check("  si ni así cabe el nombre, su forma corta («T3»)", minima.length === 1 && minima[0].text === "T3", minima[0].text);
+  const dos = liveTextLines({ w: 106, h: 106 }, false, 0.9, { label: "Bancada terraza" });
+  check("un nombre largo va en dos líneas antes de acortarse", dos.length === 2 && dos[0].text === "Bancada" && dos[1].text === "terraza", JSON.stringify(dos.map((l) => l.text)));
+
+  check("scaleStep redondea HACIA ABAJO (la letra nunca sale menor)", [0.37, 0.8, 1, 1.13, 1.6, 2.4].every((x) => scaleStep(x) <= x + 1e-9 && scaleStep(x) > x / 1.13));
+  check("visibleBox: girada 90° intercambia ancho y alto", JSON.stringify(visibleBox(120, 60, 90)) === JSON.stringify({ w: 60, h: 120 }));
+}
+
+// ---------------------------------------------------------------------------
 
 // El cliente de libSQL sigue con la conexión abierta (el proxy de `lib/db` es
 // perezoso y no se cierra solo), así que en Windows el fichero está pillado y
