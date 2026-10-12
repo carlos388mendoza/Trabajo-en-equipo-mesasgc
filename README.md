@@ -577,13 +577,36 @@ formulario ya no está al lado (`components/quick-mode/`):
 - **Ver clientes** (`all-cards-view.tsx`; se llamaba «Ver todas las cartas»,
   y por dentro sigue con los nombres de entonces: `AllCardsView`, la API
   `/cartas`): `GET
-  /api/restaurante/[id]/cartas?rango=hoy|7dias` (`rapido:ver`: el host, sus
-  restaurantes; el admin, todos; analitica, 403). Las que siguen esperando
-  salen siempre. Filtros por estado y buscador sin tildes. Una en espera se
+  /api/restaurante/[id]/cartas?rango=hoy|7dias|30dias|todos&estado=todas|esperando|listo|ausente|ocupando&q=&mesero=&antes=`
+  (`rapido:ver`: el host, sus restaurantes; el admin, todos; analitica, 403).
+  **Paginada y filtrada en el servidor** (`queryWaitlistCards`): 50 por
+  página y «Ver más» con un cursor (hora de llegada + id), los conteos de
+  cada filtro en una sola consulta agregada, búsqueda sin tildes y filtro por
+  mesero. Los que siguen esperando o listos y los que **ocupan una mesa**
+  salen en cualquier rango, aunque lleven días: son los que hay que resolver
+  o liberar. Antes traía hasta 2000 filas de 7 días y filtraba en la tablet.
+  Una en espera se
   resuelve con `waitlist:resolve`; una lista o ausente vuelve con
   `waitlist:reopen` (conserva su hora de llegada y su lugar; se puede
   deshacer). Un sentado no vuelve: tiene mesa. Se actualiza con los
   `waitlist:changed` de la room.
+- **Con mucho historial sigue fluido** (12 de octubre de 2026). Antes, el
+  modo sencillo descargaba TODO el historial del restaurante
+  (`GET /api/restaurante/[id]/clientes`: hasta 1,7 MB y casi 5000 clientes en
+  KFC Boulevard Morazán con los datos de prueba), lo recorría en cada render y
+  lo guardaba entero en la copia sin conexión a cada cambio. Ahora:
+  - `/clientes` devuelve solo lo **activo** (`lib/waitlist/active.ts`): en la
+    fila, en una mesa o de hoy. De 741–1721 KB a 1–11 KB; el modo sencillo
+    abre en 0,6–0,8 s con la CPU 4× más lenta.
+  - «Ver clientes» va paginado en el servidor (arriba).
+  - **Índices compuestos** (migración `0011`, solo aditiva):
+    `restaurant_id + status + arrived_at`, `restaurant_id + arrived_at`,
+    `status + seated_at` y `called_at`.
+  - Las **estadísticas** se agregan en la base (`GROUP BY` por restaurante y
+    día de Honduras, por cliente y por mesero) en vez de traer cada grupo
+    sentado: el mismo resultado, de 462 a 39 ms para los 8 restaurantes.
+  - El **plano en vivo** junta los avisos seguidos y pide el plano una vez,
+    400 ms después del último.
 - **Colores de los meseros en «Ver clientes».** Arriba de la lista, la
   leyenda de la configuración de meseros activa (los mismos que cuenta
   «Meseros activos: [−] N [+]»): un punto de color y el nombre de cada uno.
