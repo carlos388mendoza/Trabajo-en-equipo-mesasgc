@@ -97,20 +97,24 @@ clientes.
 | Rol | Nombres de clientes | Estadísticas |
 |---|---|---|
 | **Host (restaurante)** | Solo los de **su** restaurante | No |
-| **Analitica** | En el mapa y el plano en vivo, **no**. En las estadísticas, **sí**: el «top 10 de clientes» se agrupa por nombre | Todos los restaurantes |
+| **Analitica** | En el mapa y el plano en vivo, **no**. En el «top 10 de clientes», **no** por defecto: ve «Cliente 1 (A. G.)» (la dirección lo puede cambiar en /admin → Configuración) | Todos los restaurantes |
 | **Administrador** | Todos | Todos |
 
 **Decisiones pendientes de la dirección:**
 
-- [ ] **Nombres en las estadísticas.** ¿Está bien que analitica vea el
-      «top 10 de clientes» con nombre? Si no, el equipo puede quitarlo o
-      mostrarlo anónimo.
-- [ ] **Nombres fuera de la empresa.** Con `OPENROUTER_API_KEY` cargada, al
-      hacerle una pregunta al asistente se envían a OpenRouter (un servicio
-      externo) las estadísticas, **incluidos los nombres del top de
-      clientes**. Opciones: aceptarlo, pedir al equipo que los anonimice antes
-      de enviarlos, o no activar la IA.
-- [ ] **Cuánto tiempo guardar** el historial de clientes antes de borrarlo.
+Las tres primeras ya son **opciones de la app**, en **/admin →
+Configuración**, con el valor más seguro por defecto. Qué hace cada una, en
+palabras sencillas, está en `docs/configuracion.md` (para enseñárselo a la
+dirección):
+
+- [ ] **La IA usa alias en lugar de nombres de clientes** (por defecto, sí):
+      a OpenRouter, un servicio externo, le llega «Cliente 1», nunca un
+      nombre.
+- [ ] **Analítica puede ver los nombres del top 10** (por defecto, no: ve
+      «Cliente 1 (A. G.)»).
+- [ ] **Guardar el historial de clientes por** 90 días, 180 días, 1 año (por
+      defecto) o siempre. Al vencer se anonimizan el nombre, el teléfono y la
+      nota; las cifras se quedan para las estadísticas.
 - [ ] **Aviso al cliente.** Si hace falta informar al cliente de que se
       anota su nombre (por ejemplo, un cartel en la entrada), según lo que
       pida el área legal.
