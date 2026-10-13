@@ -15,6 +15,7 @@ import { people } from "@/components/quick-mode/format";
 import { Overlay } from "@/components/quick-mode/overlay";
 import type { SeatableTable } from "@/lib/tables/list";
 import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
+import { WaiterDot } from "@/components/waiters/waiter-dot";
 
 type SeatPickerProps = {
   entry: WaitlistEntrySnapshot | null;
@@ -75,8 +76,7 @@ export function SeatPicker({ entry, tables, loaded, busy, onPick, onClose }: Sea
                         {table.waiterName ? (
                           // El mesero que lo va a atender: el de la zona de la mesa.
                           <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-panel-text">
-                            <span aria-hidden className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: table.waiterColor ?? undefined }} />
-                            {table.waiterName}
+                            Lo atiende <WaiterDot color={table.waiterColor ?? null} size={12} />
                           </span>
                         ) : null}
                       </button>

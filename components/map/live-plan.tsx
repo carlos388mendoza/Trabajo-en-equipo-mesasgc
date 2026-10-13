@@ -26,16 +26,10 @@
 // lista de espera se abre en un panel lateral con el modo sencillo dentro
 // (un iframe del propio sitio): el mismo tiempo real, la misma cola sin
 // conexión, los mismos permisos y la misma forma de sentar y liberar.
-//
-// Menos ruido (octubre de 2026): las mesas llevan dentro solo lo esencial
-// (ver `components/editor/live-marks.ts`); al tocar una se abre su ficha con
-// todo el detalle y las acciones (`table-sheet.tsx`). La barra queda en una
-// línea compacta (lista de espera, zonas, meseros y «Más»), la leyenda es
-// pequeña y plegable, y no hay minimapa.
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { DoorOpen, EyeOff, Info, ListOrdered, Maximize2, Minimize2, MoreHorizontal, X } from "lucide-react";
+import { DoorOpen, EyeOff, ListOrdered, Maximize2, Minimize2, X } from "lucide-react";
 
 import {
   WaiterActions,
@@ -48,11 +42,10 @@ import {
 import { isSeatableElement } from "@/lib/db/enums";
 
 import { loadLivePlan } from "@/app/mapa/actions";
-import { TableSheet, type TableSheetActions } from "@/components/map/table-sheet";
 import type { CanvasHandle } from "@/components/editor/konva-canvas";
 import { KonvaCanvas } from "@/components/editor/lazy-konva-canvas";
 import { TABLET_LANDSCAPE_QUERY } from "@/lib/layout/immersive";
-import type { Ack, BatchSummary } from "@/lib/realtime/events";
+import type { Ack, BatchSummary, ReleaseTableInput, TableChange } from "@/lib/realtime/events";
 import type { LivePlan as LivePlanData } from "@/lib/map/queries";
 
 const NOOP = () => {};
@@ -101,16 +94,27 @@ export type LivePlanProps = {
     waitlistHref?: string;
   };
   /**
-   * Lo que se puede hacer desde la ficha de una mesa y desde «Más». Cada
-   * acción llega solo con su permiso (sentar y liberar, `mesas:asignar`;
-   * eliminar, `rapido:modificar`); sin ninguna, el plano es para mirar.
+   * Liberar mesas desde el plano: tocar una ocupada ofrece «Liberar mesa», y
+   * «Liberar todas las mesas» las vacía (escribiendo LIBERAR). Solo llega con
+   * `mesas:asignar`; sin él el plano sigue siendo de solo lectura.
    */
-  tableActions?: TableSheetActions & {
-    releaseAll?: () => Promise<Ack<BatchSummary>>;
+  tableActions?: {
+    release: (payload: ReleaseTableInput) => Promise<Ack<TableChange>>;
+    releaseAll: () => Promise<Ack<BatchSummary>>;
   };
 };
 
 /** Qué mesas cambiaron entre dos lecturas del plano. */
+// «45 min», «3 h» o «11 días»: una mesa olvidada puede llevar días ocupada,
+// y «15840 min» no se entiende de un vistazo.
+function sinceText(ms: number): string {
+  const min = Math.max(0, Math.floor(ms / 60_000));
+  if (min < 120) return `${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 48) return `${h} h`;
+  return `${Math.floor(h / 24)} días`;
+}
+
 function changedTables(before: LivePlanData | null, after: LivePlanData): string[] {
   if (!before) return [];
   const old = new Map<string, string>();
@@ -279,57 +283,39 @@ export function LivePlan({
   // cada control, para que valgan también para los que pinta otro componente.
   const floatingBar =
     "inmersivo:pointer-events-none inmersivo:absolute inmersivo:inset-x-0 inmersivo:top-0 inmersivo:z-20 inmersivo:flex-nowrap inmersivo:gap-1.5 inmersivo:p-2 " +
-    "inmersivo:[&>*]:pointer-events-auto inmersivo:[&>*]:shrink-0 inmersivo:[&>*]:whitespace-nowrap";
+    "inmersivo:[&>*]:pointer-events-auto inmersivo:[&>*]:shrink-0 inmersivo:[&>*]:whitespace-nowrap inmersivo:[&>*]:bg-panel/80 inmersivo:[&>*]:shadow-md";
   const roundButton =
     "flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-medium text-panel-text ring-1 ring-app-border hover:bg-app-border/60";
-  const menuItem =
-    "flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left text-sm font-medium text-panel-text hover:bg-app-border/60";
 
-  // La mesa tocada abre su ficha; los avisos (liberada, sentado, eliminado)
-  // se quedan abajo hasta cerrarlos.
+  // La mesa tocada (para «Liberar mesa») y «Liberar todas las mesas».
   const [tappedId, setTappedId] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [tableBusy, setTableBusy] = useState(false);
+  const [tableMessage, setTableMessage] = useState<string | null>(null);
   const [releaseAllOpen, setReleaseAllOpen] = useState(false);
   const [releaseAllText, setReleaseAllText] = useState("");
-  const tapped = tappedId ? zone?.elements.find((e) => e.id === tappedId) ?? null : null;
+  const tapped = tappedId ? zone?.elements.find((e) => e.id === tappedId && e.currentEntryId) ?? null : null;
   const occupiedCount = zones.reduce((n, z) => n + z.elements.filter((e) => e.currentEntryId).length, 0);
-  const canReleaseAll = Boolean(tableActions?.releaseAll) && occupiedCount > 0;
+  const releaseTapped = async () => {
+    if (!tapped || !tapped.currentEntryId || !tableActions) return;
+    setTableBusy(true);
+    const result = await tableActions.release({ tableId: tapped.id, entryId: tapped.currentEntryId });
+    setTableBusy(false);
+    setTableMessage(result.ok ? `${tapped.label} quedó libre.` : result.error);
+    if (result.ok) setTappedId(null);
+  };
   const releaseAll = async () => {
-    if (!tableActions?.releaseAll || releaseAllText.trim() !== "LIBERAR") return;
+    if (!tableActions || releaseAllText.trim() !== "LIBERAR") return;
     setTableBusy(true);
     const result = await tableActions.releaseAll();
     setTableBusy(false);
     setReleaseAllOpen(false);
     setReleaseAllText("");
-    setNotice(
+    setTableMessage(
       result.ok
         ? `Se liberaron ${result.released} ${result.released === 1 ? "mesa" : "mesas"}. Se puede deshacer con «Deshacer» en el modo sencillo.`
         : result.error,
     );
   };
-
-  // «Más»: las acciones que se usan poco, en un menú. Se cierra al tocar fuera.
-  const [moreOpen, setMoreOpen] = useState(false);
-  const moreRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!moreOpen) return;
-    const onDown = (event: PointerEvent) => {
-      if (moreRef.current && !moreRef.current.contains(event.target as Node)) setMoreOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMoreOpen(false);
-    };
-    document.addEventListener("pointerdown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [moreOpen]);
-
-  // Leyenda plegable (cerrada al empezar: los colores se aprenden enseguida).
-  const [legendOpen, setLegendOpen] = useState(false);
 
   return (
     <div
@@ -343,43 +329,15 @@ export function LivePlan({
         "inmersivo-raiz:pb-[env(safe-area-inset-bottom)] inmersivo-raiz:pl-[env(safe-area-inset-left)] inmersivo-raiz:pr-[env(safe-area-inset-right)] inmersivo-raiz:pt-[env(safe-area-inset-top)]"
       }
     >
-      {/* Una barra compacta: lista de espera, en vivo, zonas, meseros y «Más».
-          En el celular los meseros también pasan a «Más». */}
       <div className={`flex flex-wrap items-center gap-2 ${floatingBar}`}>
         {immersive ? (
-          <span className="hidden max-w-[12rem] truncate rounded-full bg-panel/85 px-3 py-1.5 text-xs font-semibold text-panel-text ring-1 ring-app-border inmersivo:block inmersivo:!shrink">
+          <span className="hidden max-w-[14rem] truncate rounded-full px-3 py-1.5 text-xs font-semibold text-panel-text ring-1 ring-app-border inmersivo:block inmersivo:!shrink">
             {immersive.restaurantName}
           </span>
         ) : null}
-        {immersive?.waitlistHref ? (
-          // Siempre visible y el primero de la barra: es lo que más se usa.
-          // Con la tablet acostada y poco ancho dice solo «Lista» (el número
-          // sigue), para que quepa con lo demás en una línea.
-          <button
-            type="button"
-            onClick={() => (waitlistOpen ? setWaitlistOpen(false) : openWaitlist())}
-            aria-expanded={waitlistOpen}
-            aria-label={`Lista de espera: ${plan?.waiting ?? 0} esperando`}
-            title="Lista de espera: agregar, avisar, sentar y liberar"
-            aria-controls="panel-lista-espera"
-            className="flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-accent px-3.5 text-sm font-semibold text-accent-text shadow-sm transition hover:bg-accent/85"
-          >
-            <ListOrdered aria-hidden size={18} strokeWidth={2} />
-            <span>
-              Lista<span className="max-[1099px]:inmersivo:hidden"> de espera</span>
-            </span>
-            <span aria-hidden className="min-w-6 rounded-full bg-accent-text/20 px-1.5 text-center tabular-nums">
-              {plan?.waiting ?? 0}
-            </span>
-          </button>
-        ) : null}
         {toolbar}
         {zones.length > 1 ? (
-          <div
-            role="tablist"
-            aria-label="Zonas"
-            className="flex max-w-full flex-nowrap gap-1 overflow-x-auto rounded-xl bg-panel p-1 ring-1 ring-app-border [scrollbar-width:none] inmersivo:bg-panel/85"
-          >
+          <div role="tablist" aria-label="Zonas" className="flex flex-wrap gap-1 rounded-xl bg-panel p-1 ring-1 ring-app-border inmersivo:flex-nowrap">
             {zones.map((z) => (
               <button
                 key={z.id}
@@ -387,7 +345,7 @@ export function LivePlan({
                 role="tab"
                 aria-selected={z.id === zone?.id}
                 onClick={() => setZoneId(z.id)}
-                className={`h-9 shrink-0 whitespace-nowrap rounded-lg px-3 text-sm font-medium inmersivo:px-2.5 inmersivo:text-xs ${
+                className={`h-10 rounded-lg px-3 text-sm font-medium inmersivo:px-2.5 inmersivo:text-xs ${
                   z.id === zone?.id ? "bg-accent text-accent-text" : "text-panel-muted hover:bg-app-border/60"
                 }`}
               >
@@ -396,8 +354,56 @@ export function LivePlan({
             ))}
           </div>
         ) : null}
-        <div className="hidden sm:block inmersivo:[&>div]:bg-panel/85">
+        {/* A la derecha en modo inmersivo; en la vista normal, donde siempre
+            (`contents`: el envoltorio no existe para el diseño). */}
+        <div className="contents inmersivo:!ml-auto inmersivo:!flex inmersivo:items-center inmersivo:gap-1.5 inmersivo:!bg-transparent inmersivo:!shadow-none inmersivo:[&>*]:bg-panel/80 inmersivo:[&>*]:shadow-md">
           <WaiterSelector state={waiters} />
+          {immersive?.waitlistHref ? (
+            // Siempre visible y el primero de la barra: es lo que más se usa.
+            // Con la tablet acostada y poco ancho dice solo «Lista» (el número
+            // sigue), para que quepa con lo demás en una línea.
+            <button
+              type="button"
+              onClick={() => (waitlistOpen ? setWaitlistOpen(false) : openWaitlist())}
+              aria-expanded={waitlistOpen}
+              aria-label={`Lista de espera: ${plan?.waiting ?? 0} esperando`}
+              title="Lista de espera: agregar, avisar, sentar y liberar"
+              aria-controls="panel-lista-espera"
+              className="order-first flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-accent px-3.5 text-sm font-semibold text-accent-text shadow-sm transition hover:bg-accent/85 inmersivo:order-none inmersivo:!bg-accent/90"
+            >
+              <ListOrdered aria-hidden size={18} strokeWidth={2} />
+              <span>
+                Lista<span className="max-[1099px]:inmersivo:hidden"> de espera</span>
+              </span>
+              <span aria-hidden className="min-w-6 rounded-full bg-accent-text/20 px-1.5 text-center tabular-nums">
+                {plan?.waiting ?? 0}
+              </span>
+            </button>
+          ) : null}
+          {/* «Liberar todas las mesas» también con la tablet acostada: aquí,
+              solo el ícono (en la barra flotante no cabe el texto). */}
+          {tableActions && occupiedCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setReleaseAllOpen(true)}
+              aria-label="Liberar todas las mesas"
+              title="Liberar todas las mesas"
+              className={`${roundButton} hidden px-0 inmersivo:flex`}
+            >
+              <DoorOpen aria-hidden size={18} strokeWidth={2} />
+            </button>
+          ) : null}
+          {immersive ? (
+            <button
+              type="button"
+              onClick={() => setImmersiveMode("normal")}
+              aria-label="Volver a la vista normal"
+              title="Volver a la vista normal"
+              className={`${roundButton} hidden px-0 inmersivo:flex`}
+            >
+              <Minimize2 aria-hidden size={18} strokeWidth={2} />
+            </button>
+          ) : null}
         </div>
         {/* En la tablet en horizontal, desde la vista normal: volver a grande. */}
         {immersive && !immersiveOn ? (
@@ -410,63 +416,31 @@ export function LivePlan({
             Plano en grande
           </button>
         ) : null}
-        <div ref={moreRef} className="relative ml-auto">
+        <span className="contents inmersivo:hidden">
+          <WaiterActions state={waiters} />
+        </span>
+        {tableActions && occupiedCount > 0 ? (
           <button
             type="button"
-            onClick={() => setMoreOpen((open) => !open)}
-            aria-expanded={moreOpen}
-            aria-controls="plano-mas"
-            className={`${roundButton} bg-panel inmersivo:bg-panel/85`}
+            onClick={() => setReleaseAllOpen(true)}
+            className={`${roundButton} bg-panel inmersivo:hidden`}
+            title="Dejar todas las mesas libres (para empezar el día limpio)"
           >
-            <MoreHorizontal aria-hidden size={18} strokeWidth={2} />
-            Más
+            <DoorOpen aria-hidden size={18} strokeWidth={2} />
+            Liberar todas las mesas
           </button>
-          {/* Siempre en el HTML (oculto si está cerrado): así el contenido
-              también lo ve quien lo busca sin abrir el menú (y las pruebas). */}
-          <div
-            id="plano-mas"
-            hidden={!moreOpen}
-            className={`absolute right-0 top-full z-40 mt-2 w-[min(24rem,calc(100vw-1.5rem))] flex-col gap-2 rounded-2xl bg-panel p-3 text-panel-text shadow-xl ring-1 ring-app-border ${moreOpen ? "flex" : "hidden"}`}
-          >
-            <div className="sm:hidden">
-              <WaiterSelector state={waiters} />
-            </div>
-            {canManageWaiters && !waiters.editing ? (
-              <div className="[&>div]:flex-col [&>div]:items-stretch">
-                <WaiterActions state={waiters} />
-              </div>
-            ) : null}
-            {canReleaseAll ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setMoreOpen(false);
-                  setReleaseAllOpen(true);
-                }}
-                className={menuItem}
-                title="Dejar todas las mesas libres (para empezar el día limpio)"
-              >
-                <DoorOpen aria-hidden size={18} strokeWidth={2} />
-                Liberar todas las mesas
-              </button>
-            ) : null}
-            {immersive && immersiveActive ? (
-              <button type="button" onClick={() => { setMoreOpen(false); setImmersiveMode("normal"); }} className={menuItem}>
-                <Minimize2 aria-hidden size={18} strokeWidth={2} />
-                Volver a la vista normal
-              </button>
-            ) : null}
-            {plan && !plan.showNames ? (
-              <p className="flex items-center gap-1.5 px-3 text-xs text-panel-muted">
-                <EyeOff aria-hidden size={14} strokeWidth={2} />
-                Solo estados y ocupación: sin nombres de clientes
-              </p>
-            ) : null}
-            <p className="px-3 text-xs text-panel-muted">Toca una mesa para ver su ficha.</p>
-          </div>
-        </div>
+        ) : null}
+        {plan && !plan.showNames ? (
+          <span className="flex items-center gap-1.5 rounded-full bg-panel px-3 py-1.5 text-xs font-medium text-panel-muted ring-1 ring-app-border inmersivo:hidden">
+            <EyeOff aria-hidden size={14} strokeWidth={2} />
+            Solo estados y ocupación: sin nombres de clientes
+          </span>
+        ) : null}
       </div>
 
+      <div className="inmersivo:hidden">
+        <WaiterLegend state={waiters} tableCount={seatableTables.length} />
+      </div>
       {/* Avisos: en modo inmersivo, abajo en el centro, encima del plano. */}
       <div className="contents inmersivo:pointer-events-none inmersivo:absolute inmersivo:inset-x-0 inmersivo:bottom-3 inmersivo:z-20 inmersivo:flex inmersivo:flex-col inmersivo:items-center inmersivo:gap-2 inmersivo:px-3 inmersivo:[&>*]:pointer-events-auto">
         <WaiterMessage state={waiters} />
@@ -514,14 +488,12 @@ export function LivePlan({
             onElementTap={
               waiters.editing
                 ? waiters.tap
-                : (id) => {
-                    // Solo las mesas tienen ficha (no la caja ni los baños).
-                    const element = zone.elements.find((e) => e.id === id);
-                    const type = element ? typesById.get(element.elementTypeId) : undefined;
-                    if (!type || !isSeatableElement(type.key)) return;
-                    setNotice(null);
-                    setTappedId(id);
-                  }
+                : tableActions
+                  ? (id) => {
+                      setTableMessage(null);
+                      setTappedId(id);
+                    }
+                  : undefined
             }
             onMarquee={waiters.editing && waiters.group ? waiters.marquee : undefined}
           />
@@ -530,60 +502,49 @@ export function LivePlan({
             {plan ? "Este restaurante todavía no tiene plano." : "Cargando plano…"}
           </div>
         )}
+      </div>
+      </div>
 
-        {/* Leyenda pequeña y plegable: estados y meseros. */}
-        {zone ? (
-          <div className="pointer-events-none absolute bottom-3 right-3 z-10 flex flex-col items-end gap-2">
-            {legendOpen ? (
-              <div id="plano-leyenda" className="pointer-events-auto w-max max-w-[min(18rem,calc(100vw-2rem))] rounded-2xl bg-panel/95 p-3 text-xs font-medium text-panel-text shadow-lg ring-1 ring-app-border">
-                <ul aria-label="Estados de las mesas" className="flex flex-wrap gap-x-3 gap-y-1.5">
-                  <li className="flex items-center gap-1.5"><span aria-hidden className="h-3.5 w-3.5 rounded-full bg-panel ring-2 ring-panel-muted/50" />Libre</li>
-                  <li className="flex items-center gap-1.5"><span aria-hidden className="h-3.5 w-3.5 rounded-full bg-estado-ocupada" />Ocupada</li>
-                  <li className="flex items-center gap-1.5"><span aria-hidden className="h-3.5 w-3.5 rounded-full bg-estado-reservada" />Reservada</li>
-                </ul>
-                <p className="mt-2 text-panel-muted">El borde y la inicial son del mesero:</p>
-                <div className="mt-1.5">
-                  <WaiterLegend state={waiters} tableCount={seatableTables.length} />
-                </div>
-              </div>
-            ) : null}
+      {/* La mesa ocupada que se tocó: quién está y «Liberar mesa». */}
+      {tapped || tableMessage ? (
+        <div
+          role="dialog"
+          aria-label={tapped ? `Mesa ${tapped.label}` : "Aviso"}
+          className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 mx-auto flex max-w-md flex-wrap items-center gap-3 rounded-2xl bg-panel p-4 text-panel-text shadow-2xl ring-1 ring-app-border"
+        >
+          <div className="min-w-0 flex-1">
+            {tapped ? (
+              <>
+                <p className="font-semibold">{tapped.label}</p>
+                <p className="text-sm text-panel-muted">
+                  Ocupada{tapped.occupantName ? ` por ${tapped.occupantName}` : ""}
+                  {tapped.seatedAt ? ` · desde hace ${sinceText(now - tapped.seatedAt)}` : ""}
+                </p>
+              </>
+            ) : (
+              <p role="status" className="text-sm">{tableMessage}</p>
+            )}
+          </div>
+          {tapped ? (
             <button
               type="button"
-              onClick={() => setLegendOpen((open) => !open)}
-              aria-expanded={legendOpen}
-              aria-controls="plano-leyenda"
-              className="pointer-events-auto flex h-11 items-center gap-1.5 rounded-full bg-panel/95 px-3.5 text-xs font-semibold text-panel-text shadow-md ring-1 ring-app-border"
+              disabled={tableBusy}
+              onClick={() => void releaseTapped()}
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-text hover:bg-accent/85 disabled:opacity-50"
             >
-              <Info aria-hidden size={15} />
-              {legendOpen ? "Ocultar leyenda" : "Leyenda"}
+              <DoorOpen aria-hidden size={17} />
+              {tableBusy ? "Liberando…" : "Liberar mesa"}
             </button>
-          </div>
-        ) : null}
-      </div>
-      </div>
-
-      {/* Ficha de la mesa tocada. */}
-      {tapped && plan ? (
-        <TableSheet
-          key={tapped.id}
-          element={tapped}
-          waiter={waiters.marks[tapped.id] ?? null}
-          showNames={plan.showNames}
-          now={now}
-          actions={tableActions ?? {}}
-          onClose={() => setTappedId(null)}
-          onNotice={setNotice}
-        />
-      ) : null}
-
-      {/* Avisos de lo que se hizo desde la ficha o «Más». */}
-      {notice && !tapped ? (
-        <div
-          role="status"
-          className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-panel p-4 text-sm text-panel-text shadow-2xl ring-1 ring-app-border"
-        >
-          <p className="min-w-0 flex-1">{notice}</p>
-          <button type="button" onClick={() => setNotice(null)} aria-label="Cerrar el aviso" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl hover:bg-app-border/60">
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              setTappedId(null);
+              setTableMessage(null);
+            }}
+            aria-label="Cerrar"
+            className="flex h-11 w-11 items-center justify-center rounded-xl hover:bg-app-border/60"
+          >
             <X aria-hidden size={18} />
           </button>
         </div>

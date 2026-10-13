@@ -10,15 +10,17 @@
 //    pero no lo puede usar.
 //  - `useWaiterZones`: el estado del reparto. Fuera de la edición, las marcas
 //    del plano son las de la configuración ACTIVA; editando, las del borrador.
-//  - `WaiterEditorPanel`: nombre y color de cada mesero, «pincel» para pintar
-//    mesas con un toque, selección en grupo (rectángulo) y reparto automático.
+//  - `WaiterEditorPanel`: el color de cada mesero (se elige de la paleta; no
+//    se escribe ningún nombre: el mesero se reconoce por su color), «pincel»
+//    para pintar mesas con un toque, selección en grupo (rectángulo) y reparto
+//    automático.
 //
 // Ocultar los botones a quien no puede no protege nada: cada server action
 // vuelve a comprobar `meseros:gestionar` (ver `app/restaurante/[id]/meseros/
 // actions.ts`).
 
 import { useMemo, useState, useTransition } from "react";
-import { Eraser, Minus, Paintbrush, Plus, Save, SquareDashedMousePointer, Trash2, Users, Wand2, X } from "lucide-react";
+import { Check, Eraser, Minus, Paintbrush, Palette, Plus, Save, SquareDashedMousePointer, Trash2, Users, Wand2, X } from "lucide-react";
 
 import {
   activateWaiterConfigAction,
@@ -29,6 +31,8 @@ import {
 import type { CanvasWaiterMark } from "@/components/editor/konva-canvas";
 import { MAX_WAITERS, autoBalance, type BalanceTable } from "@/lib/waiters/balance";
 import type { WaiterConfig } from "@/lib/waiters/configs";
+import { WAITER_PALETTE, waiterLabel } from "@/lib/waiters/palette";
+import { WaiterDot } from "@/components/waiters/waiter-dot";
 
 type DraftZone = { id: string; position: number; waiterName: string; color: string };
 type Draft = {
@@ -50,9 +54,29 @@ function draftFrom(config: WaiterConfig): Draft {
     configId: config.id,
     version: config.version,
     name: config.name,
-    zones: config.zones.map(({ id, position, waiterName, color }) => ({ id, position, waiterName, color })),
+    zones: paletteColors(config.zones.map(({ id, position, waiterName, color }) => ({ id, position, waiterName, color }))),
     assign,
   };
+}
+
+/**
+ * Una configuración de antes de la paleta (o con dos colores iguales) se abre
+ * con colores de la paleta, distintos: cada mesero conserva el suyo si ya es
+ * de la paleta y no está repetido; los demás toman el primero libre.
+ */
+function paletteColors(zones: DraftZone[]): DraftZone[] {
+  const taken = new Set<string>();
+  const keep = zones.map((z) => {
+    const c = z.color.toLowerCase();
+    const ok = WAITER_PALETTE.some((p) => p.hex === c) && !taken.has(c);
+    if (ok) taken.add(c);
+    return ok ? c : null;
+  });
+  return zones.map((z, i) => {
+    const color = keep[i] ?? WAITER_PALETTE.find((p) => !taken.has(p.hex))?.hex ?? z.color;
+    taken.add(color);
+    return { ...z, color };
+  });
 }
 
 function marksOf(zones: DraftZone[], assign: Record<string, string>): Record<string, CanvasWaiterMark> {
@@ -60,7 +84,8 @@ function marksOf(zones: DraftZone[], assign: Record<string, string>): Record<str
   const out: Record<string, CanvasWaiterMark> = {};
   for (const [tableId, zoneId] of Object.entries(assign)) {
     const zone = byId.get(zoneId);
-    if (zone) out[tableId] = { color: zone.color, label: zone.waiterName };
+    // `label`: «Mesero rojo». Nunca el nombre interno.
+    if (zone) out[tableId] = { color: zone.color, label: waiterLabel(zone.color) };
   }
   return out;
 }
@@ -237,9 +262,12 @@ export function useWaiterZones({
       }),
     save: () => {
       if (!draft) return;
-      const invalid = draft.zones.find((z) => z.waiterName.trim() === "");
-      if (invalid || draft.name.trim() === "") {
-        setMessage({ ok: false, text: "Cada mesero necesita un nombre, y la configuración también." });
+      if (draft.name.trim() === "") {
+        setMessage({ ok: false, text: "La configuración necesita un nombre." });
+        return;
+      }
+      if (new Set(draft.zones.map((z) => z.color)).size !== draft.zones.length) {
+        setMessage({ ok: false, text: "Dos meseros no pueden tener el mismo color." });
         return;
       }
       run(
@@ -346,9 +374,8 @@ export function WaiterLegend({ state, tableCount }: { state: WaiterZonesState; t
     <ul aria-label="Meseros y sus mesas" className="flex flex-wrap items-center gap-1.5 text-xs font-medium">
       {zones.map((z) => (
         <li key={z.id} className="flex items-center gap-1.5 rounded-full bg-panel px-2.5 py-1 text-panel-text ring-1 ring-app-border">
-          <span aria-hidden className="h-3 w-3 rounded-full" style={{ backgroundColor: z.color }} />
-          {z.waiterName}
-          <span className="tabular-nums text-panel-muted">· {counts.get(z.waiterName + z.color) ?? 0} mesas</span>
+          <WaiterDot color={z.color} size={14} />
+          <span className="tabular-nums text-panel-muted">{counts.get(waiterLabel(z.color) + z.color) ?? 0} mesas</span>
         </li>
       ))}
       {assigned < tableCount ? (
@@ -454,27 +481,15 @@ export function WaiterEditorPanel({ state }: { state: WaiterZonesState }) {
               type="button"
               role="radio"
               aria-checked={state.brush === z.id}
-              aria-label={`Pintar con ${z.waiterName}`}
+              aria-label={`Pintar con el ${waiterLabel(z.color).toLocaleLowerCase("es")}`}
+              title={`Pintar con el ${waiterLabel(z.color).toLocaleLowerCase("es")}`}
               onClick={() => state.setBrush(z.id)}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full ring-2 ring-panel"
               style={{ backgroundColor: z.color }}
             >
               {state.brush === z.id ? <Paintbrush aria-hidden size={18} color="#ffffff" strokeWidth={2.5} /> : null}
             </button>
-            <input
-              aria-label={`Nombre del mesero ${z.position}`}
-              value={z.waiterName}
-              maxLength={30}
-              onChange={(e) => state.setZone(z.id, { waiterName: e.target.value })}
-              className="h-10 min-w-0 flex-1 rounded-lg border border-app-border bg-panel px-2 text-sm"
-            />
-            <input
-              type="color"
-              aria-label={`Color de ${z.waiterName}`}
-              value={z.color}
-              onChange={(e) => state.setZone(z.id, { color: e.target.value })}
-              className="h-10 w-10 shrink-0 cursor-pointer rounded-lg border border-app-border bg-panel p-1"
-            />
+            <ColorPicker zone={z} zones={draft.zones} onPick={(color) => state.setZone(z.id, { color })} />
           </div>
         ))}
         <button
@@ -551,6 +566,56 @@ export function WaiterEditorPanel({ state }: { state: WaiterZonesState }) {
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * El color de un mesero, elegido de la paleta: un botón que abre los círculos
+ * de los diez colores. Los que ya lleva otro mesero de la configuración no se
+ * pueden elegir (nunca dos iguales).
+ */
+function ColorPicker({ zone, zones, onPick }: { zone: DraftZone; zones: DraftZone[]; onPick: (color: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const usedByOthers = new Set(zones.filter((z) => z.id !== zone.id).map((z) => z.color));
+  return (
+    <div className="min-w-0 flex-1">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-10 items-center gap-1.5 rounded-lg px-2 text-sm text-panel-muted ring-1 ring-app-border hover:bg-app-border/60"
+      >
+        <Palette aria-hidden size={16} strokeWidth={2} />
+        Color
+      </button>
+      {open ? (
+        <div role="radiogroup" aria-label="Color del mesero" className="mt-1.5 flex flex-wrap gap-1.5">
+          {WAITER_PALETTE.map((c) => {
+            const taken = usedByOthers.has(c.hex);
+            const current = c.hex === zone.color;
+            return (
+              <button
+                key={c.hex}
+                type="button"
+                role="radio"
+                aria-checked={current}
+                aria-label={taken ? `${c.name} (ya lo lleva otro mesero)` : c.name}
+                title={c.name}
+                disabled={taken}
+                onClick={() => {
+                  onPick(c.hex);
+                  setOpen(false);
+                }}
+                className={`flex h-9 w-9 items-center justify-center rounded-full ring-2 transition disabled:opacity-25 ${current ? "ring-accent" : "ring-panel"}`}
+                style={{ backgroundColor: c.hex }}
+              >
+                {current ? <Check aria-hidden size={16} color="#ffffff" strokeWidth={3} /> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

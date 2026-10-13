@@ -21,44 +21,14 @@ import Konva from "konva";
 
 import { elementStyle, visibleSeats, visualStatus } from "@/lib/layout/element-style";
 import type { ElementTypeInfo, LayoutElement } from "@/lib/layout/types";
-import { type Theme, readableOn, withAlpha } from "@/lib/theme/theme";
-import { formatDuration, initialOf, shortName } from "@/lib/time/duration";
+import { type Theme, withAlpha } from "@/lib/theme/theme";
 
 import { CanvasIcon } from "./canvas-icon";
 import { typeIcon } from "./icons";
 import { halfExtent } from "@/lib/layout/placement";
-import {
-  LIVE_GROW_WITH_SEATS,
-  LIVE_GROW_WITHOUT_SEATS,
-  LIVE_MIN_FONT,
-  LIVE_MIN_SIDE_FOR_BADGE,
-  type MeasureText,
-  estimateText,
-  liveTextLines,
-  visibleBox,
-} from "./live-marks";
 
 export const CANVAS_FONT =
   "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
-
-// Medidor de textos del plano en vivo: el ancho real con la letra del lienzo,
-// medido una vez a 100 px y guardado (el ancho crece en proporción). Un 4 %
-// de margen por las diferencias de redondeo entre el canvas y Konva.
-let measureContext: CanvasRenderingContext2D | null = null;
-const measured = new Map<string, number>();
-const measureText: MeasureText = (text, px, bold) => {
-  const key = `${bold ? "b" : "n"}|${text}`;
-  let at100 = measured.get(key);
-  if (at100 === undefined) {
-    if (typeof document === "undefined") return estimateText(text, px, bold);
-    measureContext ??= document.createElement("canvas").getContext("2d");
-    if (!measureContext) return estimateText(text, px, bold);
-    measureContext.font = `${bold ? "bold " : ""}100px ${CANVAS_FONT}`;
-    at100 = measureContext.measureText(text).width;
-    measured.set(key, at100);
-  }
-  return (at100 * px * 1.04) / 100;
-};
 
 // Tamaño de lo que va ENCIMA de la mesa: el marcador redondo, la píldora del
 // nombre, la del mesero y la del cliente. Son los números base, en unidades del
@@ -120,17 +90,6 @@ type Props = {
   /** Tamaño de la zona: la mesa no se puede arrastrar fuera. */
   bounds?: { width: number; height: number };
   registerNode: (id: string, node: Konva.Group | null) => void;
-  /**
-   * Plano en vivo: dibujo limpio para mirar de lejos (ver `live-marks.ts`).
-   * Cada mesa lleva dentro su nombre en grande y, si cabe, el cliente en
-   * corto con sus personas y el tiempo; el mesero va en el borde (su color)
-   * y su inicial. Sin sillas, sin íconos y sin píldoras colgando fuera.
-   */
-  live?: boolean;
-  /** Escala de la vista (por escalones, ver `scaleStep`): solo con `live`. */
-  screenScale?: number;
-  /** Personas del grupo sentado (plano en vivo); null si no se sabe. */
-  partySize?: number | null;
 };
 
 // Sin sombras difuminadas (el antiguo brillo de «radar»): en una tablet,
@@ -202,9 +161,6 @@ function ElementNodeBase({
   onDragEnd,
   bounds,
   registerNode,
-  live = false,
-  screenScale = 1,
-  partySize = null,
 }: Props) {
   const waveRef = useRef<Konva.Circle | null>(null);
   // En pantallas táctiles algunos navegadores mandan `tap` y además un
@@ -265,8 +221,7 @@ function ElementNodeBase({
   }, [pulse]);
 
   const radius = Math.min(width, height) / 2;
-  // En el plano en vivo no hay sillas: el estado y el texto se leen mejor.
-  const seats = style.seatable && !live ? visibleSeats(element.capacity) : 0;
+  const seats = style.seatable ? visibleSeats(element.capacity) : 0;
 
   // Sillas alrededor de la mesa, redondeadas y mirando hacia fuera: se lee de
   // un vistazo que es una mesa con sillas y cuántos caben.
@@ -512,48 +467,6 @@ function ElementNodeBase({
       labelY = height / 2 + 16;
   }
 
-  // Plano en vivo, mesas: cuerpo de color sólido (libre neutro, ocupada y
-  // reservada con su color), el mesero en el borde y el texto dentro.
-  const liveSeatable = live && style.seatable;
-  const round = style.shape === "circle";
-  // Sin sillas, la mesa ocupa su sitio: crece hacia donde estaban.
-  const grow = liveSeatable ? (visibleSeats(element.capacity) > 0 ? LIVE_GROW_WITH_SEATS : LIVE_GROW_WITHOUT_SEATS) : 0;
-  const liveTone =
-    status === "libre"
-      ? { fill: theme.panel, stroke: withAlpha(theme.panelText, theme.dark ? 0.4 : 0.32), text: theme.panelText }
-      : { fill: colors.stroke, stroke: colors.stroke, text: colors.onStroke };
-  if (liveSeatable) {
-    // El borde del mesero, ~4 px en pantalla a cualquier zoom.
-    const ring = waiter ? 4 / screenScale : 2 / screenScale;
-    body = round ? (
-      <Circle
-        name="live-body"
-        x={width / 2}
-        y={height / 2}
-        radius={radius + grow}
-        fill={liveTone.fill}
-        stroke={waiter ? waiter.color : liveTone.stroke}
-        strokeWidth={ring}
-        listening={false}
-        perfectDrawEnabled={false}
-      />
-    ) : (
-      <Rect
-        name="live-body"
-        x={-grow}
-        y={-grow}
-        width={width + grow * 2}
-        height={height + grow * 2}
-        cornerRadius={Math.min(16, Math.min(width, height) / 4)}
-        fill={liveTone.fill}
-        stroke={waiter ? waiter.color : liveTone.stroke}
-        strokeWidth={ring}
-        listening={false}
-        perfectDrawEnabled={false}
-      />
-    );
-  }
-
   // La píldora del nombre ocupa lo que hay sitio, con un tope en unidades del plano
   // para no invadir el hueco con la mesa de al lado. En las mesas con sillas
   // puede pasar un poco del ancho, que es justo donde no hay nada. Un nombre
@@ -586,8 +499,7 @@ function ElementNodeBase({
     <Group
       ref={(node) => registerNode(element.id, node)}
       id={element.id}
-      // `ocupada` además: así una prueba en el navegador encuentra las ocupadas.
-      name={element.currentEntryId ? "table-element ocupada" : "table-element"}
+      name="table-element"
       x={element.x + width / 2}
       y={element.y + height / 2}
       offsetX={width / 2}
@@ -659,10 +571,10 @@ function ElementNodeBase({
           no calcule el hit de cada silla; sin esto el elemento no se podría
           seleccionar ni arrastrar. Cubre también las sillas. */}
       <Rect
-        x={seats > 0 ? -18 : -grow}
-        y={seats > 0 ? -18 : -grow}
-        width={seats > 0 ? width + 36 : width + grow * 2}
-        height={seats > 0 ? height + 36 : height + grow * 2}
+        x={seats > 0 ? -18 : 0}
+        y={seats > 0 ? -18 : 0}
+        width={seats > 0 ? width + 36 : width}
+        height={seats > 0 ? height + 36 : height}
         fill="#000000"
         opacity={0}
         perfectDrawEnabled={false}
@@ -670,7 +582,7 @@ function ElementNodeBase({
 
       {/* Zona de mesero: un halo del color del mesero detrás de la mesa. Va
           antes del cuerpo para no tapar el estado (libre, ocupada…). */}
-      {waiter && !live ? (
+      {waiter ? (
         <Rect
           x={seats > 0 ? -14 : -6}
           y={seats > 0 ? -14 : -6}
@@ -690,25 +602,6 @@ function ElementNodeBase({
       {/* Nombre, ícono, marcador y cliente van en un grupo que contrarresta el
           giro del elemento Y el de la vista: la mesa gira, el texto sigue
           derecho. */}
-      {live ? (
-        <Group x={width / 2} y={height / 2} rotation={-(element.rotation + viewRotation)} listening={false}>
-          <LiveText
-            element={element}
-            grow={grow}
-            seatable={style.seatable}
-            showLabel={style.showLabel}
-            round={round}
-            scale={screenScale}
-            theme={theme}
-            color={liveSeatable ? liveTone.text : theme.panelText}
-            occupantName={occupantName}
-            partySize={partySize}
-            minutes={minutes}
-            waiter={liveSeatable ? waiter : null}
-            viewRotation={viewRotation}
-          />
-        </Group>
-      ) : (
       <Group
         x={width / 2}
         y={height / 2}
@@ -789,7 +682,6 @@ function ElementNodeBase({
           </Group>
         ) : null}
       </Group>
-      )}
 
       {selected ? (
         <Rect
@@ -805,137 +697,6 @@ function ElementNodeBase({
         />
       ) : null}
     </Group>
-  );
-}
-
-/**
- * Lo que va escrito dentro de una mesa del plano en vivo, derecho en pantalla
- * (el grupo que lo envuelve ya deshace el giro). Los textos llevan el
- * nombre `live-text` (la inicial del mesero, `live-badge`): `verify:browser`
- * comprueba que no se salgan de su mesa ni se
- * pisen con los de otra.
- */
-function LiveText({
-  element,
-  grow,
-  seatable,
-  showLabel,
-  round,
-  scale,
-  theme,
-  color,
-  occupantName,
-  partySize,
-  minutes,
-  waiter,
-  viewRotation,
-}: {
-  element: LayoutElement;
-  grow: number;
-  seatable: boolean;
-  showLabel: boolean;
-  round: boolean;
-  scale: number;
-  theme: Theme;
-  color: string;
-  occupantName: string | null;
-  partySize: number | null;
-  minutes: number | null;
-  waiter: { color: string; label: string } | null;
-  viewRotation: number;
-}) {
-  const box = visibleBox(element.width + grow * 2, element.height + grow * 2, element.rotation + viewRotation);
-  if (!seatable) {
-    // Caja, baño, zona, barra…: solo su nombre, pequeño, si cabe dentro.
-    const font = LIVE_MIN_FONT / scale;
-    const innerW = box.w * 0.86;
-    if (!showLabel || innerW * scale < 36 || box.h * 0.86 * scale < LIVE_MIN_FONT + 2) return null;
-    return (
-      <Text
-        name="live-text"
-        x={-innerW / 2}
-        y={-font / 2}
-        width={innerW}
-        align="center"
-        text={element.label}
-        fontSize={font}
-        fontStyle="bold"
-        fontFamily={CANVAS_FONT}
-        fill={theme.panelText}
-        opacity={0.75}
-        wrap="none"
-        ellipsis
-      />
-    );
-  }
-
-  // El cliente, de la versión más completa a la más corta: si «Ricardo G. · 4»
-  // no cabe, «Ricardo · 4», y si no, solo el nombre.
-  const first = occupantName?.trim().split(/\s+/)[0] ?? "";
-  const people = partySize ? ` · ${partySize}` : "";
-  const who = occupantName
-    ? [...new Set([`${shortName(occupantName)}${people}`, `${shortName(first)}${people}`, shortName(occupantName), shortName(first)])]
-    : null;
-  const lines = liveTextLines(
-    box,
-    round,
-    scale,
-    { label: element.label, who, time: occupantName && minutes !== null ? formatDuration(minutes) : null },
-    measureText,
-  );
-
-  // La inicial del mesero en una esquina, sobre su color. Solo si la mesa se
-  // ve de un tamaño razonable; si no, basta el color del borde.
-  const side = Math.min(box.w, box.h) * scale;
-  let badge = null;
-  if (waiter && side >= LIVE_MIN_SIDE_FOR_BADGE) {
-    const r = 10 / scale;
-    // Sobre el borde, a las 10 y media en las redondas y en la esquina en las
-    // demás: lejos del texto, que va en el centro.
-    const reach = (Math.min(box.w, box.h) / 2) * Math.SQRT1_2;
-    const bx = round ? -reach : -box.w / 2 + r * 0.55;
-    const by = round ? -reach : -box.h / 2 + r * 0.55;
-    badge = (
-      <Group x={bx} y={by}>
-        <Circle radius={r} fill={waiter.color} stroke={theme.panel} strokeWidth={1.5 / scale} perfectDrawEnabled={false} />
-        <Text
-          name="live-badge"
-          x={-r}
-          y={-6 / scale}
-          width={r * 2}
-          align="center"
-          text={initialOf(waiter.label)}
-          fontSize={LIVE_MIN_FONT / scale}
-          fontStyle="bold"
-          fontFamily={CANVAS_FONT}
-          fill={readableOn(waiter.color)}
-          wrap="none"
-        />
-      </Group>
-    );
-  }
-
-  return (
-    <>
-      {lines.map((l, i) => (
-        <Text
-          key={i}
-          name="live-text"
-          x={-l.width / 2}
-          y={l.y}
-          width={l.width}
-          align="center"
-          text={l.text}
-          fontSize={l.font}
-          fontStyle={l.bold ? "bold" : "normal"}
-          fontFamily={CANVAS_FONT}
-          fill={color}
-          wrap="none"
-          ellipsis
-        />
-      ))}
-      {badge}
-    </>
   );
 }
 

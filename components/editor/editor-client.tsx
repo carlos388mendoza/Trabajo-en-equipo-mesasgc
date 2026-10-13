@@ -64,6 +64,7 @@ import { KonvaCanvas } from "./lazy-konva-canvas";
 import { ICON_STROKE, typeIcon } from "./icons";
 import { useRestaurantSocket } from "@/components/realtime/use-restaurant-socket";
 import { WaiterSelector, useWaiterZones } from "@/components/waiters/waiter-zones";
+import { WaiterDot } from "@/components/waiters/waiter-dot";
 import { setDefaultLayoutAction } from "@/app/restaurante/[id]/editor/actions";
 import { isSeatableElement } from "@/lib/db/enums";
 import type { WaiterConfig } from "@/lib/waiters/configs";
@@ -849,8 +850,7 @@ export function EditorClient({
             Mesero:
             {selectedWaiter ? (
               <>
-                <span aria-hidden className="h-3 w-3 rounded-full" style={{ backgroundColor: selectedWaiter.color }} />
-                <span className="font-bold">{selectedWaiter.label}</span>
+                <WaiterDot color={selectedWaiter.color} size={16} />
               </>
             ) : (
               <span className="text-panel-muted">sin mesero</span>

@@ -1403,45 +1403,80 @@ section("Colocación dentro del recuadro y límites");
 }
 
 // ---------------------------------------------------------------------------
-section("Plano en vivo: texto dentro de las mesas y tiempos legibles");
+section("Tiempos legibles, paleta de meseros (solo colores) y borrar una zona");
 // ---------------------------------------------------------------------------
 
 {
-  const { liveTextLines, compactLabel, scaleStep, visibleBox, LIVE_MIN_FONT, estimateText } = await import("@/components/editor/live-marks");
-  const { formatDuration, shortName, initialOf } = await import("@/lib/time/duration");
-
+  const { formatDuration, shortName } = await import("@/lib/time/duration");
   check("formatDuration: 12 min", formatDuration(12) === "12 min");
   check("formatDuration: 1 h 20 min", formatDuration(80) === "1 h 20 min");
   check("formatDuration: 2 h (sin «0 min»)", formatDuration(120) === "2 h");
   check("formatDuration: 2 d (nunca «11136 min»)", formatDuration(2 * 24 * 60 + 5) === "2 d" && formatDuration(11136) === "7 d");
   check("shortName: «Ana Torres López» → «Ana T.»", shortName("Ana Torres López") === "Ana T.");
-  check("shortName: como mucho 12 letras con «…»", shortName("Maximiliano Rodríguez").length <= 12 && shortName("Maximiliano Rodríguez").endsWith("…"));
-  check("initialOf: la inicial del mesero en mayúscula", initialOf("luis") === "L");
-  check("compactLabel: «Mesa 12» → «M12», «Bancada terraza» → «BT»", compactLabel("Mesa 12") === "M12" && compactLabel("Bancada terraza") === "BT");
 
-  // Una mesa redonda de 103 unidades (75 + las sillas) a escala 1,1.
-  const grande = liveTextLines({ w: 103, h: 103 }, true, 1.1, { label: "Mesa 1", who: ["Pedro R. · 4"], time: "7 d" });
-  check("mesa grande: nombre, cliente y tiempo", grande.length === 3 && grande[1].text === "Pedro R. · 4" && grande[2].text === "7 d", JSON.stringify(grande.map((l) => l.text)));
-  const enPantalla = (l: { font: number }, scale: number) => l.font * scale;
-  check("  ninguna letra baja de 12 px en pantalla", grande.every((l) => enPantalla(l, 1.1) >= LIVE_MIN_FONT - 1e-9));
-  check("  cada línea cabe en su ancho", grande.every((l) => estimateText(l.text, l.font * 1.1, l.bold) <= l.width * 1.1 + 0.5));
+  // La paleta: diez colores distintos, con nombre, en el orden pedido.
+  const { WAITER_PALETTE, waiterColorName, waiterLabel, paletteHexByName } = await import("@/lib/waiters/palette");
+  const { MAX_WAITERS, defaultWaiterName, WAITER_COLORS } = await import("@/lib/waiters/balance");
+  const { saveWaiterConfigSchema } = await import("@/lib/waiters/validation");
   check(
-    "  las líneas no se pisan entre sí",
-    grande.every((l, i) => i === 0 || l.y >= grande[i - 1].y + grande[i - 1].font - 1e-9),
+    "la paleta: rojo, azul, amarillo, verde, morado, naranja, rosa, turquesa, café, gris oscuro, lima y lavanda",
+    WAITER_PALETTE.map((c) => c.name).join(",") === "Rojo,Azul,Amarillo,Verde,Morado,Naranja,Rosa,Turquesa,Café,Gris oscuro,Lima,Lavanda",
   );
-  check("  y quedan dentro de la mesa (alto)", grande[0].y >= -103 / 2 && grande[2].y + grande[2].font <= 103 / 2);
+  check("  doce colores distintos (el tope de meseros), y es la que usan las zonas", new Set(WAITER_PALETTE.map((c) => c.hex)).size === 12 && WAITER_COLORS.length === 12 && MAX_WAITERS === 12);
+  check("  los colores no repiten los de estado de las mesas", !WAITER_PALETTE.some((c) => ["#16a34a", "#dc2626", "#64748b", "#4ade80", "#f87171", "#94a3b8"].includes(c.hex)));
+  check("el mesero 1 se llama por su color («Rojo»)", defaultWaiterName(1) === "Rojo" && defaultWaiterName(2) === "Azul");
+  check("waiterLabel: «Mesero azul»", waiterLabel(WAITER_PALETTE[1].hex) === "Mesero azul");
+  check("un color de antes se nombra por el más parecido de la paleta", waiterColorName("#3b82f6") === "Azul");
+  check("paletteHexByName reconoce el nombre de un color", paletteHexByName("rojo") === WAITER_PALETTE[0].hex && paletteHexByName("Ana") === null);
+  const guardar = (zones: { id: string; waiterName: string; color: string }[]) =>
+    saveWaiterConfigSchema.safeParse({ restaurantId: "r", configId: "c", version: 1, name: "x", zones, assignments: [] });
+  check("Zod acepta colores de la paleta", guardar([{ id: "a", waiterName: "Rojo", color: WAITER_PALETTE[0].hex }, { id: "b", waiterName: "Azul", color: WAITER_PALETTE[1].hex }]).success);
+  check("  y rechaza un color fuera de la paleta", !guardar([{ id: "a", waiterName: "X", color: "#123456" }]).success);
+  check("  y dos meseros del mismo color", !guardar([{ id: "a", waiterName: "A", color: WAITER_PALETTE[0].hex }, { id: "b", waiterName: "B", color: WAITER_PALETTE[0].hex }]).success);
 
-  // La misma mesa con el zoom alejado: solo el nombre (o su forma corta).
-  const lejos = liveTextLines({ w: 103, h: 103 }, true, 0.4, { label: "Mesa 1", who: ["Pedro R. · 4"], time: "7 d" });
-  check("zoom alejado: se ocultan el cliente y el tiempo", lejos.length === 1, JSON.stringify(lejos.map((l) => l.text)));
-  check("  y la letra sigue siendo de 12 px", enPantalla(lejos[0], 0.4) >= LIVE_MIN_FONT - 1e-9);
-  const minima = liveTextLines({ w: 60, h: 60 }, true, 0.4, { label: "Terraza 3" });
-  check("  si ni así cabe el nombre, su forma corta («T3»)", minima.length === 1 && minima[0].text === "T3", minima[0].text);
-  const dos = liveTextLines({ w: 106, h: 106 }, false, 0.9, { label: "Bancada terraza" });
-  check("un nombre largo va en dos líneas antes de acortarse", dos.length === 2 && dos[0].text === "Bancada" && dos[1].text === "terraza", JSON.stringify(dos.map((l) => l.text)));
+  // El color de cada mesero desde el nombre apuntado en el cliente.
+  const { waiterColorsByName, colorOf } = await import("@/lib/waiters/colors");
+  const colores = await waiterColorsByName(["rest-meseros"]);
+  const activa = (await (await import("@/lib/waiters/configs")).listWaiterConfigs("rest-meseros")).find((c) => c.isActive);
+  const primero = activa?.zones.find((z) => z.position === 1);
+  check("waiterColorsByName da el color de cada mesero del restaurante", !!primero && colorOf(colores, "rest-meseros", primero.waiterName) === primero.color.toLowerCase());
+  check("  y un mesero de otro restaurante no se confunde", colorOf(colores, "rest-meseros-otro", primero?.waiterName ?? "") === paletteHexByName(primero?.waiterName ?? ""));
 
-  check("scaleStep redondea HACIA ABAJO (la letra nunca sale menor)", [0.37, 0.8, 1, 1.13, 1.6, 2.4].every((x) => scaleStep(x) <= x + 1e-9 && scaleStep(x) > x / 1.13));
-  check("visibleBox: girada 90° intercambia ancho y alto", JSON.stringify(visibleBox(120, 60, 90)) === JSON.stringify({ w: 60, h: 120 }));
+  // Borrar una zona entera con la lógica de la app.
+  const { deleteZone } = await import("@/lib/layout/delete-zone");
+  const { waiterZoneTables, waiterConfigs, waitlistEntries } = await import("@/lib/db/schema");
+  const { and, eq, inArray } = await import("drizzle-orm");
+  const RZ = "rest-zonas";
+  await db.insert(restaurants).values([{ id: RZ, name: "Zonas", slug: "zonas" }]);
+  await db.insert(tableLayouts).values([
+    { id: "lay-demo", restaurantId: RZ, name: "Comedor (demostración)", width: 800, height: 600, isDefault: true, isDemo: true, version: 1 },
+    { id: "lay-principal", restaurantId: RZ, name: "Comedor principal", width: 800, height: 600, sortOrder: 1, version: 1 },
+  ]);
+  const mz = (id: string, layoutId: string, x: number) =>
+    ({ id, restaurantId: RZ, layoutId, elementTypeId: TYPES.mesa, label: id, x, y: 0, width: 80, height: 80, rotation: 0, capacity: 4 });
+  await db.insert(tables).values([mz("zd-1", "lay-demo", 0), mz("zd-2", "lay-demo", 100), mz("zp-1", "lay-principal", 0)]);
+  await db.insert(waitlistEntries).values([
+    { id: "ze-sentado", restaurantId: RZ, customerName: "Sentado demo", partySize: 2, status: "sentado", assignedTableId: "zd-1", isDemo: true, waiterName: "Rojo" },
+    { id: "ze-viejo", restaurantId: RZ, customerName: "Historial demo", partySize: 3, status: "sentado", assignedTableId: "zd-2", isDemo: true },
+  ]);
+  await db.update(tables).set({ currentEntryId: "ze-sentado", status: "ocupada" }).where(eq(tables.id, "zd-1"));
+  const meseros = await (await import("@/lib/waiters/configs")).createWaiterConfig({ restaurantId: RZ, waiterCount: 2 });
+  check("(prueba) el reparto de meseros incluye las mesas de la zona demo", meseros.ok && meseros.config.zones.flatMap((z) => z.tableIds).includes("zd-1"));
+
+  check("no se puede borrar una zona de otro restaurante", !(await deleteZone({ restaurantId: "rest-meseros", layoutId: "lay-demo" })).ok);
+  const borrada = await deleteZone({ restaurantId: RZ, layoutId: "lay-demo" });
+  check("deleteZone borra la zona demo y sus 2 mesas", borrada.ok && borrada.tables === 2 && (await db.select().from(tableLayouts).where(eq(tableLayouts.id, "lay-demo"))).length === 0, JSON.stringify(borrada));
+  check("  liberó antes la mesa ocupada (con la lógica normal)", borrada.ok && borrada.released === 1);
+  const clientes = await db.select().from(waitlistEntries).where(inArray(waitlistEntries.id, ["ze-sentado", "ze-viejo"]));
+  check("  los clientes se quedan, con su estado y su mesero (las cifras no cambian)", clientes.length === 2 && clientes.every((c) => c.status === "sentado") && clientes.find((c) => c.id === "ze-sentado")?.waiterName === "Rojo");
+  check("  sin el puntero a la mesa borrada", clientes.every((c) => c.assignedTableId === null));
+  const enReparto = await db.select().from(waiterZoneTables).where(inArray(waiterZoneTables.tableId, ["zd-1", "zd-2"]));
+  check("  las mesas salen del reparto de meseros", enReparto.length === 0);
+  check("  pero la configuración de meseros sigue", (await db.select().from(waiterConfigs).where(eq(waiterConfigs.restaurantId, RZ))).length === 1);
+  const principal = await db.select().from(tableLayouts).where(eq(tableLayouts.id, "lay-principal"));
+  check("  era la zona por defecto: ahora lo es el «Comedor principal»", borrada.ok && borrada.newDefault === "Comedor principal" && principal[0]?.isDefault === true);
+  check("  y el Comedor principal conserva su mesa", (await db.select().from(tables).where(and(eq(tables.layoutId, "lay-principal")))).length === 1);
+  check("no se puede borrar la única zona que queda", !(await deleteZone({ restaurantId: RZ, layoutId: "lay-principal" })).ok);
 }
 
 // ---------------------------------------------------------------------------
