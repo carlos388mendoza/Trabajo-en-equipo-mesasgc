@@ -1525,8 +1525,8 @@ número) y su **color**. Se cambia de una a otra con **un toque**.
 ### Qué se ve
 
 - **Plano en vivo** (`/restaurante/[id]/mapa`): el contador **«Meseros
-  activos: [−] 3 [+]»** arriba, y cada mesa con un borde grueso y una franja
-  del color de su mesero (sin nombre). Debajo, la leyenda: cada mesero con sus mesas y
+  activos: [−] 3 [+]»** arriba, y cada mesa con un borde grueso y un círculo
+  del color de su mesero encima (sin nombre). Debajo, la leyenda: cada mesero con sus mesas y
   cuántas quedan «sin mesero». Los botones **[−] y [+]** (44×44 px) bajan y
   suben la cantidad de meseros: activan la configuración de ese número y, si
   todavía no existe, **la crean con las mesas ya repartidas** y la activan.
@@ -1569,11 +1569,17 @@ par más parecido está a ΔE 21,8; con daltonismo, entre los diez primeros el
 más parecido es rojo y café (ΔE ≈ 10, solo con 9 o más meseros), y con lima
 baja a ≈ 5 frente al naranja (solo con 11 o 12 meseros).
 
-- En el plano, el mesero es un **borde grueso** alrededor de la mesa y una
-  franja de su color encima (el estado va en la mesa misma, así no se
+- En el plano, el mesero es un **borde grueso** alrededor de la mesa y un
+  **círculo** de su color encima (el estado va en la mesa misma, así no se
   confunden). En las pantallas HTML, un círculo (`components/waiters/
   waiter-dot.tsx`) con el nombre del color oculto para lectores de pantalla
   y un globo al mantenerlo presionado («Rojo»).
+- **Sin burbuja** (13 de octubre de 2026): el color va solo, sin pastilla ni
+  recuadro con fondo y borde alrededor: encima de la mesa (antes una
+  pastilla), en la leyenda del plano (antes chips) y en la fila MESEROS de
+  «Ver clientes» (antes botones con borde; ahora el círculo, con un área de
+  toque de 44×44). El elegido en «Ver clientes» lleva un anillo fino de su
+  color alrededor del propio círculo.
 - `waiter_zones.waiter_name` sigue en la base como **clave interna**: con él
   se apunta en cada cliente quién lo atendió. Las configuraciones nuevas
   guardan ahí el nombre del color («Rojo»); las de antes conservan el suyo.

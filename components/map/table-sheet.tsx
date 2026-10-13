@@ -22,7 +22,7 @@ import type { Ack, TableChange } from "@/lib/realtime/events";
 import type { LayoutElement } from "@/lib/layout/types";
 import { durationBetween } from "@/lib/time/duration";
 import { HONDURAS_TIME_ZONE } from "@/lib/time/honduras";
-import { waiterColorName } from "@/lib/waiters/palette";
+import { waiterColorName, waiterLabel } from "@/lib/waiters/palette";
 import { RELEASE_FIRST_HINT, releasedNowMessage, seatedDeleteMessage } from "@/lib/waitlist/delete-rule";
 import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
 
@@ -160,9 +160,9 @@ export function TableSheet({ element, waiter, showNames, now, actions, onClose, 
               <span
                 className="h-3.5 w-3.5 shrink-0 rounded-full ring-2 ring-panel"
                 style={{ backgroundColor: waiter.color }}
-                title={`Mesero ${waiterColorName(waiter.color)}`}
+                title={waiterColorName(waiter.color)}
               >
-                <span className="sr-only">Mesero {waiterColorName(waiter.color)}</span>
+                <span className="sr-only">{waiterLabel(waiter.color)}</span>
               </span>
             ) : null}
             {element.label}

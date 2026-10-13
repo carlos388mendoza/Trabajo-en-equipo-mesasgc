@@ -118,11 +118,11 @@ Toca **Plano en vivo** (dentro del restaurante). Ves todas las mesas: verde =
 libre, rojo = ocupada, gris = reservada. En las ocupadas, una franja roja con
 el cliente y cuánto lleva («12 min», «1 h 20 min», «2 d»).
 
-**Los meseros, solo por su color.** Cada mesa tiene un borde grueso y una
-franja encima del color de su mesero (rojo, azul, amarillo, verde…). No hay
+**Los meseros, solo por su color.** Cada mesa tiene un borde grueso y un
+círculo encima del color de su mesero (rojo, azul, amarillo, verde…). No hay
 nombres: el mesero se reconoce por su color. Debajo de los botones, cada
-color con cuántas mesas tiene. (Mantén el dedo sobre un color para ver su
-nombre.)
+círculo de color con cuántas mesas tiene. (Mantén el dedo sobre un color para
+ver su nombre.)
 
 ### Tocar una mesa
 
