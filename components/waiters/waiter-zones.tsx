@@ -371,10 +371,10 @@ export function WaiterLegend({ state, tableCount }: { state: WaiterZonesState; t
   for (const mark of Object.values(state.marks)) counts.set(mark.label + mark.color, (counts.get(mark.label + mark.color) ?? 0) + 1);
   const assigned = Object.keys(state.marks).length;
   return (
-    <ul aria-label="Meseros y sus mesas" className="flex flex-wrap items-center gap-1.5 text-xs font-medium">
+    <ul aria-label="Meseros y sus mesas" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium">
       {zones.map((z) => (
-        <li key={z.id} className="flex items-center gap-1.5 rounded-full bg-panel px-2.5 py-1 text-panel-text ring-1 ring-app-border">
-          <WaiterDot color={z.color} size={14} />
+        <li key={z.id} className="flex items-center gap-1.5 px-1 py-1 text-panel-text">
+          <WaiterDot color={z.color} size={18} />
           <span className="tabular-nums text-panel-muted">{counts.get(waiterLabel(z.color) + z.color) ?? 0} mesas</span>
         </li>
       ))}

@@ -39,8 +39,8 @@ const LABEL_FONT = 15;
 const LABEL_HEIGHT = 26;
 const MARKER_RADIUS = 15;
 const MARKER_ICON = 18;
-const WAITER_HEIGHT = 26;
-const WAITER_MIN_WIDTH = 104;
+/** Radio del círculo del mesero encima de la mesa. */
+const WAITER_DOT = 13;
 const OCCUPANT_HEIGHT = 28;
 const OCCUPANT_FONT = 13;
 
@@ -640,18 +640,16 @@ function ElementNodeBase({
         ) : null}
 
         {waiter ? (
-          <Group y={-height / 2 - (seats > 0 ? 34 * MS : 17 * MS)}>
-            {/* El mesero se reconoce solo por su color: la franja no lleva
-                nombre (el color, con nombre, está en la leyenda). */}
-            <Rect
-              x={-Math.max(labelWidth, WAITER_MIN_WIDTH * MS) / 2}
-              y={(-WAITER_HEIGHT * MS) / 2}
-              width={Math.max(labelWidth, WAITER_MIN_WIDTH * MS)}
-              height={WAITER_HEIGHT * MS}
-              cornerRadius={(WAITER_HEIGHT * MS) / 2}
+          <Group y={-height / 2 - (seats > 0 ? 34 * MS : 17 * MS)} listening={false}>
+            {/* El mesero se reconoce solo por su color: un círculo de su
+                color encima de la mesa, sin pastilla ni nombre (el color, con
+                nombre, está en la leyenda). */}
+            <Circle
+              radius={WAITER_DOT * MS}
               fill={waiter.color}
               stroke={theme.mapBg}
-              strokeWidth={1.5}
+              strokeWidth={2}
+              perfectDrawEnabled={false}
             />
           </Group>
         ) : null}

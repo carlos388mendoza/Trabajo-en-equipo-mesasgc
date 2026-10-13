@@ -439,7 +439,7 @@ function AllCardsContent({
           <h2 id="todas-cartas-titulo" className="font-bold text-panel-text">Clientes</h2>
           <p className="text-sm text-panel-muted">
             {loading ? "Cargando…" : plural(shownCounts[filter], "cliente", "clientes")}
-            {activeWaiter && ` · atendidos por ${activeWaiter}`}
+            {activeWaiter && ` · atendidos por el ${waiterLabel(legend.find((w) => w.name === activeWaiter)?.color).toLocaleLowerCase("es")}`}
             {!connected && " · Sin conexión (copia de esta tablet)"}
           </p>
         </div>
@@ -505,15 +505,13 @@ function AllCardsContent({
                   onClick={() => setWaiterFilter((current) => (current === waiter.name ? null : waiter.name))}
                   aria-label={on ? `${waiterLabel(waiter.color)}: ver todos los clientes` : `Ver solo los clientes del ${waiterLabel(waiter.color).toLocaleLowerCase("es")}`}
                   title={on ? "Ver todos los clientes" : `Ver solo los clientes del ${waiterLabel(waiter.color).toLocaleLowerCase("es")}`}
-                  className={`inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-full border-2 px-3 text-sm font-semibold text-panel-text transition hover:bg-app-border/50 ${
-                    on ? "" : "border-app-border"
-                  }`}
-                  // El borde y el fondo con el color del mesero solo al elegirlo;
-                  // el texto sigue con el color del tema para que se lea.
-                  style={on ? { borderColor: waiter.color, backgroundColor: `${waiter.color}26` } : undefined}
+                  // Solo el círculo (sin fondo ni borde alrededor): el botón mide
+                  // 44×44 para tocarlo fácil, aunque el círculo se vea menor.
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
-                  {/* Solo el color: el mesero se reconoce por él. */}
-                  <WaiterDot color={waiter.color} size={20} className="ring-2 ring-panel" />
+                  {/* Solo el color: el mesero se reconoce por él. Elegido, un
+                      anillo fino de su color alrededor del propio círculo. */}
+                  <WaiterDot color={waiter.color} size={24} selected={on} />
                 </button>
               );
             })}

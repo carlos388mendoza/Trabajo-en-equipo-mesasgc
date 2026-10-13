@@ -12,7 +12,7 @@
 // editor.
 //
 // Zonas de meseros: cada mesa sale teñida del color de su mesero en la
-// configuración activa, con una franja de su color encima (sin nombre: el
+// configuración activa, con un círculo de su color encima (sin nombre: el
 // mesero se reconoce por su color). Con `meseros:gestionar` se
 // cambia la activa con un toque y se editan las zonas aquí mismo (pintando
 // mesas sobre este plano, que no deja mover nada).

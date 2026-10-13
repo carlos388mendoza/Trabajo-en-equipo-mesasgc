@@ -16,10 +16,12 @@ type Props = {
   color: string | null;
   /** Diámetro en px. */
   size?: number;
+  /** Elegido (un filtro activo): un anillo fino de su color alrededor. */
+  selected?: boolean;
   className?: string;
 };
 
-export function WaiterDot({ color, size = 14, className = "" }: Props) {
+export function WaiterDot({ color, size = 14, selected = false, className = "" }: Props) {
   const [tip, setTip] = useState(false);
   const holdTimer = useRef<number | null>(null);
   const hideTimer = useRef<number | null>(null);
@@ -51,7 +53,13 @@ export function WaiterDot({ color, size = 14, className = "" }: Props) {
       onPointerLeave={stop}
       onPointerCancel={stop}
       className={`relative inline-block shrink-0 rounded-full ${color ? "" : "border-2 border-dashed border-panel-muted"} ${className}`}
-      style={{ width: size, height: size, backgroundColor: color ?? "transparent" }}
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: color ?? "transparent",
+        // El anillo: un hueco del color del panel y luego el color del mesero.
+        boxShadow: selected && color ? `0 0 0 2px rgb(var(--c-panel)), 0 0 0 4px ${color}` : undefined,
+      }}
     >
       <span className="sr-only">{label}</span>
       {tip ? (
