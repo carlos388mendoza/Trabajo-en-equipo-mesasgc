@@ -328,10 +328,11 @@ sentados. Por defecto muestra los de **hoy**; **Últimos 7 días** muestra la
 semana. Filtra por estado o busca por nombre (sin importar tildes). Cada
 cliente dice a qué hora llegó, cuánto esperó y quién lo resolvió.
 
-**Colores de los meseros:** arriba de la lista sale **MESEROS** con un punto de
-color y el nombre de cada mesero activo (los mismos colores del plano en
-vivo). Cada cliente sentado lleva una franja de ese color y dice «Mesa 4 ·
-Lo atiende **Luis**»; los que siguen esperando dicen «Sin mesero». **Toca un
+**Colores de los meseros:** arriba de la lista sale **MESEROS** con un círculo
+del color de cada mesero activo, sin nombres (los mismos colores del plano en
+vivo; el mesero se reconoce solo por su color). Cada cliente sentado lleva una
+franja de ese color y dice «Mesa 4 · Lo atiende ●» con el círculo de su
+mesero; los que siguen esperando dicen «Sin mesero». **Toca un
 mesero** para ver solo sus clientes; tócalo otra vez para volver a verlos
 todos. Si cambian los meseros con **[−] [+]** (aquí o en otra tablet), los
 colores se ponen al día solos. Si el restaurante no tiene zonas de meseros,
@@ -362,7 +363,7 @@ después, ya no se puede: búscala en **Ver clientes** y corrígela ahí.
 **Sentar y liberar mesa:** en **Ver clientes**, una carta en espera o
 lista tiene **Sentar**: elige una mesa libre (por zona, con sus lugares y el
 **mesero** que la atiende, con su color). Al sentar, el aviso dice quién lo
-atiende: «Ana se sentó en Mesa 4. **Lo atiende Luis.**». Una carta sentada
+atiende, por su color: «Ana se sentó en Mesa 4. **Lo atiende el mesero rojo.**». Una carta sentada
 tiene **Liberar Mesa N** cuando el grupo se va. Si otra tablet ocupó esa mesa
 un segundo antes, sale «Esta mesa ya fue asignada»: elige otra.
 
@@ -373,8 +374,8 @@ seleccionados** (pide confirmar y dice cuántos), o **Limpiar pendientes
 antiguos** (más de 12 h, 24 h o 7 días): los que siguen en la fila o listos
 quedan ausentes y se liberan las mesas de los sentados hace más de eso. Todo
 se puede deshacer enseguida. En el **plano en vivo**, toca una mesa para ver
-su ficha (**Sentar**, **Liberar mesa**); **Más** → **Liberar todas las
-mesas** (hay que escribir LIBERAR). Marcar ausente y liberar guardan las
+su panel (**Sentar**, **Liberar mesa**), o **Liberar todas las mesas** (hay
+que escribir LIBERAR). Marcar ausente y liberar guardan las
 cifras; **eliminar las quita**: déjalo para los errores.
 
 **Primero libera la mesa, luego elimina.** A un cliente que está en una mesa

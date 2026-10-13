@@ -647,10 +647,11 @@ formulario ya no está al lado (`components/quick-mode/`):
     400 ms después del último.
 - **Colores de los meseros en «Ver clientes».** Arriba de la lista, la
   leyenda de la configuración de meseros activa (los mismos que cuenta
-  «Meseros activos: [−] N [+]»): un punto de color y el nombre de cada uno.
-  Tocar un mesero deja solo sus clientes; tocarlo otra vez lo quita. Cada
-  cliente sentado lleva una franja a la izquierda y «Lo atiende Ana» con el
-  color de su mesero, el que se apuntó al sentarlo (`waiter_name`); los demás,
+  «Meseros activos: [−] N [+]»): un círculo del color de cada uno, SIN
+  nombre (el mesero se reconoce solo por su color; ver «Meseros por color»
+  en §18). Tocar un mesero deja solo sus clientes; tocarlo otra vez lo quita.
+  Cada cliente sentado lleva una franja a la izquierda y «Lo atiende ●» con el
+  círculo de su mesero, el que se apuntó al sentarlo (`waiter_name`); los demás,
   «Sin mesero» en gris. Si el restaurante no tiene zonas de meseros, no hay
   leyenda.
   - La leyenda sale de las mesas que el modo sencillo ya tiene, con el mesero y
@@ -1230,32 +1231,28 @@ solo ve el plano de los suyos.
 - **Zoom al plano.** Al tocar un marcador, el `viewBox` se acerca a él y
   aparece el plano en vivo del restaurante: el mismo lienzo del editor, en
   solo lectura. «Volver al mapa general» (o Esc) hace el zoom inverso.
-- **Plano en vivo menos saturado** (octubre de 2026). Cada mesa lleva
-  DENTRO solo lo esencial: su nombre en grande y, si está ocupada y cabe, el
-  cliente en corto con sus personas («Ana T. · 4») y el tiempo («12 min»,
-  «1 h 20 min», «2 d», `lib/time/duration.ts`). El mesero va en el borde
-  (su color) y su inicial. Sin sillas (la mesa ocupa su sitio), sin íconos
-  y sin píldoras colgando fuera, que eran las que se encimaban con la mesa
-  de al lado. Colores sólidos: libre neutro, ocupada y reservada con su
-  color, con el texto del contraste que toque.
-  - **El texto se ajusta al zoom** (`components/editor/live-marks.ts`): los
-    tamaños se calculan en píxeles de pantalla, nunca menos de 12 px. Si no
-    cabe, se oculta el cliente y el tiempo y queda el nombre (en dos líneas
-    o en corto, «M3»). La escala va por escalones (`scaleStep`), así que las
-    mesas solo se redibujan al terminar un pellizco: el plano sigue a 60 FPS.
-  - **Ficha de la mesa** (`components/map/table-sheet.tsx`): al tocar una
-    mesa, estado, mesero, cliente, personas, llegada, tiempo y nota, con
-    **Sentar** (mesa libre; `mesas:asignar`), **Liberar mesa** y, después
-    de liberar, **Eliminar cliente** (`rapido:modificar`). Los datos del
-    cliente (`occupantDetail`) solo salen del servidor con `plano:clientes`.
-  - **Barra compacta**: lista de espera, zonas, meseros y **Más** (editar
-    zonas, nueva configuración, «Liberar todas las mesas» con LIBERAR,
-    volver a la vista normal; en el celular, también los meseros). La
-    leyenda es pequeña y plegable, y no hay minimapa. El encuadre deja aire
-    alrededor.
-  - `verify:browser` comprueba, con la tablet acostada (1180×820 y
-    1024×768) y en cada zona, que ningún texto se salga de su mesa, que no se
-    encimen con los de otra y que ninguno mida menos de 12 px.
+- **El diseño del plano en vivo es el de siempre** (el de `testing` antes
+  de #80): mesas con sillas, marcador del estado, píldora con el nombre,
+  leyenda y minimapa. En #80 se probó un diseño «menos saturado» (texto dentro
+  de las mesas, barra con «Más», leyenda plegable); no gustó y se volvió al
+  de siempre, conservando las funciones nuevas:
+  - **Tocar una mesa** abre el panel de abajo de siempre
+    (`components/map/table-sheet.tsx`): «Ocupada por Ana · 4 personas ·
+    desde hace 1 h 20 min», la hora de llegada, y **Sentar** (mesa libre;
+    `mesas:asignar`), **Liberar mesa** y, después de liberar, **Eliminar
+    cliente** (`rapido:modificar`). Los datos del cliente
+    (`occupantDetail`) solo salen del servidor con `plano:clientes`.
+  - **Tiempos legibles** en la píldora del cliente: «12 min», «1 h 20 min»,
+    «2 d» (`lib/time/duration.ts`).
+  - Dos errores del diseño de antes, arreglados sin cambiar su aspecto: la
+    píldora del cliente va justo debajo de la del nombre y del mismo ancho
+    (recortada con «…»), dentro del sitio de la mesa, en vez de colgar más
+    ancha debajo de las sillas y encimarse con el mesero de la mesa de abajo;
+    y en el celular de pie los controles van en UNA fila que se desliza (y se
+    esconde la frase de ayuda), así ya no empujan el plano fuera de la pantalla.
+  - `verify:browser` comprueba, con la tablet acostada y en cada zona, que
+    ningún texto se salga del sitio de su mesa (mesa y sillas) ni se encime
+    con los de otra.
   El editor sigue sin tocar `status` ni `current_entry_id`.
 
 ### Tiempo real
@@ -1344,9 +1341,8 @@ Las tablets usan Opera, y la pantalla completa se pone desde el propio Opera
 | `components/map/live-plan.tsx` | El plano en vivo y su modo inmersivo (controles flotantes y panel de la lista de espera). |
 | `lib/layout/immersive.ts` | La media query de la tablet en horizontal, que comparten Tailwind y el plano. |
 | `components/map/world-map.tsx` | Mapa, cámara (rueda, pellizco, arrastre, botones y minimapa), marcadores y grupos, filtros, lista y zoom al plano. |
-| `components/map/live-plan.tsx` | Plano en vivo (Konva sin editar): barra compacta, leyenda plegable y ficha de cada mesa. |
-| `components/map/table-sheet.tsx` | Ficha de una mesa: detalle, Sentar, Liberar mesa y Eliminar cliente (después de liberar). |
-| `components/editor/live-marks.ts` | Qué texto cabe dentro de cada mesa del plano en vivo y de qué tamaño. |
+| `components/map/live-plan.tsx` | Plano en vivo (Konva sin editar), con el panel de cada mesa. |
+| `components/map/table-sheet.tsx` | Panel de una mesa: quién está, Sentar, Liberar mesa y Eliminar cliente (después de liberar). |
 | `components/map/use-overview-socket.ts` | Socket de la sala `overview` y respaldo de 30 s. |
 
 ### Decisiones que conviene no deshacer sin pensarlo
@@ -1435,19 +1431,26 @@ están en `docs/despliegue.md`.
 
 ### Qué carga
 
-- **Una zona de demostración por restaurante** (los 8 reales), con la sala
-  completa: mesas con sillas, una bancada, baños, caja y zona de juegos.
 - **Clientes esperando ahora**, con sus minutos de espera y **teléfonos de
   mentira** (`0000-0000-0000`), y una nota que lo dice en cada ficha.
-- **Mesas de demostración ocupadas y reservadas**, puestas con `assignTable`, el
-  mismo camino que usa un host.
 - **Ocho semanas de historial** para que `/analiticas` y el asistente tengan
-  algo que contar desde el primer día.
+  algo que contar desde el primer día. Cada grupo apunta a una mesa REAL del
+  restaurante (solo el puntero `assigned_table_id`, para saber su mesero;
+  no la ocupa ni la cambia).
+- Configuraciones de meseros de ejemplo, si el restaurante no tiene.
 
-Cargado sobre los 8 restaurantes reales (contado el 1 de octubre de 2026, sin
-nada real en la base): **8 zonas de demostración, 86 mesas, 29 clientes esperando,
-29 sentados y 6 mesas reservadas, más 12 251 clientes de historial**; 12 403
-filas en total. `/analiticas` y el asistente los leen como leen cualquier otra
+**Ya no hay zonas de demostración** (13 de octubre de 2026). Antes el lote
+creaba un «Comedor (demostración)» por restaurante, con mesas ocupadas y
+reservadas. Se quitaron de producción y de local con `npm run db:zonas-demo`
+(`scripts/db-borrar-zonas-demo.mts`), que usa `deleteZone`
+(`lib/layout/delete-zone.ts`): libera antes las mesas ocupadas con la lógica
+normal, conserva los clientes (y sus cifras), saca las mesas del reparto de
+meseros y, si era la zona por defecto, pasa a serlo el «Comedor principal».
+Sin `--confirmar=BORRAR-ZONAS-DEMO` solo dice qué haría.
+
+Cargado sobre los 8 restaurantes reales (contado el 1 de octubre de 2026, con
+las zonas de demostración de entonces): 29 clientes esperando y 12 251 de
+historial. `/analiticas` y el asistente los leen como leen cualquier otra
 cosa: no hay atajo para el demo.
 
 Lo que **no** hace nunca: crear ni tocar marcas, restaurantes, el catálogo de
@@ -1522,16 +1525,17 @@ número) y su **color**. Se cambia de una a otra con **un toque**.
 ### Qué se ve
 
 - **Plano en vivo** (`/restaurante/[id]/mapa`): el contador **«Meseros
-  activos: [−] 3 [+]»** arriba, y cada mesa teñida del color de su mesero
-  con su nombre encima. Debajo, la leyenda: cada mesero con sus mesas y
+  activos: [−] 3 [+]»** arriba, y cada mesa con un borde grueso y una franja
+  del color de su mesero (sin nombre). Debajo, la leyenda: cada mesero con sus mesas y
   cuántas quedan «sin mesero». Los botones **[−] y [+]** (44×44 px) bajan y
   suben la cantidad de meseros: activan la configuración de ese número y, si
   todavía no existe, **la crean con las mesas ya repartidas** y la activan.
-  No se puede bajar de 1 ni subir de `MAX_WAITERS` (12), y el cambio llega a
+  No se puede bajar de 1 ni subir de `MAX_WAITERS` (12, uno por color), y el cambio llega a
   las demás tablets por el socket.
 - **Editar zonas** (botón del plano en vivo, o «Repartir meseros»
   desde el editor, que abre `?meseros=editar`): nombre de la configuración,
-  nombre y color de cada mesero, y un **pincel**: se elige un mesero y se
+  el **color** de cada mesero (se elige de la paleta con círculos; nunca dos
+  iguales; no se escribe ningún nombre), y un **pincel**: se elige un mesero y se
   tocan sus mesas (tocar otra vez se la quita). **«Selección en grupo»**
   cambia el arrastre por un rectángulo que asigna todas las mesas que atrapa.
   **«Repartir automáticamente»** reparte en bloques de mesas vecinas, con el
@@ -1541,13 +1545,45 @@ número) y su **color**. Se cambia de una a otra con **un toque**.
   meseros»** para teñir las mesas como en el plano en vivo, y el enlace para
   repartirlas. El reparto se edita en el plano en vivo a propósito: allí un
   toque no mueve la mesa.
-- **Modo sencillo**: al **sentar**, cada mesa del selector dice su mesero, y
-  el aviso dice «Ana se sentó en Mesa 4. **Lo atiende Luis.**». En «Ver
-  clientes», los sentados dicen quién los atiende, con el color de su mesero,
-  y una leyenda arriba deja filtrar por mesero.
+- **Modo sencillo**: al **sentar**, cada mesa del selector lleva el círculo
+  de su mesero, y el aviso dice «Ana se sentó en Mesa 4. **Lo atiende el
+  mesero rojo.**». En «Ver clientes», los sentados llevan el círculo de su
+  mesero, y la fila MESEROS (solo círculos) deja filtrar por mesero.
 - **Estadísticas**: «Clientes atendidos por mesero» (grupos y personas de los
-  últimos 14 días) y el asistente contesta «¿cuántos clientes atendió cada
-  mesero?». Hacia OpenRouter los meseros viajan con alias («Mesero R1»…).
+  últimos 14 días), cada uno como «Mesero azul» con su círculo, y el
+  asistente contesta «¿cuántos clientes atendió cada mesero?» hablando del
+  mesero por su color. Hacia OpenRouter viajan con alias («Mesero R1»…) y en
+  la respuesta se cambian por «Mesero azul».
+
+### Meseros por color (13 de octubre de 2026)
+
+Cada mesero se reconoce **solo por su color**: no hay «Mesero 1» ni nombres en
+ninguna pantalla. La paleta (`lib/waiters/palette.ts`) son doce colores muy
+distintos entre sí, en este orden: **rojo, azul, amarillo, verde, morado,
+naranja, rosa, turquesa, café, gris oscuro, lima y lavanda** (los dos últimos
+solo con 11 o 12 meseros, que los había en producción). Elegidos midiendo la diferencia
+de color (ΔE 2000) con visión normal y con los tres tipos de daltonismo, sobre
+el fondo claro y el oscuro, y lejos de los colores de estado de las mesas; la
+lámina y las medidas salen con `npm run paleta:lamina`. Con visión normal el
+par más parecido está a ΔE 21,8; con daltonismo, entre los diez primeros el
+más parecido es rojo y café (ΔE ≈ 10, solo con 9 o más meseros), y con lima
+baja a ≈ 5 frente al naranja (solo con 11 o 12 meseros).
+
+- En el plano, el mesero es un **borde grueso** alrededor de la mesa y una
+  franja de su color encima (el estado va en la mesa misma, así no se
+  confunden). En las pantallas HTML, un círculo (`components/waiters/
+  waiter-dot.tsx`) con el nombre del color oculto para lectores de pantalla
+  y un globo al mantenerlo presionado («Rojo»).
+- `waiter_zones.waiter_name` sigue en la base como **clave interna**: con él
+  se apunta en cada cliente quién lo atendió. Las configuraciones nuevas
+  guardan ahí el nombre del color («Rojo»); las de antes conservan el suyo.
+  Para las estadísticas, `lib/waiters/colors.ts` pasa de ese nombre a su
+  color (la configuración activa primero).
+- El servidor solo acepta colores de la paleta y nunca dos iguales en una
+  configuración (Zod en `lib/waiters/validation.ts`).
+- Las configuraciones que ya había se pasaron a la paleta con
+  `npm run db:meseros-paleta` (`saveWaiterConfig`, lo mismo que «Guardar»):
+  el mesero N toma el color N y conserva sus mesas.
 
 ### Tiempo real
 
@@ -1563,7 +1599,8 @@ dice nada de ningún cliente), y su plano se recarga cuando cambia.
 | --- | --- |
 | Migración `0009` (solo aditiva) | Tablas `waiter_configs` (con `is_active`, `version`, `save_token`, `is_demo`), `waiter_zones` (mesero y color) y `waiter_zone_tables` (mesa → zona, una por configuración), y la columna `waitlist_entries.waiter_name`. |
 | `lib/waiters/configs.ts` | Listar, crear (ya repartida), guardar, activar y borrar. Comprueba que la configuración, las zonas y las mesas sean de **ese** restaurante, y que las mesas admitan clientes. |
-| `lib/waiters/balance.ts` | `autoBalance` (puro) y la paleta de colores. Lo usan el servidor y el navegador. |
+| `lib/waiters/balance.ts` | `autoBalance` (puro). Lo usan el servidor y el navegador. |
+| `lib/waiters/palette.ts` | La paleta de 12 colores con su nombre («Rojo»), y `waiterLabel` («Mesero rojo»). |
 | `app/restaurante/[id]/meseros/actions.ts` | Server actions: Zod → `meseros:gestionar` → `lib/waiters` → `waiters:changed`. |
 | `components/waiters/waiter-zones.tsx` | Selector, leyenda y panel de edición. |
 | `lib/tables/assign.ts` | Al sentar, apunta en `waiter_name` el mesero de la mesa en la configuración activa, **en el mismo UPDATE** que sienta al cliente. |
