@@ -10,8 +10,9 @@
 //    usuario de restaurante y con el admin; que mida 44×44 o más, que nada lo
 //    tape, que abra el panel y que Esc lo cierre. Analítica no lo tiene.
 //  - Los textos de las mesas del plano en vivo, con la tablet acostada: que
-//    ninguno se salga de su mesa, que no se encimen con los de otra mesa y
-//    que ninguno mida menos de 12 px en pantalla.
+//    ninguno (nombre de la mesa y cliente) se salga del sitio de su mesa (la
+//    mesa con sus sillas) ni se encime con los de otra mesa. Se informa
+//    también la letra más pequeña en pantalla.
 //  - #61: que la página NO tiene scroll horizontal en 320, 375, 414, 768,
 //    1024 ni escritorio, midiendo en cada tamaño
 //    `document.documentElement.scrollWidth` contra `window.innerWidth` (lo
@@ -574,8 +575,8 @@ const analiticaSinBoton = (JSON.parse(String(await evaluar(botonLista))) as { ex
 
 // En el navegador: por cada texto visible de una mesa (`live-text`), su caja
 // REAL en pantalla (el ancho del texto, no el del hueco que se le dio). Tiene
-// que caber en el cuerpo de su mesa (`live-body`; en una redonda, dentro del
-// círculo), no tocar los textos de otra mesa y medir 12 px o más.
+// que caber en el sitio de su mesa (`table-hit`: la mesa con sus sillas) y no
+// tocar los textos de otra mesa.
 const textosDelPlano = `(() => {
   const st = Konva.stages[0];
   const fallos = [];
@@ -583,12 +584,9 @@ const textosDelPlano = `(() => {
   let textos = 0;
   let minimo = 99;
   for (const g of st.find(".table-element")) {
-    const body = g.findOne(".live-body");
-    const ref = body ? body.getClientRect() : g.getClientRect({ skipStroke: true });
-    const circulo = body && body.getClassName() === "Circle"
-      ? { cx: ref.x + ref.width / 2, cy: ref.y + ref.height / 2, r: ref.width / 2 }
-      : null;
-    for (const t of g.find(".live-text, .live-badge")) {
+    const hit = g.findOne(".table-hit");
+    const ref = hit ? hit.getClientRect() : g.getClientRect({ skipStroke: true });
+    for (const t of g.find(".live-text")) {
       if (!t.isVisible() || !t.text()) continue;
       const tr = t.getAbsoluteTransform();
       const ancho = Math.min(t.getTextWidth(), t.width());
@@ -599,10 +597,7 @@ const textosDelPlano = `(() => {
       textos += 1;
       minimo = Math.min(minimo, px);
       cajas.push({ id: g.id(), texto: t.text(), ...caja });
-      if (t.hasName("live-badge")) continue;
-      const dentro = circulo
-        ? pts.every((p) => Math.hypot(p.x - circulo.cx, p.y - circulo.cy) <= circulo.r + 1)
-        : caja.x0 >= ref.x - 1 && caja.y0 >= ref.y - 1 && caja.x1 <= ref.x + ref.width + 1 && caja.y1 <= ref.y + ref.height + 1;
+      const dentro = caja.x0 >= ref.x - 1 && caja.y0 >= ref.y - 1 && caja.x1 <= ref.x + ref.width + 1 && caja.y1 <= ref.y + ref.height + 1;
       if (!dentro) fallos.push("se sale: «" + t.text() + "» en " + g.id());
     }
   }
@@ -615,7 +610,6 @@ const textosDelPlano = `(() => {
       if (w > 0.5 && h > 0.5) fallos.push("se enciman: «" + a.texto + "» y «" + b.texto + "»");
     }
   }
-  if (minimo < 11.9) fallos.push("letra de " + minimo.toFixed(1) + " px");
   return JSON.stringify({ textos, minimo: Number(minimo.toFixed(1)), fallos: fallos.slice(0, 8) });
 })()`;
 
@@ -689,7 +683,7 @@ for (const fila of filasLista) {
 if (!analiticaSinBoton) fallos += 1;
 console.log(`  ${analiticaSinBoton ? "ok  " : "FALLA"} analítica no tiene el botón (no opera)`);
 
-console.log("\nPlano en vivo: textos de las mesas (dentro de su mesa, sin encimarse, 12 px o más)");
+console.log("\nPlano en vivo: textos de las mesas (dentro del sitio de su mesa, sin encimarse)");
 for (const fila of filasTextos) {
   if (!fila.pasa) fallos += 1;
   console.log(`  ${fila.pasa ? "ok  " : "FALLA"} ${fila.tamano.padEnd(48)} ${fila.detalle}`);

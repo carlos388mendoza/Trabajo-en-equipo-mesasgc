@@ -1439,7 +1439,7 @@ section("Datos de demostración: los datos sí, la interfaz no");
   check("sin datos demo el resumen está vacío", !(await demoSummary()).activo);
 
   const carga = await loadDemoData();
-  check("el lote se carga para la prueba", carga.zonas > 0, JSON.stringify(carga));
+  check("el lote se carga para la prueba", carga.esperando > 0 && carga.historial > 0, JSON.stringify(carga));
   const resumen = await demoSummary();
   check(`  y el resumen ve ${resumen.total} filas demo`, resumen.activo && resumen.total > 0, JSON.stringify(resumen));
 

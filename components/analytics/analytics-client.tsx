@@ -14,6 +14,7 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import { Markdown } from "@/components/analytics/markdown";
 import type { AnalyticsData, DailyStat } from "@/lib/analytics/data";
+import { WaiterDot } from "@/components/waiters/waiter-dot";
 
 const HONDURAS_DATE = new Intl.DateTimeFormat("es-HN", {
   day: "numeric",
@@ -290,6 +291,7 @@ export function AnalyticsClient() {
                 {analytics.waiters.map((waiter) => (
                   <li key={`${waiter.restaurantId}-${waiter.name}`} className="min-w-0 flex items-center justify-between gap-3 rounded-xl border border-app-border px-3 py-2.5 text-sm">
                     <span className="min-w-0 truncate">
+                      <WaiterDot color={waiter.color} size={14} className="mr-1.5 align-[-2px]" />
                       {waiter.name}
                       <span className="ml-1.5 text-xs text-panel-muted">{waiter.restaurantName}</span>
                     </span>

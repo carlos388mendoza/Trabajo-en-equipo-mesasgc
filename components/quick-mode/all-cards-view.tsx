@@ -35,6 +35,8 @@ import type { WaitlistChange, WaitlistUndoState } from "@/lib/realtime/events";
 import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
 import type { SeatableTable } from "@/lib/tables/list";
 import { waiterColorFor, waiterLegend } from "@/lib/waiters/legend";
+import { waiterLabel } from "@/lib/waiters/palette";
+import { WaiterDot } from "@/components/waiters/waiter-dot";
 import { RELEASE_FIRST_HINT, releasedNowMessage, seatedBulkMessage, seatedDeleteMessage } from "@/lib/waitlist/delete-rule";
 import { addCalendarDays, hondurasMidnightUtc, hondurasToday } from "@/lib/time/honduras";
 import {
@@ -501,16 +503,17 @@ function AllCardsContent({
                   type="button"
                   aria-pressed={on}
                   onClick={() => setWaiterFilter((current) => (current === waiter.name ? null : waiter.name))}
-                  title={on ? "Ver todos los clientes" : `Ver solo los clientes de ${waiter.name}`}
-                  className={`inline-flex min-h-11 items-center gap-2 rounded-full border-2 px-3.5 text-sm font-semibold text-panel-text transition hover:bg-app-border/50 ${
+                  aria-label={on ? `${waiterLabel(waiter.color)}: ver todos los clientes` : `Ver solo los clientes del ${waiterLabel(waiter.color).toLocaleLowerCase("es")}`}
+                  title={on ? "Ver todos los clientes" : `Ver solo los clientes del ${waiterLabel(waiter.color).toLocaleLowerCase("es")}`}
+                  className={`inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-full border-2 px-3 text-sm font-semibold text-panel-text transition hover:bg-app-border/50 ${
                     on ? "" : "border-app-border"
                   }`}
                   // El borde y el fondo con el color del mesero solo al elegirlo;
                   // el texto sigue con el color del tema para que se lea.
                   style={on ? { borderColor: waiter.color, backgroundColor: `${waiter.color}26` } : undefined}
                 >
-                  <span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full ring-2 ring-panel" style={{ backgroundColor: waiter.color }} />
-                  {waiter.name}
+                  {/* Solo el color: el mesero se reconoce por él. */}
+                  <WaiterDot color={waiter.color} size={20} className="ring-2 ring-panel" />
                 </button>
               );
             })}
@@ -851,14 +854,10 @@ function CardRow({ entry, now, disabled, busy, table, waiterColor, onResolve, on
         )}
         {served ? (
           <p className="flex items-center gap-1.5 text-panel-text">
-            <span
-              aria-hidden
-              className="h-3 w-3 shrink-0 rounded-full ring-1 ring-app-border"
-              style={{ backgroundColor: waiterColor ?? "rgb(var(--c-panel-muted))" }}
-            />
-            <span>
-              {table ? `${table.label} · ` : ""}Lo atiende <strong className="font-semibold">{entry.waiterName}</strong>
-            </span>
+            <span>{table ? `${table.label} · ` : ""}Lo atiende</span>
+            {/* El mesero, por su color (sin nombre). Uno de una configuración que
+                ya no está activa sale en gris, con borde punteado. */}
+            <WaiterDot color={waiterColor} size={16} className="ring-1 ring-app-border" />
           </p>
         ) : (
           <p className="flex items-center gap-1.5">

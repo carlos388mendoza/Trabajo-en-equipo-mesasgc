@@ -7,6 +7,7 @@
 import { z } from "zod";
 
 import { MAX_WAITERS } from "./balance";
+import { WAITER_HEXES } from "./palette";
 
 const idSchema = z.string().min(1).max(64);
 
@@ -30,12 +31,19 @@ export const saveWaiterConfigSchema = z.object({
     .array(
       z.object({
         id: idSchema,
+        // Nombre interno (no se enseña): el mesero se reconoce por su color.
         waiterName: z.string().trim().min(1).max(30),
-        // Solo #rrggbb: el color se pinta en el lienzo y en estilos en línea.
-        color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+        // Solo colores de la paleta (`palette.ts`): muy distintos entre sí y
+        // de los de estado de las mesas.
+        color: z
+          .string()
+          .transform((c) => c.toLowerCase())
+          .refine((c) => WAITER_HEXES.includes(c), "Ese color no es de la paleta de meseros."),
       }),
     )
     .min(1)
-    .max(MAX_WAITERS),
+    .max(MAX_WAITERS)
+    // Nunca dos meseros del mismo color en una configuración.
+    .refine((zones) => new Set(zones.map((z) => z.color)).size === zones.length, "Dos meseros no pueden tener el mismo color."),
   assignments: z.array(z.object({ tableId: idSchema, zoneId: idSchema })).max(2_000),
 });

@@ -3,27 +3,24 @@
 // navegador para el botón «Repartir automáticamente» (se ve el resultado antes
 // de guardar). Sin base de datos ni React.
 
-/** Colores de zona: distintos entre sí y de los de estado (libre, ocupada…). */
-export const WAITER_COLORS = [
-  "#3b82f6",
-  "#f59e0b",
-  "#a855f7",
-  "#14b8a6",
-  "#ec4899",
-  "#84cc16",
-  "#f97316",
-  "#6366f1",
-  "#06b6d4",
-  "#eab308",
-  "#d946ef",
-  "#64748b",
-] as const;
+import { WAITER_HEXES, WAITER_PALETTE } from "./palette";
 
-/** Tope de meseros por configuración: más no cabe en el selector ni se lee en el plano. */
+/**
+ * Colores de zona: la paleta de meseros (ver `palette.ts`). Cada mesero se
+ * reconoce solo por su color, así que el mesero N lleva siempre el color N.
+ */
+export const WAITER_COLORS = WAITER_HEXES;
+
+/** Tope de meseros por configuración: uno por color de la paleta. */
 export const MAX_WAITERS = WAITER_COLORS.length;
 
+/**
+ * El nombre interno del mesero N de una configuración nueva: el de su color
+ * («Rojo»). No se enseña (el mesero se reconoce por el color), pero se apunta
+ * en cada cliente que atiende, así que conviene que diga el color.
+ */
 export function defaultWaiterName(position: number): string {
-  return `Mesero ${position}`;
+  return WAITER_PALETTE[(position - 1) % WAITER_PALETTE.length].name;
 }
 
 export function defaultConfigName(count: number): string {

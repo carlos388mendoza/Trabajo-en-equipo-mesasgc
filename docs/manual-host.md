@@ -53,7 +53,7 @@ La carta de arriba es **el siguiente en la fila**.
    una mesa salen siempre, aunque lleven días.
    Filtra por estado: **En espera**, **Listo**, **Ausente** u **Ocupando
    mesa**. Salen de 50 en 50: abajo, **Ver más**.
-3. Arriba están los **meseros** con su color. Toca uno para ver solo sus
+3. Arriba están los **meseros**: un círculo de color cada uno, sin nombres. Toca uno para ver solo sus
    clientes.
 4. Desde ahí: **Listo**, **Ausente**, **Volver a la espera**, **Sentar**,
    **Liberar mesa** o **Eliminar** (pide confirmar).
@@ -105,7 +105,7 @@ cifras** de las estadísticas. **Eliminar las quita**: úsalo solo para errores
 
 1. En **Ver clientes**, toca **Sentar en una mesa** en el cliente.
 2. Elige una **mesa libre** (dice su zona, sus lugares y su mesero).
-3. El aviso dice quién lo atiende: «Lo atiende Luis».
+3. El aviso dice quién lo atiende, por su color: «Lo atiende el mesero rojo».
 4. Cuando el grupo se va: **Liberar Mesa N**.
 5. Si sale **«Esta mesa ya fue asignada»**: otra tablet la ocupó antes. Elige
    otra.
@@ -114,30 +114,26 @@ cifras** de las estadísticas. **Eliminar las quita**: úsalo solo para errores
 
 ## 2. Plano en vivo
 
-Toca **Plano en vivo** (dentro del restaurante). Cada mesa dice lo
-esencial, en grande:
+Toca **Plano en vivo** (dentro del restaurante). Ves todas las mesas: verde =
+libre, rojo = ocupada, gris = reservada. En las ocupadas, una franja roja con
+el cliente y cuánto lleva («12 min», «1 h 20 min», «2 d»).
 
-- **blanca** (u oscura de noche) = libre, **roja** = ocupada, **gris** =
-  reservada;
-- su **nombre** («Mesa 3»); si está ocupada y hay sitio, el cliente en corto
-  y sus personas («Ana T. · 4») y cuánto lleva («12 min», «1 h 20 min»,
-  «2 d»);
-- el **borde** y la **inicial** del color de su mesero.
+**Los meseros, solo por su color.** Cada mesa tiene un borde grueso y una
+franja encima del color de su mesero (rojo, azul, amarillo, verde…). No hay
+nombres: el mesero se reconoce por su color. Debajo de los botones, cada
+color con cuántas mesas tiene. (Mantén el dedo sobre un color para ver su
+nombre.)
 
-Si alejas el zoom y ya no cabe, queda solo el nombre de la mesa (o «M3»).
-Acerca con dos dedos y vuelven el cliente y el tiempo. Abajo a la derecha,
-**Leyenda** explica los colores.
+### Tocar una mesa
 
-### La ficha de la mesa
-
-**Toca una mesa** y se abre su ficha: estado, mesero, cliente, personas, hora
-de llegada, cuánto lleva y la nota.
+**Toca una mesa** y abajo se abre su panel: quién está, cuántas personas, desde
+cuándo y a qué hora llegó.
 
 - **Mesa libre:** **Sentar** → elige a quién de la fila.
 - **Mesa ocupada:** **Liberar mesa**. Para eliminar al cliente, primero
   liberar: después de **Liberar mesa** sale «Mesa 3 liberada. Ya puedes
   eliminar al cliente.» y **Eliminar cliente** → **Aceptar**.
-- Ciérrala con la **X** o con **Esc**.
+- Ciérralo con la **X** o con **Esc**.
 
 ### Lista de espera desde el plano
 
@@ -148,25 +144,31 @@ de llegada, cuánto lleva y la nota.
 
 ### Liberar todas las mesas
 
-1. Arriba a la derecha, toca **Más** → **Liberar todas las mesas**.
+1. Toca **Liberar todas las mesas** (en el plano a pantalla completa, el
+   botón de la puerta, arriba).
 2. Escribe **LIBERAR** y confirma.
 3. Se puede **Deshacer** desde el modo sencillo.
 
-En **Más** también están **Editar zonas** y la nueva configuración de
-meseros (y, en el celular, **Meseros activos**).
+En el celular de pie, los botones van en una sola fila: deslízala con el dedo
+para ver los demás.
 
 ### Cambiar cuántos meseros hay
 
 1. En **Meseros activos**, toca **[+]** o **[−]**.
-2. Las mesas se reparten solas entre los meseros.
+2. Las mesas se reparten solas entre los meseros: el primero es el **rojo**,
+   luego **azul**, **amarillo**, **verde**, **morado**, **naranja**, **rosa**,
+   **turquesa**, **café**, **gris oscuro**, **lima** y **lavanda**.
 3. Lo ven al instante todas las tablets.
+4. **Editar zonas**: toca el círculo de un mesero y luego sus mesas. Con
+   **Color** le cambias el color (dos meseros nunca llevan el mismo). No hay
+   que escribir nombres.
 
 ### Ver el plano en grande (Opera)
 
 1. **Acuesta la tablet** (horizontal): el plano ocupa toda la pantalla.
 2. En el menú de Opera, activa la **pantalla completa**.
-3. Arriba queda una barra pequeña: **Lista**, las zonas, **[−] meseros [+]**
-   y **Más** (ahí está **Volver a la vista normal**).
+3. Arriba quedan los botones: **Lista**, **[−] meseros [+]**, **liberar
+   todas** (la puerta) y **contraer** (vuelve a la vista normal).
 4. Pon la tablet **de pie** para volver a la vista normal.
 
 ---

@@ -56,3 +56,4 @@ local.db-shm
 /.next-perf/
 .perf-editor.db*
 /perf-resultados/
+.lamina-paleta/

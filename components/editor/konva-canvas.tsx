@@ -29,7 +29,6 @@ import { Group, Layer, Rect, Shape, Stage, Transformer } from "react-konva";
 import Konva from "konva";
 
 import { ElementNode } from "./element-node";
-import { scaleStep } from "./live-marks";
 import { Minimap, type ViewPolygon } from "./minimap";
 import { STATUS_LABELS, STATUS_ORDER } from "@/lib/layout/element-style";
 import type { Theme } from "@/lib/theme/theme";
@@ -45,13 +44,6 @@ export const MAX_SCALE = 4;
 const FIT_MAX_SCALE = 1.6;
 /** Margen alrededor de las mesas al encuadrar: sillas, nombre, mesero y cliente. */
 const FIT_PADDING = 70;
-/**
- * En el plano en vivo todo va dentro de las mesas, pero se deja aire
- * alrededor para que el encuadre no quede pegado a los bordes ni a los
- * controles flotantes.
- */
-const LIVE_FIT_PADDING = 48;
-const LIVE_FIT_MARGIN = 72;
 const ZOOM_STEP = 1.2;
 const MIN_SIZE = 24;
 
@@ -134,8 +126,8 @@ type Props = {
    */
   readOnly?: boolean;
   /**
-   * Zonas de meseros: mesa → color y nombre del mesero. Las mesas con marca
-   * salen teñidas de ese color y con el nombre encima.
+   * Zonas de meseros: mesa → color del mesero (y «Mesero rojo», su nombre
+   * para leer). Las mesas con marca salen con un borde y una franja de ese color.
    */
   waiterMarks?: Record<string, CanvasWaiterMark>;
   /**
@@ -207,7 +199,6 @@ export function KonvaCanvas({
   // render del editor (y hay uno por cada cambio de estado) volvía a pintar
   // todas las mesas aunque no hubiera cambiado ninguna.
   const callbacks = useRef({ onSelect, onElementTap, onEditStart, onMove, onChange, onZoomChange });
-  const readOnlyRef = useRef(readOnly);
   useEffect(() => {
     callbacks.current = { onSelect, onElementTap, onEditStart, onMove, onChange, onZoomChange };
   });
@@ -320,19 +311,12 @@ export function KonvaCanvas({
   // segundo. Se avisa como mucho cada 150 ms, con el último valor.
   const zoomTimer = useRef<number | null>(null);
   const pendingZoom = useRef(100);
-  // Plano en vivo: la escala por escalones (`scaleStep`) que decide qué texto
-  // cabe en cada mesa. Cambia como mucho una vez por pellizco o paso de zoom,
-  // así que las mesas no se vuelven a dibujar en cada cuadro.
-  const [liveScale, setLiveScale] = useState(1);
-  const pendingScale = useRef(1);
   const reportZoom = useCallback((scale: number) => {
     pendingZoom.current = Math.round(scale * 100);
-    pendingScale.current = scale;
     if (zoomTimer.current !== null) return;
     zoomTimer.current = window.setTimeout(() => {
       zoomTimer.current = null;
       callbacks.current.onZoomChange(pendingZoom.current);
-      if (readOnlyRef.current) setLiveScale(scaleStep(pendingScale.current));
     }, 150);
   }, []);
   useEffect(() => () => {
@@ -540,13 +524,12 @@ export function KonvaCanvas({
     const items = elementsRef.current;
     let box = { minX: 0, minY: 0, maxX: width, maxY: height };
     let maxFit = 1;
-    const pad = readOnly ? LIVE_FIT_PADDING : FIT_PADDING;
     if (items.length > 0) {
       box = {
-        minX: Math.max(0, Math.min(...items.map((e) => e.x)) - pad),
-        minY: Math.max(0, Math.min(...items.map((e) => e.y)) - pad),
-        maxX: Math.min(width, Math.max(...items.map((e) => e.x + e.width)) + pad),
-        maxY: Math.min(height, Math.max(...items.map((e) => e.y + e.height)) + pad),
+        minX: Math.max(0, Math.min(...items.map((e) => e.x)) - FIT_PADDING),
+        minY: Math.max(0, Math.min(...items.map((e) => e.y)) - FIT_PADDING),
+        maxX: Math.min(width, Math.max(...items.map((e) => e.x + e.width)) + FIT_PADDING),
+        maxY: Math.min(height, Math.max(...items.map((e) => e.y + e.height)) + FIT_PADDING),
       };
       maxFit = FIT_MAX_SCALE;
     }
@@ -572,8 +555,7 @@ export function KonvaCanvas({
     const bottom = Math.max(...corners.map((p) => p.y));
 
     // El margen deja ver el borde del plano y su brillo.
-    const margin = readOnly ? LIVE_FIT_MARGIN : 40;
-    const fit = Math.min((rect.width - margin) / (right - left), (freeHeight - margin) / (bottom - top), maxFit);
+    const fit = Math.min((rect.width - 40) / (right - left), (freeHeight - 40) / (bottom - top), maxFit);
     const scale = clamp(fit, MIN_SCALE, maxFit);
     stage.scale({ x: scale, y: scale });
     stage.position({
@@ -581,9 +563,8 @@ export function KonvaCanvas({
       y: topInset + freeHeight / 2 - ((top + bottom) / 2) * scale,
     });
     onZoomChange(Math.round(scale * 100));
-    if (readOnly) setLiveScale(scaleStep(scale));
     emitView();
-  }, [emitView, height, onZoomChange, readOnly, topInset, viewRotation, width]);
+  }, [emitView, height, onZoomChange, topInset, viewRotation, width]);
 
   /** Pantalla -> lienzo, teniendo en cuenta zoom, desplazamiento y giro. */
   const toCanvas = useCallback((offsetX: number, offsetY: number) => {
@@ -946,9 +927,6 @@ export function KonvaCanvas({
                     onTap={onElementTap ? handleTap : undefined}
                     waiter={waiterMarks?.[element.id] ?? null}
                     draggable={!readOnly}
-                    live={readOnly}
-                    screenScale={readOnly ? liveScale : 1}
-                    partySize={element.currentEntryId ? element.occupantDetail?.partySize ?? null : null}
                     bounds={bounds}
                     onDragStart={handleNodeDragStart}
                     onDragEnd={handleNodeDragEnd}
@@ -985,7 +963,6 @@ export function KonvaCanvas({
           cabe entero en la pantalla, así que no hace falta. Tampoco en el
           plano en vivo a pantalla completa (`inmersivo`), que sale encuadrado
           entero y donde taparía las mesas de la esquina. */}
-      {readOnly ? null : (
       <div className="pointer-events-none absolute bottom-3 left-3 hidden sm:block movil-horizontal:!hidden inmersivo:!hidden">
         <div className="pointer-events-auto">
           <Minimap
@@ -1001,7 +978,6 @@ export function KonvaCanvas({
           />
         </div>
       </div>
-      )}
 
       {marquee ? (
         <div
@@ -1016,8 +992,7 @@ export function KonvaCanvas({
         />
       ) : null}
 
-      {/* El plano en vivo lleva su propia leyenda, pequeña y plegable. */}
-      {readOnly ? null : <StatusLegend theme={theme} />}
+      <StatusLegend theme={theme} />
     </div>
   );
 }
