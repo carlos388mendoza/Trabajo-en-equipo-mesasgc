@@ -7,7 +7,7 @@
 // (libre verde 600, ocupada rojo 600, reservada pizarra): el rojo del mesero es
 // carmesí oscuro, el verde es verde bosque y el gris es más oscuro que el de
 // «reservada». Además el mesero se marca con un borde grueso alrededor de la
-// mesa y una franja encima, no con el relleno (que es el del estado).
+// mesa y un círculo encima, no con el relleno (que es el del estado).
 //
 // La lámina con la paleta en claro, oscuro y con simulación de daltonismo se
 // genera con `scripts/waiters/lamina-paleta.mts`.
