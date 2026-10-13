@@ -4,19 +4,17 @@
 //
 // Qué crea, en los 8 restaurantes reales de Grupo Comidas:
 //
-//  1. Una ZONA demo por restaurante (`is_demo`), con la sala completa: mesas con
-//     sillas, una bancada, baños, caja y zona de juegos. Es una zona nueva, no
-//     la real: el plano que alguien haya dibujado a mano no se lee ni se toca.
-//  2. Clientes de la lista de espera AHORA: los que esperan, con sus minutos
-//     de espera, y los que se sientan en las mesas demo.
-//  3. Mesas demo ocupadas y reservadas.
-//  4. Ocho semanas de historial (ver `lib/demo/history.ts`), para que
+//  1. Clientes de la lista de espera AHORA: los que esperan, con sus minutos
+//     de espera.
+//  2. Configuraciones de meseros de ejemplo, si el restaurante no tiene.
+//  3. Ocho semanas de historial (ver `lib/demo/history.ts`), para que
 //     /analiticas y el asistente tengan algo que contar.
 //
 // Qué NO hace, nunca:
 //
-//  - No crea ni modifica marcas, restaurantes, el catálogo de tipos de elemento
-//    ni usuarios. No hay contraseñas en este archivo ni en el lote.
+//  - No crea zonas ni mesas (hasta octubre de 2026 creaba un «Comedor
+//    (demostración)» por restaurante; se quitaron), ni marcas, restaurantes,
+//    el catálogo de tipos de elemento o usuarios. No hay contraseñas en este archivo ni en el lote.
 //  - No toca la zona real de un restaurante, ni sus mesas, ni sus clientes.
 //  - No cambia el estado de ninguna mesa real.
 //
@@ -29,12 +27,10 @@
 // `ON CONFLICT DO NOTHING`, así que correrla dos veces deja exactamente lo
 // mismo que correrla una.
 
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { SEATABLE_ELEMENT_KEYS } from "@/lib/db/enums";
-import { elementTypes, restaurants, tableLayouts, tables, waiterConfigs, waitlistEntries } from "@/lib/db/schema";
-import { assignTable } from "@/lib/tables/assign";
+import { restaurants, tableLayouts, tables, waiterConfigs, waitlistEntries } from "@/lib/db/schema";
 import { createWaiterConfig, waiterNameForTableSql } from "@/lib/waiters/configs";
 
 import {
@@ -76,12 +72,6 @@ function demoName(index: number): string {
   return last === last2 ? `${first} ${last}` : `${first} ${last} ${last2}`;
 }
 
-/** Los ids de tipo de elemento del catálogo, por clave. */
-async function typeIdsByKey(): Promise<Map<string, string>> {
-  const rows = await db.select({ id: elementTypes.id, key: elementTypes.key }).from(elementTypes);
-  return new Map(rows.map((r) => [r.key, r.id]));
-}
-
 /**
  * Carga (o recarga) el lote de demostración completo.
  *
@@ -92,16 +82,6 @@ export async function loadDemoData(
   options: { batchId?: string } = {},
 ): Promise<DemoLoadResult> {
   const batchId = options.batchId ?? DEMO_BATCH_ID;
-  const typeIds = await typeIdsByKey();
-
-  const missingTypes = [...new Set(DEMO_PLANS.flatMap((p) => p.tables.map((t) => t.typeKey)))]
-    .filter((key) => !typeIds.has(key));
-  if (missingTypes.length > 0) {
-    throw new Error(
-      `Faltan tipos de elemento en el catálogo: ${missingTypes.join(", ")}. ` +
-        "Corre `npm run db:catalog` primero. No se escribió nada.",
-    );
-  }
 
   // Los restaurantes tienen que existir: el demo los usa, no los crea. Si
   // falta alguno (base sin `npm run db:restaurantes`) se avisa y se sigue con
@@ -114,73 +94,19 @@ export async function loadDemoData(
   const omitidos = wantedIds.filter((id) => !present.has(id));
   const plans = DEMO_PLANS.filter((p) => present.has(p.restaurantId));
 
-  let zonas = 0;
-  let mesas = 0;
+  // Zonas, mesas, sentados y reservadas siempre en cero: ya no se crean.
+  const zonas = 0;
+  const mesas = 0;
   let esperando = 0;
-  let sentados = 0;
-  let reservadas = 0;
+  const sentados = 0;
+  const reservadas = 0;
   let meseros = 0;
 
   for (const plan of plans) {
-    // --- Zona demo -------------------------------------------------------
-    // `isDefault` va a false a propósito: la zona por defecto de cada
-    // restaurante es la real y el índice único (una por defecto) no admite dos.
-    const zona = await db
-      .insert(tableLayouts)
-      .values({
-        id: plan.layout.id,
-        restaurantId: plan.layout.restaurantId,
-        name: plan.layout.name,
-        description: plan.layout.description,
-        width: 1000,
-        height: 800,
-        sortOrder: plan.layout.sortOrder,
-        isDefault: false,
-        isDemo: true,
-        demoBatchId: batchId,
-      })
-      .onConflictDoNothing({ target: tableLayouts.id })
-      .returning({ id: tableLayouts.id });
-    zonas += zona.length;
-
-    // --- Mesas demo ------------------------------------------------------
-    // Solo se insertan las que faltan: repetir la carga no reescribe las que ya
-    // están, así que una mesa que un host ya está usando no se toca.
-    const existing = new Set(
-      (
-        await db
-          .select({ id: tables.id })
-          .from(tables)
-          .where(eq(tables.layoutId, plan.layout.id))
-      ).map((r) => r.id),
-    );
-    const nuevas = plan.tables.filter((t) => !existing.has(t.id));
-    if (nuevas.length > 0) {
-      const created = await db
-        .insert(tables)
-        .values(
-          nuevas.map((t) => ({
-            id: t.id,
-            restaurantId: plan.restaurantId,
-            layoutId: t.layoutId,
-            elementTypeId: typeIds.get(t.typeKey)!,
-            label: t.label,
-            x: t.x,
-            y: t.y,
-            width: 80,
-            height: 80,
-            rotation: 0,
-            capacity: t.capacity,
-            // Las mesas nacen libres: la ocupación la pone el paso de sentar,
-            // con `assignTable`, igual que lo haría un host.
-            isDemo: true,
-            demoBatchId: batchId,
-          })),
-        )
-        .onConflictDoNothing()
-        .returning({ id: tables.id });
-      mesas += created.length;
-    }
+    // Ya no se crean zonas ni mesas de demostración (octubre de 2026: se
+    // quitaron los «Comedor (demostración)»). El demo son clientes: los que
+    // esperan ahora y el historial de ocho semanas. No se sienta ni se reserva
+    // a nadie: eso ocuparía mesas REALES.
 
     // --- Clientes de ahora ----------------------------------------------
     const now = Date.now();
@@ -194,18 +120,7 @@ export async function loadDemoData(
       status: "esperando" as const,
       arrivedAt: new Date(now - minutes * 60_000),
     }));
-    // Los que van a sentarse también pasaron por la lista: llegaron antes.
-    const toSeat = Array.from({ length: plan.occupied }, (_, i) => ({
-      id: `${DEMO_ID_PREFIX}s_${plan.restaurantId}_${i + 1}`,
-      restaurantId: plan.restaurantId,
-      customerName: demoName(i + 7),
-      partySize: 2 + (i % 3),
-      phone: demoPhone(i + 100),
-      notes: DEMO_NOTE,
-      status: "esperando" as const,
-      arrivedAt: new Date(now - (12 + i * 3) * 60_000),
-    }));
-    const nuevosClientes = [...waiting, ...toSeat];
+    const nuevosClientes = waiting;
     if (nuevosClientes.length > 0) {
       const created = await db
         .insert(waitlistEntries)
@@ -226,8 +141,7 @@ export async function loadDemoData(
     // --- Zonas de meseros de ejemplo ---------------------------------------
     // «2 meseros» (activa) y «3 meseros», marcadas como demo. Solo si el
     // restaurante no tiene ninguna: nunca se mezclan con las que ya creó el
-    // restaurante, y repetir la carga no las duplica. Van ANTES de sentar a
-    // nadie para que los sentados del demo tengan mesero.
+    // restaurante, y repetir la carga no las duplica.
     const [hasConfigs] = await db
       .select({ id: waiterConfigs.id })
       .from(waiterConfigs)
@@ -238,71 +152,6 @@ export async function loadDemoData(
         const created = await createWaiterConfig({ restaurantId: plan.restaurantId, waiterCount: count, demoBatchId: batchId });
         if (created.ok) meseros += 1;
       }
-    }
-
-    // --- Ocupar mesas con `assignTable` ----------------------------------
-    // Se usa el camino de verdad (el mismo que un host), para que el estado
-    // "ocupada", el `current_entry_id` y el "sentado" del cliente queden
-    // exactamente como los deja la app. Solo se escriben mesas DEMO.
-    const demoTables = await db
-      .select({ id: tables.id, currentEntryId: tables.currentEntryId, status: tables.status })
-      .from(tables)
-      .where(
-        and(
-          eq(tables.restaurantId, plan.restaurantId),
-          eq(tables.isDemo, true),
-          inArray(
-            tables.elementTypeId,
-            [...SEATABLE_ELEMENT_KEYS].map((key) => typeIds.get(key)!).filter(Boolean),
-          ),
-        ),
-      )
-      .orderBy(asc(tables.x), asc(tables.y), asc(tables.id));
-    const libres = demoTables.filter(
-      (t) => t.currentEntryId === null && t.status !== "reservada",
-    );
-
-    for (const entry of toSeat) {
-      const [libreTable] = libres;
-      if (!libreTable) break;
-      // Si el cliente ya está sentado de una carga anterior, `assignTable` lo
-      // rechaza y se pasa al siguiente, sin romper nada.
-      const result = await assignTable({
-        restaurantId: plan.restaurantId,
-        tableId: libreTable.id,
-        entryId: entry.id,
-        userId: null,
-      });
-      if (result.ok) {
-        libres.shift();
-        sentados += 1;
-      }
-    }
-
-    // --- Reservar mesas ---------------------------------------------------
-    // El estado "reservada" lo escribe el demo, no la app: no hay pantalla de
-    // reservas todavía (ver docs/estado-del-proyecto.md, "Lo que falta"). Solo
-    // mesas demo libres.
-    //
-    // Se mira cuántas HAY ya reservadas y se completa hasta `plan.reserved`, en
-    // vez de reservar otras tantas cada vez: si no, repetir la carga reservaría
-    // mesas nuevas en cada corrida y el lote dejaría de ser idempotente.
-    const yaReservadas = demoTables.filter((t) => t.status === "reservada").length;
-    const faltan = Math.max(0, plan.reserved - yaReservadas);
-    // `slice(-0)` sería `slice(0)`, que devuelve el array entero: con `faltan`
-    // en cero hay que devolver una lista vacía, no "todas las libres".
-    const reservables = faltan > 0 ? libres.slice(-faltan) : [];
-    for (const mesa of reservables) {
-      const updated = await db
-        .update(tables)
-        .set({
-          status: "reservada",
-          version: sql`${tables.version} + 1`,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(tables.id, mesa.id), eq(tables.isDemo, true), isNull(tables.currentEntryId)))
-        .returning({ id: tables.id });
-      reservadas += updated.length;
     }
   }
 

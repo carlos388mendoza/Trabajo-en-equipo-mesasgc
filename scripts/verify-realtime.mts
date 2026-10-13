@@ -1356,8 +1356,9 @@ section("Zonas de meseros: quién atiende al sentar, y el cambio de configuraci�
     check("  los contadores dicen cuál está activa (para el plano de analítica)", conDos.waitersKey === `${dos.config.id}:${dos.config.version}`, String(conDos.waitersKey));
     check("  la otra configuración no toca a REST_2", (await getRestaurantCounters(REST_2)).waitersKey === null);
 
+    const WAITER_NAMES = new Set((await import("@/lib/waiters/palette")).WAITER_PALETTE.map((c) => c.name));
     const libres = (await listSeatableTables(REST)).filter((t) => t.id.startsWith("w-"));
-    check("cada mesa trae el mesero de la configuración activa", libres.every((t) => t.waiterName?.startsWith("Mesero ") && t.waiterColor?.startsWith("#")), JSON.stringify(libres.map((t) => t.waiterName)));
+    check("cada mesa trae el mesero de la configuración activa", libres.every((t) => WAITER_NAMES.has(t.waiterName ?? "") && t.waiterColor?.startsWith("#")), JSON.stringify(libres.map((t) => t.waiterName)));
 
     // «Ver clientes»: la leyenda son los meseros de la activa, con sus colores
     // (los mismos del plano en vivo) y en el orden de sus posiciones.

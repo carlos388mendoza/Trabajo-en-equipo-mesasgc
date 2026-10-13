@@ -62,7 +62,11 @@ export async function createWaiterConfigAction(raw: unknown): Promise<WaiterResu
 
 export async function saveWaiterConfigAction(raw: unknown): Promise<WaiterConfigsResult> {
   const parsed = saveWaiterConfigSchema.safeParse(raw);
-  if (!parsed.success) return { ok: false, error: INVALID };
+  if (!parsed.success) {
+    // Un color repetido o fuera de la paleta: se dice cuál es el problema.
+    const custom = parsed.error.issues.find((issue) => issue.code === "custom")?.message;
+    return { ok: false, error: custom ?? INVALID };
+  }
   const guard = await guardAction("meseros:gestionar", parsed.data.restaurantId);
   if (!guard.ok) return guard;
   const result = await saveWaiterConfig(parsed.data);

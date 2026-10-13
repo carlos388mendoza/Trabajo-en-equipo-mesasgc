@@ -34,6 +34,7 @@ import type { SeatableTable } from "@/lib/tables/list";
 import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
 import type { WaitlistChange, WaitlistUndoState } from "@/lib/realtime/events";
 import { hondurasDateKey, hondurasToday } from "@/lib/time/honduras";
+import { waiterLabel } from "@/lib/waiters/palette";
 import { AddGuestSheet, type NewGuest } from "@/components/quick-mode/add-guest-sheet";
 import { AllCardsView, type StatusFilter } from "@/components/quick-mode/all-cards-view";
 import { CardFan } from "@/components/quick-mode/card-fan";
@@ -662,11 +663,10 @@ export function QuickModeClient({ restaurantId, userId }: { restaurantId: string
         void loadTables();
         return false;
       }
-      // Quién lo atiende: lo que dijo el servidor al sentarlo (la configuración
-      // activa en ESE momento) o, sin conexión, lo último que se sabía de la mesa.
-      const fromAck = result.kind === "ack" ? (result.ack as { waiterName?: string | null }).waiterName : undefined;
-      const waiter = fromAck ?? view.tables.find((table) => table.id === tableId)?.waiterName ?? null;
-      const servedBy = waiter ? ` Lo atiende ${waiter}.` : "";
+      // El mesero se nombra por su color («Lo atiende el mesero rojo»): el de
+      // la zona de la mesa en la configuración activa.
+      const waiterColor = view.tables.find((table) => table.id === tableId)?.waiterColor ?? null;
+      const servedBy = waiterColor ? ` Lo atiende el ${waiterLabel(waiterColor).toLocaleLowerCase("es")}.` : "";
       showNotice(
         result.kind === "ack"
           ? `${name} se sentó en ${label}.${servedBy}`

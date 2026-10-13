@@ -43,11 +43,13 @@ export default async function PlanoEnVivoPage({
     <div className="flex h-[calc(100vh-9.5rem)] min-h-[30rem] flex-col gap-3 con-plano-inmersivo:h-auto con-plano-inmersivo:min-h-0">
       <div className="con-plano-inmersivo:hidden">
         <h1 className="text-2xl font-bold">{plan.restaurant.name}</h1>
+        {/* En el celular de pie este texto se esconde: con él, los controles
+            empujaban el plano fuera de la pantalla. */}
         <p className="hidden text-sm text-app-muted sm:block">
           Plano en vivo{plan.restaurant.brand ? ` · ${plan.restaurant.brand.name}` : ""}
-          {plan.restaurant.city ? ` · ${plan.restaurant.city}` : ""}.
-          {canRelease ? " Toca una mesa para ver su ficha: sentar, liberar y más." : " Toca una mesa para ver su ficha (aquí solo se mira)."} El borde
-          y la inicial de cada mesa son de su mesero.
+          {plan.restaurant.city ? ` · ${plan.restaurant.city}` : ""}. Las mesas se sientan desde el modo sencillo
+          {canRelease ? " o tocándolas aquí; toca una ocupada para liberarla" : " (aquí solo se mira)"}. Cada mesa lleva el color
+          de su mesero.
         </p>
       </div>
       <div className="min-h-0 flex-1">

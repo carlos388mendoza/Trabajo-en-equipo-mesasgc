@@ -31,7 +31,10 @@
     "verify:auth": "tsx scripts/verify-auth.mts",
     "verify:browser": "tsx scripts/verify-browser.mts",
     "perf:levantar": "tsx scripts/perf/levantar-perf.mts",
-    "perf:editor": "tsx scripts/perf/medir-editor.mts"
+    "perf:editor": "tsx scripts/perf/medir-editor.mts",
+    "db:zonas-demo": "tsx scripts/db-borrar-zonas-demo.mts",
+    "paleta:lamina": "tsx scripts/waiters/lamina-paleta.mts",
+    "db:meseros-paleta": "tsx scripts/db-meseros-paleta.mts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

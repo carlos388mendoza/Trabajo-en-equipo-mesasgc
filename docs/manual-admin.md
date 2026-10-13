@@ -82,9 +82,13 @@ los suyos (manual del host, «Ver clientes» y «Plano en vivo»):
    Primero libera la mesa para poder eliminarlo.» → **Liberar mesa** →
    **Eliminar** → **Aceptar**. En grupo: «Liberar sus mesas» o «Eliminar solo
    los N sin mesa». El servidor lo exige también (no se puede saltar).
-6. En el **Plano en vivo**: toca una mesa → su ficha (**Sentar**, **Liberar
-   mesa**, y después **Eliminar cliente**). **Más** → **Liberar todas las
-   mesas** (escribe LIBERAR).
+6. En el **Plano en vivo**: toca una mesa → su panel (**Sentar**, **Liberar
+   mesa**, y después **Eliminar cliente**). **Liberar todas las mesas**
+   (escribe LIBERAR).
+8. **Meseros por color.** Cada mesero se reconoce solo por su color (rojo,
+   azul, amarillo, verde, morado, naranja, rosa, turquesa, café, gris
+   oscuro, lima, lavanda), en el plano, Ver clientes, los avisos y las estadísticas
+   («Mesero azul»). No hay nombres de meseros que escribir.
 7. **Deshacer** vale para la última acción del restaurante, también si el
    servidor se reinició hace menos de 10 minutos.
 

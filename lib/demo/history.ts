@@ -6,9 +6,10 @@
 //
 //  1. Las filas nacen marcadas (`is_demo`, `demo_batch_id`) y con id `demo_`.
 //  2. NUNCA crea marcas, restaurantes, zonas, mesas ni usuarios: solo filas de
-//     `waitlist_entries`. Las mesas que se sortean son las demo del lote, y el
-//     sorteo solo escribe `assigned_table_id` (un puntero; no cambia el estado
-//     de ninguna mesa).
+//     `waitlist_entries`. Las mesas que se sortean son las del restaurante
+//     (ya no hay zonas de demostración, octubre de 2026), y el sorteo solo
+//     escribe `assigned_table_id` (un puntero; no cambia el estado de
+//     ninguna mesa ni la ocupa).
 //
 // Determinista: el generador pseudoaleatorio se siembra con el restaurante y la
 // fecha, y el id de cada fila sale de esos mismos datos. Repetir la carga no
@@ -135,25 +136,17 @@ export async function loadDemoHistory(
     const profile = DEMO_HISTORY_PROFILE[restaurantId];
     if (!profile) continue;
 
-    // Solo las mesas DEMO del restaurante: el historial del demo nunca apunta a
-    // una mesa real, ni la cambia (aquí no se escribe `tables`).
+    // Las mesas del restaurante (ya no hay zonas de demostración): el
+    // historial solo APUNTA a una mesa (`assigned_table_id`), para saber qué
+    // mesero lo atendió; aquí no se escribe `tables`.
     const demoTables = await db
       .select({ id: tables.id, capacity: tables.capacity })
       .from(tables)
-      .where(
-        and(
-          eq(tables.restaurantId, restaurantId),
-          eq(tables.isDemo, true),
-          inArray(tables.elementTypeId, seatableIds),
-        ),
-      )
+      .where(and(eq(tables.restaurantId, restaurantId), inArray(tables.elementTypeId, seatableIds)))
       // Orden fijo: el sorteo de mesa tiene que dar lo mismo en cada corrida.
       .orderBy(asc(tables.capacity), asc(tables.id));
-    if (demoTables.length === 0) {
-      // No hay plano demo (el restaurante no existe, o aún no se cargó el plano).
-      skipped.push(restaurantId);
-      continue;
-    }
+    // Sin mesas (un restaurante con el plano aún vacío) el historial va igual,
+    // sin apuntar a ninguna mesa.
 
     const regularsRandom = seededRandom(`demo-habituales|${restaurantId}`);
     const regulars = DEMO_REGULAR_VISITS_PER_WEEK.map((visits) => ({

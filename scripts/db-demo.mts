@@ -50,12 +50,12 @@ try {
   console.log(`Lote: ${DEMO_BATCH_ID} (los datos que ya estén marcados con este lote no se duplican)`);
   console.log("");
   console.log("Esto carga datos FICTICIOS en los 8 restaurantes reales:");
-  console.log("  - una zona de demostración por restaurante, con la sala completa;");
   console.log("  - clientes en la lista de espera, con teléfonos de mentira;");
-  console.log("  - mesas de demostración ocupadas y reservadas;");
+  console.log("  - configuraciones de meseros de ejemplo, si el restaurante no tiene;");
   console.log(`  - ${DEMO_HISTORY_DAYS} días de historial para las estadísticas y el asistente.`);
   console.log("");
-  console.log("NO toca marcas, restaurantes, usuarios, contraseñas ni los planos reales.");
+  console.log("NO crea zonas ni mesas, ni sienta ni reserva a nadie. NO toca marcas,");
+  console.log("restaurantes, usuarios, contraseñas ni los planos.");
   console.log("Se borra después con `npm run db:demo:borrar`.");
   console.log("");
 
@@ -75,11 +75,7 @@ try {
 
   console.log("");
   console.log("Lote cargado. Filas nuevas de este lote:");
-  console.log(`  zonas de demostración:  ${result.zonas}`);
-  console.log(`  mesas de demostración:  ${result.mesas}`);
   console.log(`  clientes esperando:      ${result.esperando}`);
-  console.log(`  clientes sentados:       ${result.sentados}`);
-  console.log(`  mesas reservadas:        ${result.reservadas}`);
   console.log(`  configs. de meseros:     ${result.meseros}`);
   console.log(`  historial (${DEMO_HISTORY_DAYS} días): ${result.historial}`);
 

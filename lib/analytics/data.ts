@@ -3,6 +3,8 @@ import { and, asc, count, eq, gte, inArray, isNotNull, isNull, lt, sql, type SQL
 import { db } from "@/lib/db";
 import { getBrandForRestaurant, type AnalyticsBrand } from "@/lib/analytics/brand";
 import { brands, restaurants, waitlistEntries } from "@/lib/db/schema";
+import { colorOf, waiterColorsByName } from "@/lib/waiters/colors";
+import { waiterLabel } from "@/lib/waiters/palette";
 import {
   addCalendarDays,
   hondurasMidnightUtc,
@@ -38,9 +40,16 @@ export type RestaurantStat = {
  * Clientes atendidos por cada mesero (zonas de meseros): los grupos sentados
  * en el período cuyo `waiter_name` es ese, por restaurante. El mismo nombre
  * en dos restaurantes son dos meseros distintos.
+ *
+ * El mesero se reconoce SOLO por su color: `name` es «Mesero azul» (el color
+ * se saca de las configuraciones de meseros, ver `lib/waiters/colors.ts`), y
+ * dos nombres internos con el mismo color en un restaurante se suman.
  */
 export type WaiterStat = {
+  /** «Mesero azul». */
   name: string;
+  /** Su color (#rrggbb), o null si ya no se sabe. */
+  color: string | null;
   restaurantId: string;
   restaurantName: string;
   groups: number;
@@ -202,14 +211,27 @@ export async function getAnalytics(
     .slice(0, 10);
 
   const restaurantNames = new Map(restaurantsWithBrand.map((r) => [r.id, r.name]));
-  const waiters: WaiterStat[] = waiterRows
+  // Cada mesero por su color: se juntan las filas del mismo color.
+  const colors = await waiterColorsByName([...new Set(waiterRows.map((row) => row.restaurantId))]);
+  const byColor = new Map<string, { color: string | null; restaurantId: string; groups: number; people: number; totalWait: number }>();
+  for (const row of waiterRows) {
+    const color = colorOf(colors, row.restaurantId, row.name);
+    const key = `${row.restaurantId}|${color ?? "?"}`;
+    const acc = byColor.get(key) ?? { color, restaurantId: row.restaurantId, groups: 0, people: 0, totalWait: 0 };
+    acc.groups += Number(row.groups);
+    acc.people += Number(row.people);
+    acc.totalWait += Number(row.totalWait);
+    byColor.set(key, acc);
+  }
+  const waiters: WaiterStat[] = [...byColor.values()]
     .map((row) => ({
-      name: row.name!,
+      name: waiterLabel(row.color),
+      color: row.color,
       restaurantId: row.restaurantId,
       restaurantName: restaurantNames.get(row.restaurantId) ?? row.restaurantId,
-      groups: Number(row.groups),
-      people: Number(row.people),
-      minutes: avg(row.totalWait, Number(row.groups)),
+      groups: row.groups,
+      people: row.people,
+      minutes: avg(row.totalWait, row.groups),
     }))
     .sort((a, b) => b.groups - a.groups || a.restaurantName.localeCompare(b.restaurantName, "es-HN") || a.name.localeCompare(b.name, "es-HN"));
 
@@ -222,7 +244,7 @@ export async function getAnalytics(
     slowestDay ? `El día más lento fue ${slowestDay.day}, con ${minuteCount(slowestDay.minutes)} de espera.` : "",
     topCustomers[0] ? `El cliente con más grupos acumuló ${topCustomers[0].groups} ${topCustomers[0].groups === 1 ? "grupo" : "grupos"}.` : "",
     waiters[0]
-      ? `El mesero que más grupos atendió fue ${waiters[0].name} (${waiters[0].restaurantName}), con ${waiters[0].groups} ${waiters[0].groups === 1 ? "grupo" : "grupos"}.`
+      ? `El mesero que más grupos atendió fue el ${waiters[0].name.toLocaleLowerCase("es")} (${waiters[0].restaurantName}), con ${waiters[0].groups} ${waiters[0].groups === 1 ? "grupo" : "grupos"}.`
       : "",
     calledGroups
       ? `Se avisó a ${calledGroups} ${calledGroups === 1 ? "grupo" : "grupos"} después de un promedio de ${minuteCount(averageCallMinutes)} desde su llegada.`
