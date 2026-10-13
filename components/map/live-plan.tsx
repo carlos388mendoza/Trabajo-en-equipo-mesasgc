@@ -12,7 +12,8 @@
 // editor.
 //
 // Zonas de meseros: cada mesa sale teñida del color de su mesero en la
-// configuración activa, con su nombre encima. Con `meseros:gestionar` se
+// configuración activa, con una franja de su color encima (sin nombre: el
+// mesero se reconoce por su color). Con `meseros:gestionar` se
 // cambia la activa con un toque y se editan las zonas aquí mismo (pintando
 // mesas sobre este plano, que no deja mover nada).
 //
@@ -42,10 +43,11 @@ import {
 import { isSeatableElement } from "@/lib/db/enums";
 
 import { loadLivePlan } from "@/app/mapa/actions";
+import { TableSheet, type TableSheetActions } from "@/components/map/table-sheet";
 import type { CanvasHandle } from "@/components/editor/konva-canvas";
 import { KonvaCanvas } from "@/components/editor/lazy-konva-canvas";
 import { TABLET_LANDSCAPE_QUERY } from "@/lib/layout/immersive";
-import type { Ack, BatchSummary, ReleaseTableInput, TableChange } from "@/lib/realtime/events";
+import type { Ack, BatchSummary } from "@/lib/realtime/events";
 import type { LivePlan as LivePlanData } from "@/lib/map/queries";
 
 const NOOP = () => {};
@@ -98,23 +100,12 @@ export type LivePlanProps = {
    * «Liberar todas las mesas» las vacía (escribiendo LIBERAR). Solo llega con
    * `mesas:asignar`; sin él el plano sigue siendo de solo lectura.
    */
-  tableActions?: {
-    release: (payload: ReleaseTableInput) => Promise<Ack<TableChange>>;
-    releaseAll: () => Promise<Ack<BatchSummary>>;
+  tableActions?: TableSheetActions & {
+    releaseAll?: () => Promise<Ack<BatchSummary>>;
   };
 };
 
 /** Qué mesas cambiaron entre dos lecturas del plano. */
-// «45 min», «3 h» o «11 días»: una mesa olvidada puede llevar días ocupada,
-// y «15840 min» no se entiende de un vistazo.
-function sinceText(ms: number): string {
-  const min = Math.max(0, Math.floor(ms / 60_000));
-  if (min < 120) return `${min} min`;
-  const h = Math.floor(min / 60);
-  if (h < 48) return `${h} h`;
-  return `${Math.floor(h / 24)} días`;
-}
-
 function changedTables(before: LivePlanData | null, after: LivePlanData): string[] {
   if (!before) return [];
   const old = new Map<string, string>();
@@ -293,18 +284,13 @@ export function LivePlan({
   const [tableMessage, setTableMessage] = useState<string | null>(null);
   const [releaseAllOpen, setReleaseAllOpen] = useState(false);
   const [releaseAllText, setReleaseAllText] = useState("");
-  const tapped = tappedId ? zone?.elements.find((e) => e.id === tappedId && e.currentEntryId) ?? null : null;
+  // La mesa tocada abre su panel (cualquier mesa: libre para sentar, ocupada
+  // para liberar y, después, eliminar al cliente). Ver `table-sheet.tsx`.
+  const tapped = tappedId ? zone?.elements.find((e) => e.id === tappedId) ?? null : null;
   const occupiedCount = zones.reduce((n, z) => n + z.elements.filter((e) => e.currentEntryId).length, 0);
-  const releaseTapped = async () => {
-    if (!tapped || !tapped.currentEntryId || !tableActions) return;
-    setTableBusy(true);
-    const result = await tableActions.release({ tableId: tapped.id, entryId: tapped.currentEntryId });
-    setTableBusy(false);
-    setTableMessage(result.ok ? `${tapped.label} quedó libre.` : result.error);
-    if (result.ok) setTappedId(null);
-  };
+  const canReleaseAll = Boolean(tableActions?.releaseAll) && occupiedCount > 0;
   const releaseAll = async () => {
-    if (!tableActions || releaseAllText.trim() !== "LIBERAR") return;
+    if (!tableActions?.releaseAll || releaseAllText.trim() !== "LIBERAR") return;
     setTableBusy(true);
     const result = await tableActions.releaseAll();
     setTableBusy(false);
@@ -329,7 +315,10 @@ export function LivePlan({
         "inmersivo-raiz:pb-[env(safe-area-inset-bottom)] inmersivo-raiz:pl-[env(safe-area-inset-left)] inmersivo-raiz:pr-[env(safe-area-inset-right)] inmersivo-raiz:pt-[env(safe-area-inset-top)]"
       }
     >
-      <div className={`flex flex-wrap items-center gap-2 ${floatingBar}`}>
+      {/* En el celular de pie los controles van en UNA fila que se desliza de
+          lado (los mismos botones, con el mismo aspecto): en varias filas
+          empujaban el plano fuera de la pantalla. */}
+      <div className={`flex flex-wrap items-center gap-2 max-sm:flex-nowrap max-sm:overflow-x-auto max-sm:pb-1 max-sm:[&>*]:shrink-0 max-sm:[scrollbar-width:none] ${floatingBar}`}>
         {immersive ? (
           <span className="hidden max-w-[14rem] truncate rounded-full px-3 py-1.5 text-xs font-semibold text-panel-text ring-1 ring-app-border inmersivo:block inmersivo:!shrink">
             {immersive.restaurantName}
@@ -382,7 +371,7 @@ export function LivePlan({
           ) : null}
           {/* «Liberar todas las mesas» también con la tablet acostada: aquí,
               solo el ícono (en la barra flotante no cabe el texto). */}
-          {tableActions && occupiedCount > 0 ? (
+          {canReleaseAll ? (
             <button
               type="button"
               onClick={() => setReleaseAllOpen(true)}
@@ -419,7 +408,7 @@ export function LivePlan({
         <span className="contents inmersivo:hidden">
           <WaiterActions state={waiters} />
         </span>
-        {tableActions && occupiedCount > 0 ? (
+        {canReleaseAll ? (
           <button
             type="button"
             onClick={() => setReleaseAllOpen(true)}
@@ -438,7 +427,7 @@ export function LivePlan({
         ) : null}
       </div>
 
-      <div className="inmersivo:hidden">
+      <div className="inmersivo:hidden max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:[&>ul]:flex-nowrap max-sm:[&_li]:shrink-0">
         <WaiterLegend state={waiters} tableCount={seatableTables.length} />
       </div>
       {/* Avisos: en modo inmersivo, abajo en el centro, encima del plano. */}
@@ -488,12 +477,14 @@ export function LivePlan({
             onElementTap={
               waiters.editing
                 ? waiters.tap
-                : tableActions
-                  ? (id) => {
-                      setTableMessage(null);
-                      setTappedId(id);
-                    }
-                  : undefined
+                : (id) => {
+                    // Solo las mesas tienen panel (no la caja ni los baños).
+                    const element = zone.elements.find((e) => e.id === id);
+                    const type = element ? typesById.get(element.elementTypeId) : undefined;
+                    if (!type || !isSeatableElement(type.key)) return;
+                    setTableMessage(null);
+                    setTappedId(id);
+                  }
             }
             onMarquee={waiters.editing && waiters.group ? waiters.marquee : undefined}
           />
@@ -505,43 +496,28 @@ export function LivePlan({
       </div>
       </div>
 
-      {/* La mesa ocupada que se tocó: quién está y «Liberar mesa». */}
-      {tapped || tableMessage ? (
+      {/* La mesa tocada: quién está y lo que se puede hacer (ver `table-sheet.tsx`). */}
+      {tapped && plan ? (
+        <TableSheet
+          key={tapped.id}
+          element={tapped}
+          waiter={waiters.marks[tapped.id] ?? null}
+          showNames={plan.showNames}
+          now={now}
+          actions={tableActions ?? {}}
+          onClose={() => setTappedId(null)}
+          onNotice={setTableMessage}
+        />
+      ) : tableMessage ? (
         <div
           role="dialog"
-          aria-label={tapped ? `Mesa ${tapped.label}` : "Aviso"}
+          aria-label="Aviso"
           className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 mx-auto flex max-w-md flex-wrap items-center gap-3 rounded-2xl bg-panel p-4 text-panel-text shadow-2xl ring-1 ring-app-border"
         >
-          <div className="min-w-0 flex-1">
-            {tapped ? (
-              <>
-                <p className="font-semibold">{tapped.label}</p>
-                <p className="text-sm text-panel-muted">
-                  Ocupada{tapped.occupantName ? ` por ${tapped.occupantName}` : ""}
-                  {tapped.seatedAt ? ` · desde hace ${sinceText(now - tapped.seatedAt)}` : ""}
-                </p>
-              </>
-            ) : (
-              <p role="status" className="text-sm">{tableMessage}</p>
-            )}
-          </div>
-          {tapped ? (
-            <button
-              type="button"
-              disabled={tableBusy}
-              onClick={() => void releaseTapped()}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-text hover:bg-accent/85 disabled:opacity-50"
-            >
-              <DoorOpen aria-hidden size={17} />
-              {tableBusy ? "Liberando…" : "Liberar mesa"}
-            </button>
-          ) : null}
+          <p role="status" className="min-w-0 flex-1 text-sm">{tableMessage}</p>
           <button
             type="button"
-            onClick={() => {
-              setTappedId(null);
-              setTableMessage(null);
-            }}
+            onClick={() => setTableMessage(null)}
             aria-label="Cerrar"
             className="flex h-11 w-11 items-center justify-center rounded-xl hover:bg-app-border/60"
           >

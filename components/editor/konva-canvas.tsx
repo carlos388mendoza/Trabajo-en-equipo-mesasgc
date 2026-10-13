@@ -126,8 +126,8 @@ type Props = {
    */
   readOnly?: boolean;
   /**
-   * Zonas de meseros: mesa → color y nombre del mesero. Las mesas con marca
-   * salen teñidas de ese color y con el nombre encima.
+   * Zonas de meseros: mesa → color del mesero (y «Mesero rojo», su nombre
+   * para leer). Las mesas con marca salen con un borde y una franja de ese color.
    */
   waiterMarks?: Record<string, CanvasWaiterMark>;
   /**

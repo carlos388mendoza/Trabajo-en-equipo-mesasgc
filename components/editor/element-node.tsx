@@ -22,6 +22,7 @@ import Konva from "konva";
 import { elementStyle, visibleSeats, visualStatus } from "@/lib/layout/element-style";
 import type { ElementTypeInfo, LayoutElement } from "@/lib/layout/types";
 import { type Theme, withAlpha } from "@/lib/theme/theme";
+import { formatDuration } from "@/lib/time/duration";
 
 import { CanvasIcon } from "./canvas-icon";
 import { typeIcon } from "./icons";
@@ -39,11 +40,9 @@ const LABEL_HEIGHT = 26;
 const MARKER_RADIUS = 15;
 const MARKER_ICON = 18;
 const WAITER_HEIGHT = 26;
-const WAITER_FONT = 13;
 const WAITER_MIN_WIDTH = 104;
 const OCCUPANT_HEIGHT = 28;
 const OCCUPANT_FONT = 13;
-const OCCUPANT_MIN_WIDTH = 150;
 
 /**
  * Cuánto crece lo que va encima de una mesa respecto a una normal: una mesa
@@ -128,6 +127,7 @@ function LabelPill({
         strokeWidth={1}
       />
       <Text
+        name="live-text"
         x={-width / 2}
         y={-fuente / 2 + 1}
         width={width}
@@ -478,12 +478,18 @@ function ElementNodeBase({
   const showIcon = iconY !== null && height >= 64;
   if (!showIcon) labelY = height / 2;
 
+  // El tiempo, legible: «12 min», «1 h 20 min», «2 d» (nunca «11136 min»).
   const occupantText =
     occupantName !== null
       ? minutes !== null
-        ? `${occupantName} · ${minutes} min`
+        ? `${occupantName} · ${formatDuration(minutes)}`
         : occupantName
       : null;
+  // La píldora del cliente va justo debajo de la del nombre, DENTRO del sitio
+  // de la mesa (mesa y sillas) y del mismo ancho que el nombre, recortando
+  // con «…»: antes colgaba debajo de las sillas, más ancha que la mesa, y se
+  // encimaba con el mesero de la mesa de abajo.
+  const occupantY = labelY - height / 2 + ((LABEL_HEIGHT + OCCUPANT_HEIGHT) * MS) / 2 + 2;
 
   // Marcador de las mesas: en la esquina, medio colgado del borde (entro la mitad
   // de su radio, para que al crecer no quede flotando fuera). Las zonas, baños y
@@ -499,7 +505,8 @@ function ElementNodeBase({
     <Group
       ref={(node) => registerNode(element.id, node)}
       id={element.id}
-      name="table-element"
+      // `ocupada` además: así una prueba en el navegador encuentra las ocupadas.
+      name={element.currentEntryId ? "table-element ocupada" : "table-element"}
       x={element.x + width / 2}
       y={element.y + height / 2}
       offsetX={width / 2}
@@ -571,6 +578,7 @@ function ElementNodeBase({
           no calcule el hit de cada silla; sin esto el elemento no se podría
           seleccionar ni arrastrar. Cubre también las sillas. */}
       <Rect
+        name="table-hit"
         x={seats > 0 ? -18 : 0}
         y={seats > 0 ? -18 : 0}
         width={seats > 0 ? width + 36 : width}
@@ -591,7 +599,9 @@ function ElementNodeBase({
           cornerRadius={style.shape === "circle" ? (Math.min(width, height) + 28) / 2 : 18}
           fill={withAlpha(waiter.color, theme.dark ? 0.28 : 0.22)}
           stroke={waiter.color}
-          strokeWidth={3}
+          // Borde grueso: el mesero se marca alrededor de la mesa y el
+          // estado (libre, ocupada…) en la mesa misma, así no se confunden.
+          strokeWidth={5}
           listening={false}
           perfectDrawEnabled={false}
         />
@@ -631,6 +641,8 @@ function ElementNodeBase({
 
         {waiter ? (
           <Group y={-height / 2 - (seats > 0 ? 34 * MS : 17 * MS)}>
+            {/* El mesero se reconoce solo por su color: la franja no lleva
+                nombre (el color, con nombre, está en la leyenda). */}
             <Rect
               x={-Math.max(labelWidth, WAITER_MIN_WIDTH * MS) / 2}
               y={(-WAITER_HEIGHT * MS) / 2}
@@ -638,38 +650,28 @@ function ElementNodeBase({
               height={WAITER_HEIGHT * MS}
               cornerRadius={(WAITER_HEIGHT * MS) / 2}
               fill={waiter.color}
-            />
-            <Text
-              x={-Math.max(labelWidth, WAITER_MIN_WIDTH * MS) / 2 + 6}
-              y={-WAITER_FONT * MS * 0.5 + 1}
-              width={Math.max(labelWidth, WAITER_MIN_WIDTH * MS) - 12}
-              align="center"
-              text={waiter.label}
-              fontSize={WAITER_FONT * MS}
-              fontStyle="bold"
-              fontFamily={CANVAS_FONT}
-              fill="#ffffff"
-              wrap="none"
-              ellipsis
+              stroke={theme.mapBg}
+              strokeWidth={1.5}
             />
           </Group>
         ) : null}
 
         {occupantText ? (
-          <Group y={height / 2 + (seats > 0 ? 40 * MS : 20 * MS)}>
+          <Group y={occupantY}>
             <Rect
-              x={-Math.max(labelWidth, OCCUPANT_MIN_WIDTH * MS) / 2}
+              x={-labelWidth / 2}
               y={(-OCCUPANT_HEIGHT * MS) / 2}
-              width={Math.max(labelWidth, OCCUPANT_MIN_WIDTH * MS)}
+              width={labelWidth}
               height={OCCUPANT_HEIGHT * MS}
               cornerRadius={(OCCUPANT_HEIGHT * MS) / 2}
               fill={theme.status.ocupada.stroke}
               perfectDrawEnabled={false}
             />
             <Text
-              x={-Math.max(labelWidth, OCCUPANT_MIN_WIDTH * MS) / 2 + 8}
+              name="live-text"
+              x={-labelWidth / 2 + 6}
               y={-OCCUPANT_FONT * MS * 0.5 + 1}
-              width={Math.max(labelWidth, OCCUPANT_MIN_WIDTH * MS) - 16}
+              width={labelWidth - 12}
               align="center"
               text={occupantText}
               fontSize={OCCUPANT_FONT * MS}
