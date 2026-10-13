@@ -176,11 +176,16 @@ check("hay una configuración de meseros real en un restaurante", meserosReales.
 
 const carga = await loadDemoData();
 check("la carga informa del lote", carga.batchId === DEMO_BATCH_ID, carga.batchId);
-check(`crea ${DEMO_PLANS.length} zonas demo`, carga.zonas === DEMO_PLANS.length, `${carga.zonas}`);
-check("crea las mesas del demo", carga.mesas > 0, `${carga.mesas}`);
+// Desde octubre de 2026 el demo ya no crea «Comedor (demostración)»: solo
+// clientes (esperando e historial) y configuraciones de meseros de ejemplo.
+check("ya no crea zonas ni mesas de demostración", carga.zonas === 0 && carga.mesas === 0, `${carga.zonas} zonas, ${carga.mesas} mesas`);
+check(
+  "  y en la base no queda ninguna zona ni mesa demo",
+  (await db.select().from(tableLayouts).where(eq(tableLayouts.isDemo, true))).length === 0 &&
+    (await db.select().from(tables).where(eq(tables.isDemo, true))).length === 0,
+);
 check("crea clientes esperando", carga.esperando > 0, `${carga.esperando}`);
-check("sienta clientes en mesas demo", carga.sentados > 0, `${carga.sentados}`);
-check("reserva mesas demo", carga.reservadas > 0, `${carga.reservadas}`);
+check("no sienta ni reserva a nadie (eso ocuparía mesas reales)", carga.sentados === 0 && carga.reservadas === 0, `${carga.sentados} / ${carga.reservadas}`);
 check("no omite ningún restaurante", carga.omitidos.length === 0, carga.omitidos.join(", "));
 {
   const demoConfigs = await db.select().from(waiterConfigs).where(eq(waiterConfigs.isDemo, true));
@@ -194,6 +199,11 @@ check("no omite ningún restaurante", carga.omitidos.length === 0, carga.omitido
   const conMesero = await db.select({ n: sql<number>`count(*)` }).from(waitlistEntries).where(and(eq(waitlistEntries.isDemo, true), isNotNull(waitlistEntries.waiterName)));
   check("  los sentados del demo tienen mesero (estadísticas por mesero)", Number(conMesero[0].n) > 0, `${conMesero[0].n}`);
   check("  y las estadísticas los cuentan", (await getAnalytics()).waiters.length > 0);
+  {
+    // El mesero se reconoce solo por su color: «Mesero azul», nunca un nombre.
+    const meseros = (await getAnalytics()).waiters;
+    check("  y lo nombran por su color («Mesero azul»), con su color", meseros.every((w) => /^Mesero (rojo|azul|amarillo|verde|morado|naranja|rosa|turquesa|café|gris oscuro|sin color)$/.test(w.name) && (w.color === null || /^#[0-9a-f]{6}$/.test(w.color))), JSON.stringify(meseros.slice(0, 3).map((w) => w.name)));
+  }
 }
 
 const resumen1 = await demoSummary();
@@ -236,16 +246,15 @@ for (const restaurantId of planesIds) {
     .from(tables)
     .innerJoin(elementTypes, eq(elementTypes.id, tables.elementTypeId))
     .where(and(eq(tables.restaurantId, restaurantId), eq(tables.isDemo, true)));
-  const tipos = new Set(mesas.map((m) => m.key));
-  const completa =
-    zona.length === 1 &&
-    zona[0].batch === DEMO_BATCH_ID &&
-    tipos.has("mesa-sillas") &&
-    tipos.has("mesa-butacas") &&
-    tipos.has("bano") &&
-    tipos.has("caja") &&
-    tipos.has("area-juegos");
-  check(`${restaurantId}: una zona demo con la sala completa`, completa, `${zona.length} zona(s), tipos: ${[...tipos].join(", ")}`);
+  const [clientes] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(waitlistEntries)
+    .where(and(eq(waitlistEntries.restaurantId, restaurantId), eq(waitlistEntries.isDemo, true)));
+  check(
+    `${restaurantId}: clientes demo, sin zona ni mesas demo`,
+    zona.length === 0 && mesas.length === 0 && Number(clientes.n) > 0,
+    `${zona.length} zona(s), ${mesas.length} mesa(s), ${clientes.n} clientes`,
+  );
 }
 
 // --- Teléfonos de mentira y notas ----------------------------------------
@@ -278,16 +287,16 @@ check("hay clientes esperando", (porEstado.get("esperando") ?? 0) > 0, JSON.stri
 check("hay clientes sentados", (porEstado.get("sentado") ?? 0) > 0);
 check("hay clientes ausentes (el historial los trae)", (porEstado.get("ausente") ?? 0) > 0);
 
-const mesasOcupadas = await db
+const ocupadasPorDemo = await db
   .select({ n: sql<number>`count(*)` })
   .from(tables)
-  .where(and(eq(tables.isDemo, true), isNotNull(tables.currentEntryId)));
-check("hay mesas demo ocupadas", Number(mesasOcupadas[0].n) > 0, `${mesasOcupadas[0].n}`);
-const mesasReservadas = await db
-  .select({ n: sql<number>`count(*)` })
-  .from(tables)
-  .where(and(eq(tables.isDemo, true), eq(tables.status, "reservada")));
-check("hay mesas demo reservadas", Number(mesasReservadas[0].n) > 0, `${mesasReservadas[0].n}`);
+  .innerJoin(waitlistEntries, eq(waitlistEntries.id, tables.currentEntryId))
+  .where(eq(waitlistEntries.isDemo, true));
+check("ningún cliente demo ocupa una mesa", Number(ocupadasPorDemo[0].n) === 0, `${ocupadasPorDemo[0].n}`);
+check(
+  "ninguna mesa queda reservada por el demo",
+  (await db.select().from(tables).where(eq(tables.status, "reservada"))).length === 0,
+);
 
 // --- Historial ------------------------------------------------------------
 
@@ -365,6 +374,24 @@ check("el cliente real sigue esperando, sin marcar como demo", clienteReal.lengt
 section("El borrado aborta si un dato real depende del demo");
 
 {
+  // Ya no hay zonas demo: se crea una a mano (con su mesa) solo para probar
+  // que el borrado sigue protegiendo los datos reales.
+  const [tipoMesa] = await db.select({ id: elementTypes.id }).from(elementTypes).where(eq(elementTypes.key, "mesa-sillas")).limit(1);
+  await db.insert(tableLayouts).values({ id: "demo_lay_prueba", restaurantId: "rest_norte", name: "Zona demo de prueba", width: 800, height: 600, isDemo: true, demoBatchId: DEMO_BATCH_ID });
+  await db.insert(tables).values({
+    id: "demo_mesa_prueba",
+    restaurantId: "rest_norte",
+    layoutId: "demo_lay_prueba",
+    elementTypeId: tipoMesa.id,
+    label: "Mesa demo",
+    x: 100,
+    y: 100,
+    width: 80,
+    height: 80,
+    capacity: 4,
+    isDemo: true,
+    demoBatchId: DEMO_BATCH_ID,
+  });
   const mesaDemo = await db
     .select({ id: tables.id })
     .from(tables)
@@ -393,7 +420,8 @@ section("El borrado aborta si un dato real depende del demo");
     !bloqueado.ok && bloqueado.error.includes("No se borró nada"),
   );
   const resumenTrasAbortar = await demoSummary();
-  check("  y de verdad no se borró nada", resumenTrasAbortar.total === resumen1.total, `${resumenTrasAbortar.total} vs ${resumen1.total}`);
+  // (+2: la zona y la mesa demo de esta prueba)
+  check("  y de verdad no se borró nada", resumenTrasAbortar.total === resumen1.total + 2, `${resumenTrasAbortar.total} vs ${resumen1.total} + 2`);
 
   // Se despeja la referencia y entonces sí puede borrar.
   await db.delete(waitlistEntries).where(eq(waitlistEntries.id, "wl_real_colgado"));
@@ -413,8 +441,8 @@ section("Borrado del lote");
   check("el borrado termina bien", borrado.ok, JSON.stringify(borrado));
   if (borrado.ok) {
     check(`borra ${borrado.clientes} clientes demo`, borrado.clientes === resumen1.clientes, `${borrado.clientes} vs ${resumen1.clientes}`);
-    check(`borra ${borrado.mesas} mesas demo`, borrado.mesas === resumen1.mesas, `${borrado.mesas} vs ${resumen1.mesas}`);
-    check(`borra ${borrado.zonas} zonas demo`, borrado.zonas === resumen1.zonas, `${borrado.zonas} vs ${resumen1.zonas}`);
+    check(`borra ${borrado.mesas} mesa demo (la de la prueba)`, borrado.mesas === resumen1.mesas + 1, `${borrado.mesas} vs ${resumen1.mesas} + 1`);
+    check(`borra ${borrado.zonas} zona demo (la de la prueba)`, borrado.zonas === resumen1.zonas + 1, `${borrado.zonas} vs ${resumen1.zonas} + 1`);
     check(`borra las ${borrado.meseros} configuraciones de meseros de ejemplo`, borrado.meseros === carga.meseros && (await db.select().from(waiterConfigs).where(eq(waiterConfigs.isDemo, true))).length === 0);
   }
   const propias = await listWaiterConfigs(CON_MESEROS);
@@ -476,7 +504,7 @@ section("Recarga tras borrar");
 
 {
   const recargada = await loadDemoData();
-  check("se puede volver a cargar", recargada.zonas === DEMO_PLANS.length, `${recargada.zonas}`);
+  check("se puede volver a cargar (sin zonas: solo clientes)", recargada.zonas === 0 && recargada.esperando > 0, `${recargada.zonas} zonas`);
   check("  con clientes esperando", recargada.esperando > 0, `${recargada.esperando}`);
   check("  y con historial", recargada.historial > 0, `${recargada.historial}`);
   const resumenRecargado = await demoSummary();
