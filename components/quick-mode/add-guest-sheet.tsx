@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { ClipboardList, Plus, Trash2, UserRoundPlus } from "lucide-react";
 
 import { Overlay } from "@/components/quick-mode/overlay";
+import { PartySelect } from "@/components/quick-mode/party-select";
 import { MAX_BATCH_ENTRIES } from "@/lib/realtime/events";
 import {
   NAME_MAX,
@@ -36,8 +37,6 @@ type AddGuestSheetProps = {
   onSubmit: (guest: NewGuest) => Promise<string | null>;
   onSubmitMany: (guests: NewGuest[]) => Promise<string | null>;
 };
-
-const PARTY_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 const fieldClass =
   "w-full rounded-xl border bg-panel px-4 py-3 text-panel-text outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20";
@@ -412,25 +411,7 @@ function ManyForm({ connected, onClose, onSubmitMany }: Omit<AddGuestSheetProps,
   );
 }
 
-function PartySelect({ value, onChange, className = "", label }: {
-  value: string;
-  onChange: (value: string) => void;
-  className?: string;
-  label?: string;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      aria-label={label}
-      className={`w-full rounded-xl border border-app-border bg-panel px-3 py-3 text-panel-text outline-none focus:border-accent ${className}`}
-    >
-      {PARTY_OPTIONS.map((count) => (
-        <option key={count} value={count}>{count} {count === 1 ? "persona" : "personas"}</option>
-      ))}
-    </select>
-  );
-}
+// Se usa PartySelect personalizado (issue #86).
 
 function FormError({ message }: { message: string }) {
   if (!message) return null;
