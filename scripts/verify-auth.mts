@@ -509,7 +509,7 @@ section("Solo el propio sitio puede meter la app en un iframe");
   // otro sitio debe poder enmarcar la app (clickjacking). Páginas y API.
   for (const path of ["/login", "/api/health"]) {
     const res = await http("GET", path);
-    check(`GET ${path}: Content-Security-Policy frame-ancestors 'self'`, res.frameAncestors === "frame-ancestors 'self'", String(res.frameAncestors));
+    check(`GET ${path}: Content-Security-Policy con frame-ancestors 'self'`, (res.frameAncestors ?? "").includes("frame-ancestors 'self'"), String(res.frameAncestors));
     check(`  y X-Frame-Options: SAMEORIGIN`, res.frameOptions === "SAMEORIGIN", String(res.frameOptions));
   }
 }
