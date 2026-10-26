@@ -489,6 +489,19 @@ estadísticas y datos) y entran después.
   viven en la memoria del proceso: basta para 8 restaurantes en un solo
   servidor, pero para varios servidores haría falta, por ejemplo, Redis.
 
+## Dónde quedé (26 de octubre de 2026)
+
+**Seguridad (PR #95):** rate limit de login por IP y correo, cabeceras de seguridad, `/admin` con fecha de revisión y `docs/seguridad.md`. `npm audit` sin altas/críticas.
+
+**Issues #86, #87 y #88 (PR #92, #93, #94):**
+- #88: tocar una pregunta sugerida la envía de una vez.
+- #87: «Ver clientes» ordena de lo más reciente a lo más viejo después de aplicar la cola offline, sin tocar modelo ni servidor.
+- #86: select personalizado de «Personas» con accesibilidad y teclado.
+
+**Protección de main (PR #96):** workflow que exige que los PR a `main` vengan de `testing`.
+
+Verificaciones: typecheck, lint, build, verify:editor (236/236), verify:realtime (290/290), verify:auth (507/507), verify:demo (103/103), verify:markdown (67/67) y verify:browser (12/12) en verde.
+
 ## Dónde quedé (12 de octubre de 2026)
 
 **Hecho el 12 de octubre** (PR #73, #74 y el de preparación del piloto):

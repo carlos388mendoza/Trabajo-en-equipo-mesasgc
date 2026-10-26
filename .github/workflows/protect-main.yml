@@ -1,0 +1,22 @@
+name: Solo testing puede fusionarse a main
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  origen-testing:
+    name: La rama de origen debe ser testing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comprobar rama de origen
+        run: |
+          if [ "${{ github.head_ref }}" != "testing" ]; then
+            echo "::error::Solo se aceptan PR a main que vengan de testing. Rama recibida: ${{ github.head_ref }}"
+            exit 1
+          fi
+          echo "Rama de origen válida: testing"

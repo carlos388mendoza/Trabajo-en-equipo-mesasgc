@@ -57,9 +57,14 @@ export function AnalyticsClient() {
     return () => { active = false; window.clearTimeout(timer); };
   }, [restaurantId, brandFilter, cityFilter]);
 
-  async function ask(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!question.trim() || !analytics || asking) return;
+  /**
+   * Pregunta al asistente con el texto que se le pase (el del cuadro o una
+   * sugerencia). Así tocar una sugerencia la pregunta de una vez, en lugar de
+   * solo rellenar el cuadro para que haya que pulsar «Preguntar» (issue #88).
+   */
+  async function askQuestion(text: string) {
+    const asked = text.trim();
+    if (!asked || !analytics || asking) return;
     setAsking(true);
     setAnswer("");
     try {
@@ -70,7 +75,7 @@ export function AnalyticsClient() {
       const response = await fetch(`/api/assistant?${query.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question: asked }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No pude generar una respuesta.");
@@ -80,6 +85,11 @@ export function AnalyticsClient() {
     } finally {
       setAsking(false);
     }
+  }
+
+  function ask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void askQuestion(question);
   }
 
   function applyFilters(event: FormEvent<HTMLFormElement>) {
@@ -339,8 +349,14 @@ export function AnalyticsClient() {
                     <button
                       key={suggestion}
                       type="button"
-                      onClick={() => setQuestion(suggestion)}
-                      className="min-h-10 rounded-full border border-app-border px-3 py-1.5 text-xs text-panel-muted transition hover:bg-app-border/40 hover:text-panel-text"
+                      // Tocar la sugerencia también la deja escrita: si falla o
+                      // se quiere retocar, el cuadro ya la tiene.
+                      onClick={() => {
+                        setQuestion(suggestion);
+                        void askQuestion(suggestion);
+                      }}
+                      disabled={asking || loading}
+                      className="min-h-10 rounded-full border border-app-border px-3 py-1.5 text-xs text-panel-muted transition hover:bg-app-border/40 hover:text-panel-text disabled:opacity-60"
                     >
                       {suggestion}
                     </button>
