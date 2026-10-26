@@ -22,10 +22,11 @@ export function SignOutButton() {
     event.preventDefault();
     const form = event.currentTarget;
     const pending = await countAllPendingOperations();
-    if (pending > 0 && !window.confirm(
-      `Hay ${pending} ${pending === 1 ? "cambio" : "cambios"} del modo sencillo sin sincronizar en esta tablet. ` +
-      "Si cierras sesión ahora se pierden. ¿Cerrar sesión de todos modos?",
-    )) return;
+    const mensaje = pending > 0
+      ? `Hay ${pending} ${pending === 1 ? "cambio" : "cambios"} del modo sencillo sin sincronizar en esta tablet. ` +
+        "Si cierras sesión ahora se pierden. ¿Cerrar sesión de todos modos?"
+      : "¿Seguro que quieres cerrar sesión?";
+    if (!window.confirm(mensaje)) return;
     await clearOfflineData();
     confirmed.current = true;
     form.requestSubmit();
