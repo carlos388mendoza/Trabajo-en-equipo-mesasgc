@@ -46,3 +46,15 @@ export function decodeCardCursor(raw: string | null | undefined): { arrivedAt: n
 export function normalizeName(text: string): string {
   return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
+
+/**
+ * «Ver clientes»: lo más reciente arriba. El servidor devuelve la página en
+ * este mismo orden (`arrivedAt` descendente y luego `id` descendente); la tablet
+ * lo conserva así después de aplicar los cambios pendientes de la cola sin
+ * conexión (issue #87). El montón del modo sencillo NO usa esto: sigue por orden
+ * de llegada (ascendente).
+ */
+export function newestFirst(a: { arrivedAt: number; id: string }, b: { arrivedAt: number; id: string }): number {
+  if (b.arrivedAt !== a.arrivedAt) return b.arrivedAt - a.arrivedAt;
+  return b.id.localeCompare(a.id);
+}
