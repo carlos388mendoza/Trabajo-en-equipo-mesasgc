@@ -44,6 +44,7 @@ import {
   CARD_FILTER_LABELS,
   CARD_RANGES,
   CARD_RANGE_LABELS,
+  newestFirst,
   normalizeName,
   type CardCounts,
   type CardFilter,
@@ -293,7 +294,7 @@ function AllCardsContent({
       const rest = items.filter((item) => item.id !== entry.id);
       if (action === "removed" || !fits) return rest;
       if (!known && current === "ocupando") return rest;
-      return [entry, ...rest].sort((a, b) => b.arrivedAt - a.arrivedAt);
+      return [entry, ...rest].sort(newestFirst);
     });
     refreshCounts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -308,7 +309,7 @@ function AllCardsContent({
       .filter((entry) => entry.arrivedAt >= since || entry.status === "esperando" || entry.status === "listo")
       .filter((entry) => !activeWaiter || entry.waiterName === activeWaiter)
       .filter((entry) => !needle || normalizeName(entry.customerName).includes(needle))
-      .sort((a, b) => b.arrivedAt - a.arrivedAt);
+      .sort(newestFirst);
     const occupying = new Set(tables.map((t) => t.currentEntryId).filter(Boolean));
     const c: CardCounts = { ...EMPTY_COUNTS, todas: inRange.length };
     for (const entry of inRange) {
@@ -337,7 +338,10 @@ function AllCardsContent({
   }, [occupiedKey]);
   const visible = useMemo(() => {
     if (local) return local.list;
-    const list = applyPending(entries);
+    // `applyPending` devuelve la cola aplicada en orden de llegada (ascendente,
+    // como el montón). «Ver clientes» la ordena de lo más reciente a lo más
+    // viejo, con el mismo criterio que el servidor (issue #87).
+    const list = [...applyPending(entries)].sort(newestFirst);
     return filter === "ocupando" ? list.filter((entry) => occupiedIds.has(entry.id)) : list;
   }, [local, entries, applyPending, filter, occupiedIds]);
   const shownCounts = local ? local.counts : counts;
