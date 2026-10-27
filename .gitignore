@@ -60,3 +60,5 @@ local.db-shm
 .perf-editor.db*
 /perf-resultados/
 .lamina-paleta/
+.vercel
+.env*

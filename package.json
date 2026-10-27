@@ -30,6 +30,7 @@
     "reset-password": "tsx scripts/reset-password.mts",
     "verify:auth": "tsx scripts/verify-auth.mts",
     "verify:browser": "tsx scripts/verify-browser.mts",
+    "verify:vercel-protection": "tsx scripts/verify-vercel-protection.mts",
     "perf:levantar": "tsx scripts/perf/levantar-perf.mts",
     "perf:editor": "tsx scripts/perf/medir-editor.mts",
     "db:zonas-demo": "tsx scripts/db-borrar-zonas-demo.mts",
