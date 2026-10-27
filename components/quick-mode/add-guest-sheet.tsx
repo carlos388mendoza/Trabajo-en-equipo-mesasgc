@@ -411,7 +411,6 @@ function ManyForm({ connected, onClose, onSubmitMany }: Omit<AddGuestSheetProps,
   );
 }
 
-// Se usa PartySelect personalizado (issue #86).
 
 function FormError({ message }: { message: string }) {
   if (!message) return null;
