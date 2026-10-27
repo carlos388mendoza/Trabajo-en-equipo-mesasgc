@@ -847,8 +847,7 @@ console.log("\n#88: sugerencias del asistente");
 if (!asistentePasa) fallos += 1;
 console.log(`  ${asistentePasa ? "ok  " : "FALLA"} una sugerencia pregunta de una vez y no se manda otra mientras responde ${asistentePasa ? "" : JSON.stringify({ ...mientras, ...filaAsistente })}`);
 
-console.log("
-#107: «Cerrar sesión» con el diálogo propio");
+console.log("\n#107: «Cerrar sesión» con el diálogo propio");
 if (!salirPasa) fallos += 1;
 console.log(`  ${salirPasa ? "ok  " : "FALLA"} sin window.confirm; foco atrapado, Esc cancela, Enter sale ${salirPasa ? "" : JSON.stringify({ ...salir, focoAtrapado, escCancela, enterSale, nativos })}`);
 
