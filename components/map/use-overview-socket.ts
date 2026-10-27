@@ -2,21 +2,19 @@
 
 // Conexión del mapa general con la sala `overview`.
 //
-// Entra en la sala (y vuelve a entrar tras cada reconexión), guarda los
-// contadores de todos los restaurantes y los actualiza con cada
-// `overview:counters`. Además pide los contadores cada 30 s por una server
+// Entra en la sala por la conexión de tiempo real (`lib/realtime/client.ts`,
+// HTTP con sondeo corto), vuelve a entrar tras cada reconexión (y entonces
+// recarga todos los contadores), y los actualiza con cada `overview:counters`. Además pide los contadores cada 30 s por una server
 // action: si el socket se cae, o si un cambio no avisa (los clientes que
 // añade el modo rápido, hasta que llame a `emitOverview`), el mapa se pone al
 // día solo.
 
 import { useCallback, useEffect, useState } from "react";
-import { io, type Socket } from "socket.io-client";
 
 import { loadOverviewCounters } from "@/app/mapa/actions";
 import type { RealtimeStatus } from "@/components/realtime/use-restaurant-socket";
-import type { ClientToServerEvents, RestaurantCounters, ServerToClientEvents } from "@/lib/realtime/events";
-
-type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+import { createRealtimeClient } from "@/lib/realtime/client";
+import type { Ack, RestaurantCounters } from "@/lib/realtime/events";
 
 const ACK_TIMEOUT_MS = 5_000;
 export const FALLBACK_REFRESH_MS = 30_000;
@@ -34,12 +32,12 @@ export function useOverviewSocket(initial: RestaurantCounters[]) {
   }, []);
 
   useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_SOCKET_URL || undefined;
-    const socket: ClientSocket = url ? io(url) : io();
+    const socket = createRealtimeClient({ fastMs: 5_000, slowMs: 30_000 });
 
     const join = () => {
-      socket.timeout(ACK_TIMEOUT_MS).emit("overview:join", {}, (err, res) => {
-        if (err || !res.ok) {
+      socket.timeout(ACK_TIMEOUT_MS).emit("overview:join", {}, (err, raw) => {
+        const res = raw as Ack<{ counters: RestaurantCounters[] }> | undefined;
+        if (err || !res || !res.ok) {
           setStatus("sin-conexion");
           return;
         }
@@ -52,6 +50,7 @@ export function useOverviewSocket(initial: RestaurantCounters[]) {
     socket.on("disconnect", () => setStatus("sin-conexion"));
     socket.on("connect_error", () => setStatus("sin-conexion"));
     socket.on("overview:counters", (c) => merge([c]));
+    socket.connect();
 
     return () => {
       socket.disconnect();

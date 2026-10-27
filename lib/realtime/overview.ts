@@ -1,48 +1,27 @@
 // Avisos a la sala `overview` (mapa general).
 //
 // `emitOverview(restaurantId)` recalcula los contadores de ESE restaurante y
-// se los manda a los sockets de la sala. La llaman:
+// los deja como aviso de la sala (`lib/realtime/bus.ts`). La llaman:
 //
-//  - `lib/realtime/server.ts`, después de sentar o liberar una mesa;
-//  - las server actions del editor, después de guardar o copiar un plano;
-//  - los eventos `waitlist:add`, `waitlist:resolve` y `waitlist:undo` del
-//    modo rápido en vivo, porque cambian los clientes en espera.
+//  - los eventos de tiempo real (`lib/realtime/handlers.ts`), después de
+//    sentar, liberar o cambiar la lista;
+//  - las server actions del editor y de meseros, después de guardar o copiar.
 //
-// Como `emitToRestaurant`, no hace nada si no hay servidor de tiempo real
-// (`next dev` a secas, un script), y NUNCA lanza: el cambio ya se guardó y
-// avisar es un extra. Por eso se puede llamar con `void` sin esperar.
+// Quién puede leer la sala se comprueba al leer (`allowedRooms`: `mapa:ver`),
+// no aquí: si un admin le quita el rol a alguien con el mapa abierto, deja de
+// recibir contadores en la siguiente pregunta. NUNCA lanza: el cambio ya se
+// guardó y avisar es un extra. Hay que esperarla (`await`) antes de contestar.
 
+import { logServerError } from "@/lib/log";
 import { getCounters } from "@/lib/map/counters";
 
-import { canJoinOverview } from "./auth";
+import { publish } from "./bus";
 import { OVERVIEW_ROOM } from "./events";
-import { getRealtimeServer } from "./registry";
-import { logServerError } from "@/lib/log";
 
-/**
- * Manda a la sala `overview` los contadores actuales de un restaurante.
- *
- * Antes de mandar, vuelve a comprobar `mapa:ver` de cada usuario de la sala:
- * si un admin le quitó el rol con el mapa abierto, su socket sale de la sala
- * y deja de recibir contadores desde ese momento, no desde que recargue.
- */
 export async function emitOverview(restaurantId: string): Promise<void> {
-  const io = getRealtimeServer();
-  if (!io) return;
   try {
-    const sockets = await io.in(OVERVIEW_ROOM).fetchSockets();
-    if (sockets.length === 0) return;
-
     const [counters] = await getCounters([restaurantId]);
-    // Un usuario puede tener el mapa abierto en varias pestañas: se le
-    // comprueba una sola vez.
-    const allowed = new Map<string, boolean>();
-    for (const socket of sockets) {
-      const { userId } = socket.data;
-      if (!allowed.has(userId)) allowed.set(userId, await canJoinOverview({ userId }));
-      if (allowed.get(userId)) socket.emit("overview:counters", counters);
-      else socket.leave(OVERVIEW_ROOM);
-    }
+    if (counters) await publish(OVERVIEW_ROOM, [{ event: "overview:counters", args: [counters] }]);
   } catch (err) {
     logServerError("[realtime] error avisando a la sala overview", err);
   }

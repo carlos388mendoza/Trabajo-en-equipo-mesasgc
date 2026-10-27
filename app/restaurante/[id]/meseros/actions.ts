@@ -32,8 +32,8 @@ const INVALID = "Los datos de la configuración de meseros no son válidos.";
 
 async function announce(restaurantId: string) {
   const configs = await listWaiterConfigs(restaurantId);
-  emitToRestaurant(restaurantId, "waiters:changed", { activeConfigId: configs.find((c) => c.isActive)?.id ?? null });
-  void emitOverview(restaurantId);
+  await emitToRestaurant(restaurantId, "waiters:changed", { activeConfigId: configs.find((c) => c.isActive)?.id ?? null });
+  await emitOverview(restaurantId);
   revalidatePath(`/restaurante/${restaurantId}/mapa`);
   revalidatePath(`/restaurante/${restaurantId}/editor`);
   return configs;

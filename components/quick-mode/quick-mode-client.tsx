@@ -381,16 +381,22 @@ export function QuickModeClient({ restaurantId, userId }: { restaurantId: string
       setConnected(value);
     };
 
+    // Tras una caída (o si el servidor dice que se perdieron avisos) se vuelve
+    // a entrar y se recarga la lista y las mesas: lo que pasó mientras tanto no
+    // llega aviso por aviso.
+    let joinedBefore = false;
     socket.on("connect", () => {
       void socket.timeout(5000)
         .emitWithAck("restaurant:join", { restaurantId })
-        .then((result) => {
+        .then((result: AnyAck) => {
           if (!result.ok) {
-            setError(result.error);
+            setError(result.error ?? "No se pudo entrar al restaurante en tiempo real.");
             return;
           }
           setError("");
           setOnline(true);
+          if (joinedBefore) void loadAllRef.current();
+          joinedBefore = true;
           void syncRef.current();
         })
         .catch(() => setError("No se pudo entrar al restaurante en tiempo real."));
@@ -718,7 +724,7 @@ export function QuickModeClient({ restaurantId, userId }: { restaurantId: string
       if (undoTimer.current) clearTimeout(undoTimer.current);
       if (result.action === "removed") {
         // Deshacer «agregar varios» trae a todos los que se quitaron.
-        removeEntries(new Set((result.entries ?? [result.entry]).map((entry: WaitlistEntrySnapshot) => entry.id)));
+        removeEntries(new Set((result.entries ?? (result.entry ? [result.entry] : [])).map((entry) => entry.id)));
         if (result.entries) showNotice(`Se quitaron los ${result.entries.length} clientes que se agregaron.`, 3000);
       } else if (result.entry) {
         mergeEntry(result.entry);

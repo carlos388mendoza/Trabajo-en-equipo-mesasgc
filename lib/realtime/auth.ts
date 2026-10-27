@@ -1,15 +1,13 @@
 // Permisos de las conexiones de tiempo real.
 //
-// El handshake lee la sesión de Better Auth desde la cookie que el navegador
-// manda al abrir el socket (mismo origen, así que viaja sola). Sin sesión
-// válida, o con el usuario desactivado, la conexión se rechaza.
+// Cada petición de tiempo real (`/api/tiempo-real`) lee la sesión de Better
+// Auth desde la cookie (mismo origen, así que viaja sola). Sin sesión válida,
+// o con el usuario desactivado, se rechaza.
 //
 // Cada evento vuelve a leer al usuario de la base: si un admin le quita un
-// restaurante o lo desactiva con el socket abierto, el siguiente evento ya se
-// rechaza. Las reglas son las de `lib/auth/rbac.ts`, como en el resto de la
+// restaurante o lo desactiva con la pantalla abierta, el siguiente evento ya
+// se rechaza. Las reglas son las de `lib/auth/rbac.ts`, como en el resto de la
 // app.
-
-import type { IncomingHttpHeaders } from "node:http";
 
 import { getAuth } from "@/lib/auth/auth";
 import { can } from "@/lib/auth/rbac";
@@ -19,20 +17,12 @@ export type SocketIdentity = {
   userId: string;
 };
 
-function toHeaders(incoming: IncomingHttpHeaders): Headers {
-  const headers = new Headers();
-  for (const [name, value] of Object.entries(incoming)) {
-    if (typeof value === "string") headers.set(name, value);
-    else if (Array.isArray(value)) headers.set(name, value.join(", "));
-  }
-  return headers;
-}
-
-/** Quién abre la conexión. `null` = rechazarla. */
-export async function identifySocket(handshake: {
-  headers: IncomingHttpHeaders;
-}): Promise<SocketIdentity | null> {
-  const result = await getAuth().api.getSession({ headers: toHeaders(handshake.headers) });
+/**
+ * Quién hace una petición de tiempo real (`app/api/tiempo-real`): la misma
+ * sesión de Better Auth, leída de la cookie. `null` = sin sesión o desactivado.
+ */
+export async function identifyRequest(headers: Headers): Promise<SocketIdentity | null> {
+  const result = await getAuth().api.getSession({ headers });
   if (!result) return null;
   const current = await loadAuthUser(result.user.id);
   if (!current || !current.active) return null;

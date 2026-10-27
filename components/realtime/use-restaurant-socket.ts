@@ -2,30 +2,35 @@
 
 // Conexión en tiempo real de una pantalla con su restaurante.
 //
-// Abre el socket, entra en la room del restaurante (y vuelve a entrar tras
-// cada reconexión: una room no sobrevive a un socket nuevo) y expone
-// `assignTable` / `releaseTable`, que devuelven la respuesta del servidor.
+// Abre la conexión de tiempo real (`lib/realtime/client.ts`: HTTP con
+// sondeo corto, sirve en Vercel), entra en el restaurante (y vuelve a entrar
+// tras cada reconexión, avisando con `onResync` para que la pantalla recargue
+// lo que se perdió) y expone `assignTable` / `releaseTable`, que devuelven la
+// respuesta del servidor.
 //
 // Lo usa el editor; el modo rápido (Miembro B) puede usarlo igual.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { io, type Socket } from "socket.io-client";
 
 import type {
   BatchSummary,
   Ack,
   AssignTableInput,
-  ClientToServerEvents,
   ReleaseTableInput,
   ServerToClientEvents,
   TableChange,
 } from "@/lib/realtime/events";
 
-type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+import { createRealtimeClient, type RealtimeClient } from "@/lib/realtime/client";
+
+type ClientSocket = RealtimeClient;
 
 export type RealtimeStatus = "conectando" | "en-vivo" | "sin-conexion";
 
-export type RealtimeHandlers = Partial<ServerToClientEvents>;
+export type RealtimeHandlers = Partial<ServerToClientEvents> & {
+  /** Volvió la conexión tras una caída: puede haberse perdido algo, a recargar. */
+  onResync?: () => void;
+};
 
 // Los eventos que se reenvían a `handlers`. Una lista fija en vez de
 // `onAny` para que TypeScript compruebe cada nombre.
@@ -35,6 +40,7 @@ const FORWARDED = [
   "layout:updated",
   "structure:changed",
   "waiters:changed",
+  "waitlist:changed",
 ] as const satisfies readonly (keyof ServerToClientEvents)[];
 
 const ACK_TIMEOUT_MS = 5_000;
@@ -52,21 +58,23 @@ export function useRestaurantSocket(restaurantId: string, handlers: RealtimeHand
   });
 
   useEffect(() => {
-    // Vacío = mismo origen que la página, que es como lo sirve `server.ts`.
-    const url = process.env.NEXT_PUBLIC_SOCKET_URL || undefined;
-    const socket: ClientSocket = url ? io(url) : io();
+    const socket: ClientSocket = createRealtimeClient();
     socketRef.current = socket;
+    let joinedBefore = false;
 
     const join = () => {
       socket
         .timeout(ACK_TIMEOUT_MS)
-        .emit("restaurant:join", { restaurantId }, (err, res) => {
-          if (err) {
+        .emit("restaurant:join", { restaurantId }, (err, raw) => {
+          const res = raw as Ack<object> | undefined;
+          if (err || !res) {
             setStatus("sin-conexion");
             setJoinError("El servidor no respondió.");
           } else if (res.ok) {
             setStatus("en-vivo");
             setJoinError(null);
+            if (joinedBefore) handlersRef.current.onResync?.();
+            joinedBefore = true;
           } else {
             setStatus("sin-conexion");
             setJoinError(res.error);
@@ -86,6 +94,8 @@ export function useRestaurantSocket(restaurantId: string, handlers: RealtimeHand
         handler?.(...args);
       });
     }
+
+    socket.connect();
 
     return () => {
       socket.disconnect();

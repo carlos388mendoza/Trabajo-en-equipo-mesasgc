@@ -39,6 +39,7 @@ import {
 
 import { canAssignTables, canJoinOverview, canJoinRestaurant, canModifyWaitlist, type SocketIdentity } from "./auth";
 import { publish } from "./bus";
+import { emitOverview } from "./overview";
 import {
   type Ack,
   MAX_BATCH_ENTRIES,
@@ -63,7 +64,7 @@ type Notice = { event: keyof ServerToClientEvents; args: unknown[] };
 
 export type RealtimeReply = {
   /** La respuesta para quien preguntó (lo que antes era el ack del socket). */
-  ack: Ack<object>;
+  ack: Ack<Record<string, unknown>>;
   /** Avisos solo para quien preguntó (antes, `socket.emit` a sí mismo). */
   self: Notice[];
 };
@@ -97,19 +98,8 @@ export async function broadcast(restaurantId: string, notices: Notice[]): Promis
   await publish(roomFor(restaurantId), notices);
 }
 
-/**
- * Manda a la sala del mapa general los contadores de un restaurante. NUNCA
- * lanza: el cambio ya se guardó y avisar es un extra. Quién puede leer la sala
- * se comprueba al leer (`readRealtime`), no aquí.
- */
-export async function publishOverview(restaurantId: string): Promise<void> {
-  try {
-    const [counters] = await getCounters([restaurantId]);
-    if (counters) await publish(OVERVIEW_ROOM, [notice("overview:counters", counters)]);
-  } catch (err) {
-    logServerError("[realtime] error avisando al mapa general", err);
-  }
-}
+/** Contadores al mapa general (ver `lib/realtime/overview.ts`). */
+const publishOverview = emitOverview;
 
 /**
  * Atiende un evento. `restaurantId` es el restaurante en el que está la
@@ -139,7 +129,7 @@ async function dispatch(
   event: string,
   raw: unknown,
   self: Notice[],
-): Promise<Ack<object>> {
+): Promise<Ack<Record<string, unknown>>> {
   if (event === "restaurant:join") {
     const parsed = joinRestaurantSchema.safeParse(raw);
     if (!parsed.success) return fail("Restaurante no válido.");
