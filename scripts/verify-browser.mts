@@ -17,6 +17,8 @@
 //    que la lista abierta se vea entera (o con su scroll) y no la corte el
 //    panel, que Esc cierre solo la lista, que el teclado elija, que Tab la
 //    cierre, que no se repitan ids y que todo mida 44 px o más.
+//  - #88: que tocar una sugerencia del asistente pregunta de una vez (una
+//    sola petición) y que mientras responde no se puede mandar otra.
 //  - #61: que la página NO tiene scroll horizontal en 320, 375, 414, 768,
 //    1024 ni escritorio, midiendo en cada tamaño
 //    `document.documentElement.scrollWidth` contra `window.innerWidth` (lo
@@ -574,6 +576,37 @@ await esperar(500);
 const analiticaSinBoton = (JSON.parse(String(await evaluar(botonLista))) as { existe: boolean }).existe === false;
 
 // ---------------------------------------------------------------------------
+// #88: las sugerencias del asistente preguntan de una vez
+// ---------------------------------------------------------------------------
+
+// La IA de verdad no se llama: `fetch` a /api/assistant se sustituye por una
+// respuesta que tarda 1,5 s, y se cuenta cuántas veces se pidió.
+await tab.send("Page.navigate", { url: `${BASE}/analiticas` });
+const sugerencias = `[...document.querySelectorAll('button')].filter((b) => ['¿Cuál fue el día más lento?', 'Dame el top de clientes', 'Compara restaurantes'].includes(b.textContent.trim()))`;
+for (let i = 0; i < 200 && (await evaluar(`${sugerencias}.length === 3 && ${sugerencias}.every((b) => !b.disabled)`)) !== true; i += 1) await esperar(300);
+await evaluar(`(() => {
+  window.__preguntas = 0;
+  const original = window.fetch.bind(window);
+  window.fetch = (url, init) => {
+    if (String(url).includes('/api/assistant')) {
+      window.__preguntas += 1;
+      return new Promise((ok) => setTimeout(() => ok(new Response(JSON.stringify({ answer: 'Respuesta de prueba del asistente' }), { status: 200, headers: { 'Content-Type': 'application/json' } })), 1500));
+    }
+    return original(url, init);
+  };
+  return true;
+})()`);
+await evaluar(`${sugerencias}[0].click(), true`);
+await esperar(150);
+// Mientras responde: otra sugerencia y «Preguntar» están desactivados, y
+// tocarlos no manda nada.
+const mientras = JSON.parse(String(await evaluar(`JSON.stringify({ desactivadas: ${sugerencias}.every((b) => b.disabled), cuadro: document.querySelector('input[maxlength="500"]')?.value ?? null, preguntar: [...document.querySelectorAll('button')].find((b) => /Consultando/.test(b.textContent))?.disabled === true })`))) as { desactivadas: boolean; cuadro: string | null; preguntar: boolean };
+await evaluar(`${sugerencias}[1].click(), [...document.querySelectorAll('button')].find((b) => /Consultando|Preguntar/.test(b.textContent))?.click(), true`);
+await esperar(2200);
+const filaAsistente = JSON.parse(String(await evaluar(`JSON.stringify({ preguntas: window.__preguntas, respuesta: document.body.innerText.includes('Respuesta de prueba del asistente'), libres: ${sugerencias}.every((b) => !b.disabled) })`))) as { preguntas: number; respuesta: boolean; libres: boolean };
+const asistentePasa = filaAsistente.preguntas === 1 && mientras.desactivadas && mientras.preguntar && mientras.cuadro === "¿Cuál fue el día más lento?" && filaAsistente.respuesta && filaAsistente.libres;
+
+// ---------------------------------------------------------------------------
 // Plano en vivo: los textos de las mesas, dentro de su mesa y sin encimarse
 // ---------------------------------------------------------------------------
 
@@ -774,7 +807,11 @@ for (const fila of filasSelect) {
   console.log(`  ${fila.pasa ? "ok  " : "FALLA"} ${fila.tamano.padEnd(26)} ${fila.pasa ? "" : fila.detalle}`);
 }
 
-writeFileSync(join(DIR, "resultado.json"), JSON.stringify({ filas, ejes, filasLista, analiticaSinBoton, filasTextos, filasSelect }, null, 2));
+console.log("\n#88: sugerencias del asistente");
+if (!asistentePasa) fallos += 1;
+console.log(`  ${asistentePasa ? "ok  " : "FALLA"} una sugerencia pregunta de una vez y no se manda otra mientras responde ${asistentePasa ? "" : JSON.stringify({ ...mientras, ...filaAsistente })}`);
+
+writeFileSync(join(DIR, "resultado.json"), JSON.stringify({ filas, ejes, filasLista, analiticaSinBoton, filasTextos, filasSelect, asistente: { ...mientras, ...filaAsistente } }, null, 2));
 console.log(`\nCapturas en ${SHOTS}`);
 
 tab.close();
