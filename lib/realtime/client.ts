@@ -147,17 +147,34 @@ export class RealtimeClient {
   private async poll(): Promise<void> {
     if (!this.active || this.polling) return;
     this.polling = true;
+    // Se guardan los valores con los que se preguntó, para descartar la
+    // respuesta si la pantalla cambió de restaurante/mapa mientras estaba
+    // en vuelo (evita mezclar avisos del primero con el segundo).
+    const askedRestaurant = this.restaurantId;
+    const askedOverview = this.overview;
+    const askedCursor = this.cursor;
     try {
       const params = new URLSearchParams();
-      const listening = this.cursor !== null && (this.restaurantId !== null || this.overview);
+      const listening = askedCursor !== null && (askedRestaurant !== null || askedOverview);
       if (listening) {
-        params.set("desde", String(this.cursor));
-        if (this.restaurantId) params.set("restaurante", this.restaurantId);
-        if (this.overview) params.set("mapa", "1");
+        params.set("desde", String(askedCursor));
+        if (askedRestaurant) params.set("restaurante", askedRestaurant);
+        if (askedOverview) params.set("mapa", "1");
       }
       const response = await fetch(`${this.baseUrl}${ENDPOINT}?${params}`, { headers: this.headers, cache: "no-store", credentials: "same-origin" });
-      if (!response.ok) throw new Error(response.status === 401 ? "No autorizado" : `HTTP ${response.status}`);
+      if (response.status === 401) {
+        if (this.restaurantId === askedRestaurant && this.overview === askedOverview && this.active) {
+          this.failures += 1;
+          if (this.connected) { this.connected = false; this.fire("disconnect", []); }
+          this.fire("connect_error", [new Error("No autorizado")]);
+        }
+        return;
+      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = (await response.json()) as { events: { id: number; event: string; args: unknown[] }[]; cursor: number; reset: boolean };
+      // La pantalla cambió de restaurante o de mapa mientras se preguntaba:
+      // se descarta la respuesta para no mezclar avisos.
+      if (this.restaurantId !== askedRestaurant || this.overview !== askedOverview) return;
       if (!this.active) return;
       const wasConnected = this.connected;
       this.failures = 0;
@@ -199,7 +216,11 @@ export class RealtimeClient {
         cache: "no-store",
         credentials: "same-origin",
       });
-      if (!response.ok) throw new Error(response.status === 401 ? "No autorizado" : `HTTP ${response.status}`);
+      // Un 401 no es un fallo de red: el servidor contesta «no autorizado».
+      // Se devuelve como ack para que las pantallas (y las pruebas) lo manejen
+      // igual que antes, cuando el socket devolvía un ack con error.
+      if (response.status === 401) return { ok: false, error: "No autorizado" } as unknown;
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = (await response.json()) as { ack: { ok: boolean }; self?: { event: string; args: unknown[] }[]; cursor?: number };
       if (data.ack.ok && typeof data.cursor === "number") {
         // Entró en una sala: escucha desde el momento de entrar (el cursor se

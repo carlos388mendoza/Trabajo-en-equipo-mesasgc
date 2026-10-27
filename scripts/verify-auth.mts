@@ -23,7 +23,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs
 import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 
-import { io as ioClient, type Socket } from "socket.io-client";
+import { RealtimeClient } from "@/lib/realtime/client";
 
 const ROOT = process.cwd();
 const DB_FILE = resolve(process.env.VERIFY_AUTH_DB_FILE ?? join(ROOT, ".verify-auth.db"));
@@ -818,23 +818,25 @@ if (planId) {
 }
 
 // ---------------------------------------------------------------------------
-// Socket.IO
+// Tiempo real (HTTP con sondeo)
 // ---------------------------------------------------------------------------
 
-section("Socket.IO");
+section("Tiempo real");
 
-function connect(cookie?: string): Promise<Socket | null> {
+type Client = InstanceType<typeof RealtimeClient>;
+
+function connect(cookie?: string): Promise<Client | null> {
   return new Promise((res) => {
-    const socket = ioClient(BASE, {
-      transports: ["websocket"],
-      reconnection: false,
-      extraHeaders: cookie ? { cookie } : {},
+    const c = new RealtimeClient({ baseUrl: BASE, headers: cookie ? { cookie } : {}, fastMs: 40, slowMs: 40, maxBackoffMs: 200 });
+    c.once("connect", () => res(c));
+    c.once("connect_error", () => {
+      c.disconnect();
+      res(null);
     });
-    socket.once("connect", () => res(socket));
-    socket.once("connect_error", () => res(null));
+    c.connect();
   });
 }
-async function emit(socket: Socket, event: string, payload: unknown): Promise<{ ok: boolean; error?: string }> {
+async function emit(socket: Client, event: string, payload: unknown): Promise<{ ok: boolean; error?: string }> {
   return socket.timeout(5000).emitWithAck(event, payload);
 }
 

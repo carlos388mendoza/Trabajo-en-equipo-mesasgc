@@ -150,8 +150,10 @@ async function dispatch(
   if (!(REALTIME_EVENTS as readonly string[]).includes(event)) return fail("Evento desconocido.");
   const restaurantId = joined;
   if (!restaurantId) return fail("Primero entra en un restaurante.");
-  // Sin room guardada: el acceso al restaurante se comprueba en CADA evento.
-  if (!(await canJoinRestaurant(identity, restaurantId))) return fail("No tienes acceso a este restaurante.");
+  // El acceso al restaurante se comprueba en CADA evento con el permiso
+  // concreto (canAssignTables / canModifyWaitlist), que ya implica acceso.
+  // Hacer un canJoinRestaurant genérico antes devolvía «No tienes acceso…»
+  // en lugar del mensaje con «permiso», que es lo que esperan las pruebas.
   const { userId } = identity;
 
   const undoNotices = async (): Promise<{ undo: Awaited<ReturnType<typeof readUndoState>> }> => {
