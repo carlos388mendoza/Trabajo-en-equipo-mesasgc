@@ -19,6 +19,8 @@
 //    cierre, que no se repitan ids y que todo mida 44 px o más.
 //  - #88: que tocar una sugerencia del asistente pregunta de una vez (una
 //    sola petición) y que mientras responde no se puede mandar otra.
+//  - #107: «Cerrar sesión» pregunta con el diálogo propio (no `window.confirm`):
+//    el foco queda dentro, Esc cancela sin salir y Enter confirma y sale.
 //  - #61: que la página NO tiene scroll horizontal en 320, 375, 414, 768,
 //    1024 ni escritorio, midiendo en cada tamaño
 //    `document.documentElement.scrollWidth` contra `window.innerWidth` (lo
@@ -759,6 +761,40 @@ for (const t of [
 }
 
 // ---------------------------------------------------------------------------
+// #107: «Cerrar sesión» con el diálogo propio
+// ---------------------------------------------------------------------------
+
+await entrarComo("chinawok@grupocomidas.test");
+await tab.send("Emulation.setDeviceMetricsOverride", { width: 1024, height: 768, deviceScaleFactor: 1, mobile: true, screenOrientation: { type: "landscapePrimary", angle: 90 } });
+await tab.send("Page.navigate", { url: `${BASE}/inicio` });
+const botonSalir = `[...document.querySelectorAll('header button')].find((b) => b.querySelector('svg') && /Cerrar sesión/.test(b.textContent))`;
+for (let i = 0; i < 200 && (await evaluar(`!!${botonSalir}`)) !== true; i += 1) await esperar(300);
+// Si alguien vuelve a usar el diálogo del navegador, se cuenta (y no bloquea la prueba).
+await evaluar(`window.__nativos = 0; window.confirm = () => { window.__nativos += 1; return false; }; window.alert = () => { window.__nativos += 1; }; true`);
+await evaluar(`${botonSalir}.click(), true`);
+for (let i = 0; i < 30 && (await evaluar(`!!document.querySelector('[role=alertdialog]')`)) !== true; i += 1) await esperar(200);
+const salir = JSON.parse(String(await evaluar(`JSON.stringify((() => {
+  const d = document.querySelector('[role=alertdialog]');
+  if (!d) return { abierto: false };
+  const titulo = document.getElementById(d.getAttribute('aria-labelledby'))?.textContent ?? '';
+  const botones = [...d.querySelectorAll('button')].map((b) => Math.round(b.getBoundingClientRect().height));
+  return { abierto: true, titulo, focoDentro: d.contains(document.activeElement), modal: d.getAttribute('aria-modal') === 'true', minBoton: Math.min(...botones) };
+})())`))) as { abierto: boolean; titulo?: string; focoDentro?: boolean; modal?: boolean; minBoton?: number };
+// Tab tres veces: el foco no sale del diálogo.
+for (let i = 0; i < 3; i += 1) await tecla("Tab");
+const focoAtrapado = (await evaluar(`!!document.querySelector('[role=alertdialog]')?.contains(document.activeElement)`)) === true;
+await tecla("Escape");
+await esperar(300);
+const escCancela = (await evaluar(`!document.querySelector('[role=alertdialog]') && location.pathname === '/inicio'`)) === true;
+await evaluar(`${botonSalir}.click(), true`);
+for (let i = 0; i < 30 && (await evaluar(`!!document.querySelector('[role=alertdialog]')`)) !== true; i += 1) await esperar(200);
+const nativos = Number(await evaluar(`window.__nativos`));
+await tecla("Enter");
+for (let i = 0; i < 60 && (await evaluar(`location.pathname`)) !== "/login"; i += 1) await esperar(250);
+const enterSale = (await evaluar(`location.pathname`)) === "/login";
+const salirPasa = salir.abierto && salir.titulo === "¿Seguro que quieres cerrar sesión?" && !!salir.focoDentro && !!salir.modal && (salir.minBoton ?? 0) >= 44 && focoAtrapado && escCancela && enterSale && nativos === 0;
+
+// ---------------------------------------------------------------------------
 // Resultado
 // ---------------------------------------------------------------------------
 
@@ -811,7 +847,12 @@ console.log("\n#88: sugerencias del asistente");
 if (!asistentePasa) fallos += 1;
 console.log(`  ${asistentePasa ? "ok  " : "FALLA"} una sugerencia pregunta de una vez y no se manda otra mientras responde ${asistentePasa ? "" : JSON.stringify({ ...mientras, ...filaAsistente })}`);
 
-writeFileSync(join(DIR, "resultado.json"), JSON.stringify({ filas, ejes, filasLista, analiticaSinBoton, filasTextos, filasSelect, asistente: { ...mientras, ...filaAsistente } }, null, 2));
+console.log("
+#107: «Cerrar sesión» con el diálogo propio");
+if (!salirPasa) fallos += 1;
+console.log(`  ${salirPasa ? "ok  " : "FALLA"} sin window.confirm; foco atrapado, Esc cancela, Enter sale ${salirPasa ? "" : JSON.stringify({ ...salir, focoAtrapado, escCancela, enterSale, nativos })}`);
+
+writeFileSync(join(DIR, "resultado.json"), JSON.stringify({ filas, ejes, filasLista, analiticaSinBoton, filasTextos, filasSelect, asistente: { ...mientras, ...filaAsistente }, cerrarSesion: { ...salir, focoAtrapado, escCancela, enterSale, nativos } }, null, 2));
 console.log(`\nCapturas en ${SHOTS}`);
 
 tab.close();
