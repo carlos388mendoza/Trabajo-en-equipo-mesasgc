@@ -489,6 +489,34 @@ estadísticas y datos) y entran después.
   viven en la memoria del proceso: basta para 8 restaurantes en un solo
   servidor, pero para varios servidores haría falta, por ejemplo, Redis.
 
+## Dónde quedé (27 de octubre de 2026)
+
+**Auditoría de lo del 26 de octubre** (PR #92 a #98). Se revisó PR por PR y se arregló lo que faltaba:
+
+- **Límite de intentos de login (PR #99).** El de #95 nunca se ejecutaba, porque el login real va por una server action y el proxy excluía `/api/auth`. Además contaba también los inicios correctos, así que habría bloqueado a las tablets de un restaurante que comparten IP. Ahora está en `lib/auth/login-limit.ts`:
+  - solo cuenta los fallos;
+  - 5 por correo o 30 por IP, durante 15 minutos;
+  - responde con un mensaje claro;
+  - entrar bien borra los fallos de ese correo.
+
+  Lo prueba `verify:auth`. En esa misma PR:
+  - los errores del servidor pasan por `lib/log.ts`, que quita correos, tokens y claves;
+  - el workflow `protect-main.yml` ya no inserta `head_ref` directamente en el script y es un check **obligatorio** en `main` (ruleset `solo-testing-a-main`);
+  - se corrigió `docs/seguridad.md`.
+- **Select de «Personas» (#86, PR #100).** La lista ya no se corta dentro del panel: abre hacia arriba si no cabe y tiene scroll si hace falta. Esc cierra solo la lista (antes cerraba «Agregar cliente» y se perdía lo escrito), Tab la cierra y en «Varios» ya no se repiten los ids. Tiene prueba en `verify:browser`.
+- **Pruebas que faltaban (PR #101).**
+  - #87 en `verify:realtime`: el cliente agregado sin conexión sale primero y «Ver más» no repite ni salta a nadie, también con la cola sin conexión. `newestFirst` desempata los ids igual que SQLite.
+  - #88 en `verify:browser`: una sugerencia manda una sola pregunta y no se puede mandar otra mientras responde.
+- **La «burbuja» del color del mesero** ya estaba quitada desde #84; no hubo que tocarla.
+
+**Verificaciones (CI):** typecheck, lint, build, verify:editor (236), verify:realtime (296), verify:markdown (67), verify:auth (522) y verify:demo (103), todas en verde. `verify:browser` no está en el CI. En esta computadora no arranca porque Windows bloquea el binario nativo de Next, así que el select y el asistente se probaron con un build local hecho con webpack.
+
+**Para Carlos:**
+
+- En la web de Railway (Deployments → el último → View logs), confirmar que arrancó sin errores y que no hay muchos `[login]` seguidos.
+- En OpenRouter (Activity), revisar que la clave nueva solo tenga el uso del asistente.
+- Las sesiones de antes de rotar `BETTER_AUTH_SECRET` ya no sirven. Si alguien no puede entrar, que vuelva a iniciar sesión. Cambiar la contraseña de un usuario o desactivarlo en /admin también cierra sus sesiones.
+
 ## Dónde quedé (26 de octubre de 2026)
 
 **Seguridad (PR #95):** rate limit de login por IP y correo, cabeceras de seguridad, `/admin` con fecha de revisión y `docs/seguridad.md`. `npm audit` sin altas/críticas.
