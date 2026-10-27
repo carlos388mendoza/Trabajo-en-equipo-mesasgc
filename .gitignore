@@ -18,6 +18,8 @@
 .env.local
 .env*.local
 .env.preview
+.env.vercel-preview
+.vercel/
 
 # misc
 .DS_Store
