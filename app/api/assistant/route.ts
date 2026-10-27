@@ -13,6 +13,7 @@ import { getAnalytics, type AnalyticsData } from "@/lib/analytics/data";
 import { buildOpenRouterMessages, getAssistantSensitiveValues, restoreCustomerAliases } from "@/lib/analytics/assistant-privacy";
 import { guardApi } from "@/lib/auth/session";
 import { canSeeTopCustomerNames, getPrivacySettings, maskTopCustomers } from "@/lib/settings/privacy";
+import { logServerError } from "@/lib/log";
 
 export const runtime = "nodejs";
 
@@ -113,7 +114,7 @@ export async function POST(request: Request) {
         }),
       });
     } catch (error) {
-      console.error("OpenRouter no respondió", error);
+      logServerError("OpenRouter no respondió", error);
       return fallback();
     }
     if (!response.ok) {
@@ -125,7 +126,7 @@ export async function POST(request: Request) {
     if (typeof answer !== "string") throw new Error("Respuesta vacía del proveedor");
     return NextResponse.json({ answer: restoreCustomerAliases(answer, statistics) });
   } catch (error) {
-    console.error("Failed to answer analytics question", error);
+    logServerError("Failed to answer analytics question", error);
     return NextResponse.json({ error: "No se pudo consultar el asistente. Inténtalo de nuevo." }, { status: 502 });
   }
 }

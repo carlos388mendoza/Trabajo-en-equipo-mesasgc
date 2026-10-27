@@ -17,80 +17,6 @@ import { getSessionCookie } from "better-auth/cookies";
 const PUBLIC_PAGES = new Set(["/login"]);
 const PUBLIC_APIS = new Set(["/api/health"]);
 
-// ---------------------------------------------------------------------------
-// Límite de intentos de inicio de sesión (issue de seguridad).
-//
-// Solo se aplica a la ruta de Better Auth que recibe la contraseña. Se cuenta
-// por IP y por correo: así un atacante no puede probar muchas contraseñas para
-// un mismo correo desde una IP, ni distribuir el ataque entre correos desde la
-// misma IP. Es en memoria del proceso: suficiente para un solo servidor
-// (Railway), que es lo que tenemos hoy.
-// ---------------------------------------------------------------------------
-const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_LIMIT_IP = 10;
-const LOGIN_LIMIT_EMAIL = 5;
-const attempts = new Map<string, number[]>();
-
-function prune(key: string, now: number) {
-  const list = attempts.get(key);
-  if (!list) return [];
-  const fresh = list.filter((t) => now - t < LOGIN_WINDOW_MS);
-  if (fresh.length === 0) attempts.delete(key);
-  else attempts.set(key, fresh);
-  return fresh;
-}
-
-function clientIp(request: NextRequest): string {
-  // En Railway llega la IP real en X-Forwarded-For. Se toma solo el primer
-  // valor y se valida para no confiar en basura del cliente.
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  if (forwarded && /^[0-9a-fA-F.:]+$/.test(forwarded)) return forwarded;
-  return request.headers.get("x-real-ip")?.trim() || "desconocida";
-}
-
-async function checkLoginLimit(request: NextRequest): Promise<NextResponse | null> {
-  if (request.method !== "POST") return null;
-  const pathname = request.nextUrl.pathname;
-  if (!pathname.startsWith("/api/auth/sign-in")) return null;
-
-  const now = Date.now();
-  const ip = clientIp(request);
-  let email = "";
-  try {
-    const cloned = request.clone();
-    const body = await cloned.json().catch(() => null);
-    if (body && typeof body.email === "string") email = body.email.trim().toLowerCase();
-  } catch {
-    // Si no se puede leer el cuerpo, se limita solo por IP.
-  }
-
-  const ipKey = `ip:${ip}`;
-  const ipList = prune(ipKey, now);
-  if (ipList.length >= LOGIN_LIMIT_IP) {
-    return NextResponse.json(
-      { error: "Demasiados intentos desde esta conexión. Espera 15 minutos." },
-      { status: 429 },
-    );
-  }
-
-  if (email) {
-    const emailKey = `email:${email}`;
-    const emailList = prune(emailKey, now);
-    if (emailList.length >= LOGIN_LIMIT_EMAIL) {
-      return NextResponse.json(
-        { error: "Demasiados intentos para este correo. Espera 15 minutos." },
-        { status: 429 },
-      );
-    }
-    emailList.push(now);
-    attempts.set(emailKey, emailList);
-  }
-
-  ipList.push(now);
-  attempts.set(ipKey, ipList);
-  return null;
-}
-
 // Cabeceras de seguridad aplicadas a todas las respuestas que pasan por el proxy.
 // El CSP además del frame-ancestors: se mantiene deliberadamente permisivo en
 // scripts y estilos porque Next 16 inyecta código en línea para la hidratación
@@ -109,15 +35,8 @@ function applySecurityHeaders(response: NextResponse) {
   }
 }
 
-export async function proxy(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-
-  // Límite de intentos de login antes de cualquier otra comprobación.
-  const limited = await checkLoginLimit(request);
-  if (limited) {
-    applySecurityHeaders(limited);
-    return limited;
-  }
 
   let response: NextResponse;
   if (PUBLIC_PAGES.has(pathname)) response = NextResponse.next();

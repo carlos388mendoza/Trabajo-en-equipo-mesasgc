@@ -12,6 +12,7 @@ import { undoBatch, type BatchUndoData, type TableEvent } from "./batch";
 import { seatedDeleteMessage } from "./delete-rule";
 // Cuántos clientes se pueden agregar de una vez («Varios» del formulario).
 import { MAX_BATCH_ENTRIES } from "@/lib/realtime/events";
+import { logServerError } from "@/lib/log";
 
 export type WaitlistEntrySnapshot = {
   id: string;
@@ -104,7 +105,7 @@ function persist(restaurantId: string, write: () => Promise<unknown>) {
   const next = (persisting.get(restaurantId) ?? Promise.resolve())
     .then(write)
     .then(() => undefined)
-    .catch((error) => console.error("[deshacer] no se pudo guardar la copia", error));
+    .catch((error) => logServerError("[deshacer] no se pudo guardar la copia", error));
   persisting.set(restaurantId, next);
 }
 
@@ -142,7 +143,7 @@ export async function hydrateUndo(restaurantId: string, now = Date.now()): Promi
   try {
     undoByRestaurant.set(restaurantId, decodeRecord(row.record));
   } catch (error) {
-    console.error("[deshacer] copia ilegible, se ignora", error);
+    logServerError("[deshacer] copia ilegible, se ignora", error);
   }
 }
 

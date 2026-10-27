@@ -1,5 +1,9 @@
 name: Solo testing puede fusionarse a main
 
+# A `main` solo entran PR que vengan de `testing` (el flujo del equipo: rama →
+# testing → main). Este check es obligatorio para `main` en el ruleset
+# «solo-testing-a-main», así que un PR desde otra rama no se puede fusionar.
+
 on:
   pull_request:
     branches: [main]
@@ -14,9 +18,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Comprobar rama de origen
+        # El nombre de la rama va por una variable de entorno y no metido en el
+        # script: así un nombre de rama hecho a propósito no puede ejecutar
+        # comandos en el CI.
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
         run: |
-          if [ "${{ github.head_ref }}" != "testing" ]; then
-            echo "::error::Solo se aceptan PR a main que vengan de testing. Rama recibida: ${{ github.head_ref }}"
+          if [ "$HEAD_REF" != "testing" ] || [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "::error::Solo se aceptan PR a main que vengan de la rama testing de este repositorio. Rama recibida: $HEAD_REF ($HEAD_REPO)"
             exit 1
           fi
           echo "Rama de origen válida: testing"

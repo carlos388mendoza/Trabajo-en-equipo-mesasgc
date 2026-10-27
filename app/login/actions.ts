@@ -12,7 +12,9 @@ import { redirect } from "next/navigation";
 import { APIError } from "better-auth/api";
 
 import { INACTIVE_USER_MESSAGE, getAuth } from "@/lib/auth/auth";
+import { checkLoginLimit, clientIp, recordLoginFailure, recordLoginSuccess } from "@/lib/auth/login-limit";
 import { safeNext } from "@/lib/auth/session";
+import { logServerError } from "@/lib/log";
 
 export type LoginState = { error: string | null; email: string };
 
@@ -27,8 +29,17 @@ export async function signInAction(_prev: LoginState, formData: FormData): Promi
     return { error: "Escribe tu correo y tu contraseña.", email };
   }
 
+  // Límite de intentos fallidos por correo y por conexión (ver
+  // `lib/auth/login-limit.ts`): este formulario no pasa por la ruta HTTP de
+  // Better Auth, así que el límite se mira aquí.
+  const requestHeaders = await headers();
+  const ip = clientIp(requestHeaders);
+  const limit = checkLoginLimit(email, ip);
+  if (limit.blocked) return { error: limit.message, email };
+
   try {
-    await getAuth().api.signInEmail({ body: { email, password }, headers: await headers() });
+    await getAuth().api.signInEmail({ body: { email, password }, headers: requestHeaders });
+    recordLoginSuccess(email);
   } catch (error) {
     if (error instanceof APIError) {
       const code = (error.body as { code?: string } | undefined)?.code;
@@ -39,10 +50,11 @@ export async function signInAction(_prev: LoginState, formData: FormData): Promi
       // Correo inexistente, contraseña mala, correo mal escrito...: el mismo
       // mensaje para todo.
       if (error.statusCode === 401 || error.statusCode === 400) {
+        recordLoginFailure(email, ip);
         return { error: WRONG_CREDENTIALS, email };
       }
     }
-    console.error("[login] error inesperado", error);
+    logServerError("[login] error inesperado", error);
     return { error: "No se pudo iniciar sesión. Inténtalo de nuevo.", email };
   }
 

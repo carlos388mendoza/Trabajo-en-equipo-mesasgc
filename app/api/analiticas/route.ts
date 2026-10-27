@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { getAnalytics } from "@/lib/analytics/data";
 import { guardApi } from "@/lib/auth/session";
 import { canSeeTopCustomerNames, maskTopCustomers } from "@/lib/settings/privacy";
+import { logServerError } from "@/lib/log";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export async function GET(request: Request) {
     }
     return NextResponse.json(analytics);
   } catch (error) {
-    console.error("Failed to load analytics", error);
+    logServerError("Failed to load analytics", error);
     return NextResponse.json({ error: "No se pudieron cargar las estadísticas." }, { status: 500 });
   }
 }

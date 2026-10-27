@@ -60,6 +60,7 @@ import { runOnce } from "@/lib/offline/operations";
 
 import { emitOverview } from "./overview";
 import { type RealtimeServer, setRealtimeServer } from "./registry";
+import { logServerError } from "@/lib/log";
 
 export function attachRealtime(httpServer: HttpServer): RealtimeServer {
   const io: RealtimeServer = new Server(httpServer, {
@@ -81,7 +82,7 @@ export function attachRealtime(httpServer: HttpServer): RealtimeServer {
       socket.data.restaurantId = null;
       next();
     } catch (err) {
-      console.error("[realtime] error identificando el socket", err);
+      logServerError("[realtime] error identificando el socket", err);
       next(new Error("No autorizado"));
     }
   });
@@ -481,7 +482,7 @@ async function respond<T extends object>(
   try {
     result = await handler();
   } catch (err) {
-    console.error("[realtime] error en un handler", err);
+    logServerError("[realtime] error en un handler", err);
     result = fail("Error del servidor. Inténtalo de nuevo.");
   }
   if (typeof ack === "function") ack(result);

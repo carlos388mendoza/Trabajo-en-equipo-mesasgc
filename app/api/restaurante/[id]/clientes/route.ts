@@ -7,6 +7,7 @@ import { guardApi } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { waitlistEntries } from "@/lib/db/schema";
 import { listQuickModeEntries } from "@/lib/waitlist/active";
+import { logServerError } from "@/lib/log";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -27,7 +28,7 @@ export async function GET(request: Request, { params }: Context) {
     // trabajando sin conexión.
     return NextResponse.json({ entries: await listQuickModeEntries(id) });
   } catch (error) {
-    console.error("Failed to load restaurant waitlist", error);
+    logServerError("Failed to load restaurant waitlist", error);
     return NextResponse.json({ error: "No se pudo cargar la lista de clientes." }, { status: 500 });
   }
 }
@@ -66,7 +67,7 @@ export async function POST(request: Request, { params }: Context) {
       entry: { ...entry, arrivedAt: now.getTime() },
     }, { status: 201 });
   } catch (error) {
-    console.error("Failed to add restaurant waitlist entry", error);
+    logServerError("Failed to add restaurant waitlist entry", error);
     return NextResponse.json({ error: "No se pudo guardar el cliente." }, { status: 500 });
   }
 }

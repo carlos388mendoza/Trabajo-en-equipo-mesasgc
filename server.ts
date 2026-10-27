@@ -13,6 +13,7 @@
 // del tsconfig. No pasa por el compilador de Next.
 
 import { createServer } from "node:http";
+import { logServerError } from "@/lib/log";
 
 async function main() {
   // `--prod` en vez de `NODE_ENV=production` en el script de npm: esa sintaxis
@@ -71,7 +72,7 @@ async function main() {
     const runRetention = () => {
       anonymizeExpiredEntries()
         .then((run) => console.log(`> Retención (${run.retention}): ${run.anonymized} cliente(s) anonimizado(s)`))
-        .catch((err) => console.error("[retención] no se pudo aplicar", err));
+        .catch((err) => logServerError("[retención] no se pudo aplicar", err));
     };
     setTimeout(runRetention, 60_000).unref();
     setInterval(runRetention, 24 * 60 * 60 * 1000).unref();
@@ -88,6 +89,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err);
+  logServerError("[servidor] no pudo arrancar", err);
   process.exit(1);
 });
