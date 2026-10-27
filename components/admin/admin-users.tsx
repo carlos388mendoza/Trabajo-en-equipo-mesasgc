@@ -20,6 +20,7 @@ import {
   KeyRound,
   Pencil,
   Search,
+  ShieldAlert,
   Shuffle,
   UserCheck,
   UserPlus,
@@ -28,6 +29,7 @@ import {
 
 import {
   type AdminResult,
+  checkPublicPasswordsAction,
   createUserAction,
   resetPasswordAction,
   setActiveAction,
@@ -82,11 +84,17 @@ export function AdminUsers({ users, restaurants, currentUserId, minPasswordLengt
           <h2 className="text-lg font-semibold">Usuarios</h2>
           <p className="text-sm text-panel-muted">{users.length} en total. No hay registro público.</p>
         </div>
-        {!creating ? (
-          <Button icon={UserPlus} onClick={() => setCreating(true)} primary>
-            Nuevo usuario
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Compara contra las contraseñas que están en el código público (tarda unos segundos). */}
+          <Button icon={ShieldAlert} disabled={pending} onClick={() => submit(checkPublicPasswordsAction)}>
+            {pending ? "Revisando…" : "Revisar contraseñas"}
           </Button>
-        ) : null}
+          {!creating ? (
+            <Button icon={UserPlus} onClick={() => setCreating(true)} primary>
+              Nuevo usuario
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {feedback ? (

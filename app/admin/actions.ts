@@ -28,6 +28,7 @@ import {
   setUserActive,
   setUserPassword,
 } from "@/lib/auth/users";
+import { WEAKNESS_TEXT, findUsersWithPublicPassword, passwordWeakness } from "@/lib/auth/weak-passwords";
 import { ROLES } from "@/lib/db/enums";
 import { logServerError } from "@/lib/log";
 
@@ -45,6 +46,33 @@ async function run(work: () => Promise<string>): Promise<AdminResult> {
   }
 }
 
+/** Se guarda igual, pero el admin se entera (ver `lib/auth/weak-passwords.ts`). */
+function weakWarning(password: string): string {
+  const weakness = passwordWeakness(password);
+  return weakness ? ` Ojo: esa contraseña ${WEAKNESS_TEXT[weakness]}; cualquiera que la conozca puede entrar como este usuario.` : "";
+}
+
+/**
+ * «Revisar contraseñas»: qué usuarios activos tienen una contraseña de las que
+ * están escritas en el código. Solo dice quiénes; nunca la contraseña.
+ */
+export async function checkPublicPasswordsAction(): Promise<AdminResult> {
+  const guard = await guardAction("usuarios:gestionar");
+  if (!guard.ok) return guard;
+  try {
+    const found = await findUsersWithPublicPassword();
+    return found.length === 0
+      ? { ok: true, message: "Ningún usuario activo usa una contraseña de las que están en el código." }
+      : {
+          ok: false,
+          error: `${found.length} usuario(s) usan una contraseña que está en el código público: ${found.map((u) => u.email).join(", ")}. Cámbiala con «Contraseña» → «Generar otra».`,
+        };
+  } catch (error) {
+    logServerError("[admin] revisar contraseñas", error);
+    return { ok: false, error: "No se pudieron revisar las contraseñas. Inténtalo de nuevo." };
+  }
+}
+
 export async function createUserAction(raw: unknown): Promise<AdminResult> {
   const guard = await guardAction("usuarios:gestionar");
   if (!guard.ok) return guard;
@@ -52,7 +80,7 @@ export async function createUserAction(raw: unknown): Promise<AdminResult> {
   if (!parsed.success) return { ok: false, error: firstError(parsed.error) };
   return run(async () => {
     await createUserWithPassword(parsed.data);
-    return `Usuario ${parsed.data.email} creado.`;
+    return `Usuario ${parsed.data.email} creado.${weakWarning(parsed.data.password)}`;
   });
 }
 
@@ -80,9 +108,9 @@ export async function resetPasswordAction(raw: unknown): Promise<AdminResult> {
   if (!target) return { ok: false, error: "Ese usuario no existe." };
   return run(async () => {
     await setUserPassword(target.id, parsed.data.password);
-    return target.id === guard.user.id
+    return (target.id === guard.user.id
       ? `Contraseña cambiada para ${target.email}. Vuelve a entrar con la nueva.`
-      : `Contraseña cambiada para ${target.email}. Sus sesiones abiertas se cerraron.`;
+      : `Contraseña cambiada para ${target.email}. Sus sesiones abiertas se cerraron.`) + weakWarning(parsed.data.password);
   });
 }
 

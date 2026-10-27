@@ -103,3 +103,44 @@ revertir nada). Para que no se repita:
 2. Poner la nueva en Railway → Variables → Deploy Changes.
 3. Revisar usuarios, sesiones y cambios recientes (ver sección 1).
 4. Anotar la fecha de la revisión en `/admin` y en este documento.
+
+## 7. Contraseña de desarrollo en producción (27 de octubre de 2026)
+
+**Por qué es un riesgo.**
+
+- El repositorio es **público**.
+- La contraseña de desarrollo está escrita en `scripts/seed.ts` (`TEST_PASSWORD`), en las pruebas y en el historial de git, y no se puede borrar del historial.
+- Los correos de los usuarios de ejemplo (`admin@`, `analitica@` y uno por marca, todos `@grupocomidas.test`) también están en el seed y en las pruebas. En producción se usan los mismos.
+
+Si un usuario de producción tiene esa contraseña, cualquiera que lea el código puede entrar como él desde cualquier lugar. El límite de 5 fallos no lo frena, porque acierta a la primera.
+
+- **Con el administrador** podría hacer todo esto:
+  - crear, desactivar o cambiar la contraseña de cualquier usuario, incluso dejar fuera al administrador real;
+  - borrar o cambiar planos y restaurantes;
+  - ver los nombres de los clientes;
+  - cambiar la configuración de privacidad;
+  - gastar crédito de OpenRouter con el asistente.
+- **Con el de una marca** podría ver y cambiar la lista de espera y el plano de sus locales.
+- **Con analítica** podría ver las estadísticas.
+
+**Qué hace la app desde este PR.** Avisa, pero no impide guardar ni usar la contraseña:
+
+- Al crear un usuario o cambiarle la contraseña en `/admin` con una pública o muy débil, el mensaje lo avisa.
+- `/admin` → **Revisar contraseñas** dice qué usuarios activos tienen una contraseña de las que están en el código. Compara contra el hash, tarda unos segundos y nunca muestra la contraseña.
+- Si alguien entra a producción con una contraseña pública o muy débil:
+  - sale un aviso rojo bajo el encabezado durante 12 horas;
+  - el log de Railway muestra `[login] se entró a producción con una contraseña…`, sin el correo.
+- El README y los documentos ya no escriben la contraseña ni los correos de producción. Solo quedan en el seed y en las pruebas, que no corren en producción.
+
+**Para quitar el riesgo de verdad**, lo mejor es una de estas dos cosas:
+
+- usar una contraseña distinta, al menos en el **administrador**;
+- dar a los usuarios de producción correos reales que no estén en el repositorio.
+
+**Cambiarla a una segura en un minuto:**
+
+1. En `/admin` → **Usuarios**, pulsa **Contraseña** en el usuario.
+2. Pulsa **Generar otra**: crea una aleatoria y legible y rellena los dos campos. Para verla y copiarla, usa el botón del ojo.
+3. Pulsa **Restablecer contraseña**. Sus sesiones abiertas se cierran solas.
+4. Pásasela a la persona por un canal privado, nunca por el chat del grupo.
+5. Para comprobarlo, pulsa **Revisar contraseñas**: debe decir que ningún usuario usa una del código.

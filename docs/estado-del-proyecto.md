@@ -338,8 +338,8 @@ claves.
 - **Límite del asistente por usuario**, no por IP: la cabecera
   `X-Forwarded-For` la manda el cliente y se podía falsear.
 - **No hay registro público.** Los usuarios los crea un admin en `/admin`, o
-  `npm run create-admin` en producción. Los 5 usuarios de prueba (contraseña
-  `12345abc`) solo se crean en desarrollo.
+  `npm run create-admin` en producción. Los usuarios de prueba (con
+  la contraseña de desarrollo del seed) solo se crean en desarrollo.
 - **Logos.** Están en `public/brand/`:
   - el circular completo, en `/login` (160 px);
   - el circular solo nombre, en el encabezado (36 px) y en el ícono de la
@@ -437,9 +437,8 @@ Pizza Hut Norte), con **dos usuarios, uno por marca** (desde el 1 de octubre;
 antes era uno solo para los 4). China Wok y KFC siguen en el sistema (mapa,
 estadísticas y datos) y entran después.
 
-- [ ] Crear en producción **«Denny's»** (`dennys@grupocomidas.test`, sus 2
-      locales) y **«Pizza Hut»** (`pizzahut@grupocomidas.test`, sus 2
-      locales) con `railway run npm run create-user` (lo corre Carlos: la
+- [ ] Crear en producción **«Denny's»** (sus 2 locales) y **«Pizza Hut»**
+      (sus 2 locales) con `railway run npm run create-user` (lo corre Carlos: la
       contraseña se escribe en su terminal) o desde `/admin`. Comandos en
       `docs/salida-a-produccion.md`, sección 3.1.
 - [ ] Dibujar en el editor (modo completo) el plano real de cada uno de los
