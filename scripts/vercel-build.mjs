@@ -4,7 +4,13 @@
 // (`VERCEL_ENV=production`) aplica las migraciones pendientes y el catálogo de
 // tipos de elemento ANTES de construir. Si fallan, el build falla y Vercel
 // deja la versión anterior en línea: nunca queda código nuevo con una base
-// vieja. En las vistas previas (PR, ramas) no toca ninguna base.
+// vieja.
+//
+// En PREVIEW (`VERCEL_ENV=preview`) también aplica migraciones y catálogo,
+// PERO con protección: si la URL contiene "mesasgc-prod" el build FALLA para
+// evitar usar la base de producción en una vista previa.
+//
+// En desarrollo local no toca la base.
 //
 // Solo corre `db:migrate` (las migraciones SQL de `drizzle/`, que son
 // aditivas) y `db:catalog` (idempotente). NUNCA `db:push`, `seed` ni
@@ -24,15 +30,28 @@ function run(command, args) {
 }
 
 const env = process.env.VERCEL_ENV;
+const dbUrl = process.env.TURSO_DATABASE_URL || "";
+
 if (env === "production") {
-  if (!process.env.TURSO_DATABASE_URL) {
+  if (!dbUrl) {
     console.error("✖ Falta TURSO_DATABASE_URL en las variables de Production de Vercel.");
     process.exit(1);
   }
   run("npx", ["drizzle-kit", "migrate"]);
   run("npx", ["tsx", "scripts/db-catalog.mts"]);
+} else if (env === "preview") {
+  if (!dbUrl) {
+    console.error("✖ Falta TURSO_DATABASE_URL en las variables de Preview de Vercel.");
+    process.exit(1);
+  }
+  if (dbUrl.includes("mesasgc-prod")) {
+    console.error("✖ PROTECCIÓN: VERCEL_ENV=preview no puede usar la base de producción (mesasgc-prod). Usa la base de preview (mesasgc-preview).");
+    process.exit(1);
+  }
+  run("npx", ["drizzle-kit", "migrate"]);
+  run("npx", ["tsx", "scripts/db-catalog.mts"]);
 } else {
-  console.log(`Entorno «${env ?? "local"}»: sin migraciones (solo se migran en Production).`);
+  console.log(`Entorno «${env ?? "local"}»: sin migraciones (solo se migran en Production/Preview).`);
 }
 
 run("npx", ["next", "build"]);
