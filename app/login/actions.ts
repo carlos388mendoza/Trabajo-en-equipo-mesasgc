@@ -35,12 +35,12 @@ export async function signInAction(_prev: LoginState, formData: FormData): Promi
   // Better Auth, así que el límite se mira aquí.
   const requestHeaders = await headers();
   const ip = clientIp(requestHeaders);
-  const limit = checkLoginLimit(email, ip);
+  const limit = await checkLoginLimit(email, ip);
   if (limit.blocked) return { error: limit.message, email };
 
   try {
     await getAuth().api.signInEmail({ body: { email, password }, headers: requestHeaders });
-    recordLoginSuccess(email);
+    await recordLoginSuccess(email);
     await rememberWeakPassword(password);
   } catch (error) {
     if (error instanceof APIError) {
@@ -52,7 +52,7 @@ export async function signInAction(_prev: LoginState, formData: FormData): Promi
       // Correo inexistente, contraseña mala, correo mal escrito...: el mismo
       // mensaje para todo.
       if (error.statusCode === 401 || error.statusCode === 400) {
-        recordLoginFailure(email, ip);
+        await recordLoginFailure(email, ip);
         return { error: WRONG_CREDENTIALS, email };
       }
     }

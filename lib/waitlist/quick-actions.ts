@@ -130,21 +130,47 @@ function forget(restaurantId: string, record: UndoRecord) {
 }
 
 /**
- * Tras un reinicio la memoria está vacía: se recupera la última acción de la
- * base si es de hace menos de `UNDO_PERSIST_MS`. La llaman `restaurant:join`
- * (para ofrecer «Deshacer» a quien vuelve a conectarse) y el propio deshacer.
+ * Espera a que la última acción de este restaurante quede guardada en la base.
+ * Sin servidor propio (Vercel) hay que esperarla ANTES de contestar: al
+ * terminar la petición la función se puede congelar, y otra instancia (otra
+ * tablet) tiene que poder ver esa acción para ofrecer «Deshacer».
  */
-export async function hydrateUndo(restaurantId: string, now = Date.now()): Promise<void> {
-  if (undoByRestaurant.has(restaurantId)) return;
+export async function flushUndo(restaurantId: string): Promise<void> {
+  await persisting.get(restaurantId);
+}
+
+/**
+ * Lee de la base la última acción del restaurante (si es de hace menos de
+ * `UNDO_PERSIST_MS`) y la deja en la memoria de esta instancia. La base manda:
+ * con varias instancias, la memoria de esta puede estar vieja (otra tablet
+ * hizo algo después en otra instancia). Con `force: false` solo lee si la
+ * memoria está vacía (lo de antes: tras un reinicio).
+ */
+export async function hydrateUndo(restaurantId: string, now = Date.now(), force = true): Promise<void> {
+  if (!force && undoByRestaurant.has(restaurantId)) return;
   await persisting.get(restaurantId);
   const [row] = await db.select().from(waitlistUndo).where(eq(waitlistUndo.restaurantId, restaurantId)).limit(1);
-  if (!row || undoByRestaurant.has(restaurantId)) return;
-  if (now - row.createdAt.getTime() > UNDO_PERSIST_MS) return;
+  const current = undoByRestaurant.get(restaurantId);
+  if (current?.busy) return;
+  if (!row || now - row.createdAt.getTime() > UNDO_PERSIST_MS) {
+    undoByRestaurant.delete(restaurantId);
+    return;
+  }
+  if (current?.actionId === row.actionId) return;
   try {
     undoByRestaurant.set(restaurantId, decodeRecord(row.record));
   } catch (error) {
     logServerError("[deshacer] copia ilegible, se ignora", error);
   }
+}
+
+/**
+ * «Deshacer» como lo ve cualquier tablet: lo guardado en la base. Lo usan los
+ * avisos de tiempo real (`lib/realtime/handlers.ts`).
+ */
+export async function readUndoState(restaurantId: string, now = Date.now()): Promise<UndoState | null> {
+  await hydrateUndo(restaurantId, now);
+  return getWaitlistUndoState(restaurantId);
 }
 
 /** Solo para las pruebas: simula un reinicio del servidor (vacía la memoria). */
@@ -620,7 +646,22 @@ export async function undoWaitlistAction(
   if (!record || record.actionId !== actionId || record.busy) {
     return { ok: false, error: "La última acción ya cambió o fue deshecha." };
   }
+  // Se reclama en la base: con varias instancias, solo una consigue borrar la
+  // fila, y la otra contesta que ya se deshizo. Si luego no se puede deshacer
+  // (el cliente cambió), la fila vuelve a su sitio con `release`.
+  const [claimed] = await db
+    .delete(waitlistUndo)
+    .where(and(eq(waitlistUndo.restaurantId, restaurantId), eq(waitlistUndo.actionId, actionId)))
+    .returning();
+  if (!claimed) {
+    undoByRestaurant.delete(restaurantId);
+    return { ok: false, error: "La última acción ya cambió o fue deshecha." };
+  }
   record.busy = true;
+  const release = async () => {
+    record.busy = false;
+    await db.insert(waitlistUndo).values(claimed).onConflictDoNothing();
+  };
 
   try {
     if (record.kind === "batch" && record.batch) {
@@ -632,7 +673,7 @@ export async function undoWaitlistAction(
     if (record.kind === "added-many") {
       const result = await undoAddMany(restaurantId, record);
       if (!result.ok) {
-        record.busy = false;
+        await release();
         return result;
       }
       forget(restaurantId, record);
@@ -650,7 +691,7 @@ export async function undoWaitlistAction(
         ))
         .returning();
       if (!removed) {
-        record.busy = false;
+        await release();
         return { ok: false, error: "El cliente ya cambió y no se puede deshacer esa acción." };
       }
       forget(restaurantId, record);
@@ -660,7 +701,7 @@ export async function undoWaitlistAction(
     if (record.kind === "deleted") {
       const row = record.previousRow;
       if (!row) {
-        record.busy = false;
+        await release();
         return { ok: false, error: "No se pudo deshacer esa acción." };
       }
       // El id era único y la fila no está, así que esto solo pasa si alguien
@@ -671,7 +712,7 @@ export async function undoWaitlistAction(
         .where(eq(waitlistEntries.id, record.entryId))
         .limit(1);
       if (existing) {
-        record.busy = false;
+        await release();
         return { ok: false, error: "Ese cliente ya está otra vez en la lista." };
       }
       // Se reinserta la fila tal cual: mismo id, misma hora de llegada, y con
@@ -683,7 +724,7 @@ export async function undoWaitlistAction(
 
     const previous = record.previous;
     if (!previous) {
-      record.busy = false;
+      await release();
       return { ok: false, error: "No se pudo deshacer esa acción." };
     }
     const [restored] = await db
@@ -697,13 +738,13 @@ export async function undoWaitlistAction(
       ))
       .returning();
     if (!restored) {
-      record.busy = false;
+      await release();
       return { ok: false, error: "El cliente ya cambió y no se puede deshacer esa acción." };
     }
     forget(restaurantId, record);
     return { ok: true, action: "restored", entry: await snapshotWithName(restored) };
   } catch (error) {
-    record.busy = false;
+    await release().catch(() => {});
     throw error;
   }
 }

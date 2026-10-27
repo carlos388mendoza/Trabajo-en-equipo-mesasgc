@@ -1875,15 +1875,22 @@ section("Límite de intentos fallidos de inicio de sesión");
 
   // 4. Las reglas, directamente (también las usa el formulario de /login).
   const limite = await import("@/lib/auth/login-limit");
-  limite.resetLoginLimitForTests();
+  // Los fallos están en la base, no en la memoria del servidor: este proceso
+  // (otra «instancia») ve el bloqueo que se apuntó el servidor de la prueba.
+  // En Vercel es igual con varias instancias a la vez.
+  check("el bloqueo vale desde otra instancia (está en la base, no en memoria)", (await limite.checkLoginLimit("dennys@grupocomidas.test", "203.0.113.9")).blocked);
+  await limite.resetLoginLimitForTests();
   const t0 = 1_000_000;
-  for (let i = 0; i < 4; i += 1) limite.recordLoginFailure("a@b.test", "10.0.0.1", t0 + i);
-  check("4 fallos todavía no bloquean", !limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + 10).blocked);
-  limite.recordLoginFailure("a@b.test", "10.0.0.1", t0 + 5);
-  check("el 5.º sí bloquea ese correo", limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + 10).blocked);
-  check("  pasados 15 minutos se desbloquea solo", !limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + limite.LOGIN_WINDOW_MS + 10).blocked);
-  limite.recordLoginSuccess("a@b.test");
-  check("entrar bien borra los fallos de ese correo", !limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + 20).blocked);
+  for (let i = 0; i < 4; i += 1) await limite.recordLoginFailure("a@b.test", "10.0.0.1", t0 + i);
+  check("4 fallos todavía no bloquean", !(await limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + 10)).blocked);
+  await limite.recordLoginFailure("a@b.test", "10.0.0.1", t0 + 5);
+  check("el 5.º sí bloquea ese correo", (await limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + 10)).blocked);
+  check("  pasados 15 minutos se desbloquea solo", !(await limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + limite.LOGIN_WINDOW_MS + 10)).blocked);
+  await limite.recordLoginSuccess("a@b.test");
+  check("entrar bien borra los fallos de ese correo", !(await limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + 20)).blocked);
+  for (let i = 0; i < 30; i += 1) await limite.recordLoginFailure(`ip-${i}@b.test`, "10.0.0.2", t0 + i);
+  check("30 fallos desde una IP la bloquean (directo)", (await limite.checkLoginLimit("otro@b.test", "10.0.0.2", t0 + 40)).blocked);
+  await limite.resetLoginLimitForTests();
   check("una IP falsa (texto raro) no se guarda tal cual", limite.clientIp(new Headers({ "x-forwarded-for": "<script>" })) === "desconocida");
 
   // Los logs nunca imprimen datos personales ni secretos.

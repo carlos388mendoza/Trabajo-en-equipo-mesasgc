@@ -92,6 +92,13 @@
       "when": 1791835551505,
       "tag": "0012_deshacer_persistente",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1793124179217,
+      "tag": "0013_tiempo_real_vercel",
+      "breakpoints": true
     }
   ]
 }
