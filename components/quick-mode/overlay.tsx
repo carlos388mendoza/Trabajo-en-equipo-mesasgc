@@ -125,6 +125,9 @@ export function Overlay({ open, onClose, labelledBy, size = "form", draggable = 
       // las cartas»), Esc cierra solo la de arriba: la última que se montó.
       const dialogs = document.querySelectorAll("[data-overlay-panel]");
       if (dialogs.length && dialogs[dialogs.length - 1] !== panelRef.current) return;
+      // Con una lista desplegable abierta dentro (el select de «Personas»), Esc
+      // cierra solo la lista: es ella la que lo atiende.
+      if (panelRef.current?.querySelector("[role=combobox][aria-expanded=true]")) return;
       event.preventDefault();
       event.stopPropagation();
       onCloseRef.current();
