@@ -5,6 +5,7 @@
 import { toNextJsHandler } from "better-auth/next-js";
 
 import { getAuth } from "@/lib/auth/auth";
+import { checkLoginLimit, clientIp, recordLoginFailure, recordLoginSuccess } from "@/lib/auth/login-limit";
 
 // El handler se pide en cada petición y no al importar, para que el build no
 // necesite BETTER_AUTH_SECRET.
@@ -13,5 +14,25 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  return toNextJsHandler(getAuth()).POST(request);
+  const handler = toNextJsHandler(getAuth()).POST;
+  if (!new URL(request.url).pathname.endsWith("/sign-in/email")) return handler(request);
+
+  // Inicio de sesión por la ruta HTTP: el mismo límite de intentos fallidos
+  // que el formulario de /login (ver `lib/auth/login-limit.ts`).
+  let email = "";
+  try {
+    const body = (await request.clone().json()) as { email?: unknown };
+    if (typeof body?.email === "string") email = body.email.trim().toLowerCase();
+  } catch {
+    // Sin cuerpo legible: Better Auth contestará el error; se limita por IP.
+  }
+  const ip = clientIp(request.headers);
+  const limit = checkLoginLimit(email, ip);
+  if (limit.blocked) {
+    return Response.json({ code: "TOO_MANY_ATTEMPTS", message: limit.message }, { status: 429 });
+  }
+  const response = await handler(request);
+  if (response.status === 401) recordLoginFailure(email, ip);
+  else if (response.ok) recordLoginSuccess(email);
+  return response;
 }

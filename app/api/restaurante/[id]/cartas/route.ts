@@ -13,6 +13,7 @@ import { z } from "zod";
 import { guardApi } from "@/lib/auth/session";
 import { CARD_FILTERS, CARD_PAGE_MAX, CARD_PAGE_SIZE, CARD_RANGES, decodeCardCursor } from "@/lib/waitlist/card-options";
 import { queryWaitlistCards } from "@/lib/waitlist/cards";
+import { logServerError } from "@/lib/log";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -43,7 +44,7 @@ export async function GET(request: Request, { params }: Context) {
     const page = await queryWaitlistCards(id, { range: rango, filter: estado, query: q, waiter: mesero || null, before, limit: limite });
     return NextResponse.json(page);
   } catch (error) {
-    console.error("Failed to load waitlist cards", error);
+    logServerError("Failed to load waitlist cards", error);
     return NextResponse.json({ error: "No se pudieron cargar los clientes." }, { status: 500 });
   }
 }

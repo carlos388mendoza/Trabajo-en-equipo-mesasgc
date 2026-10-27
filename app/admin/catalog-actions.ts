@@ -30,6 +30,7 @@ import {
   updateRestaurantSchema,
 } from "@/lib/layout/catalog-input";
 import type { AdminResult } from "@/app/admin/actions";
+import { logServerError } from "@/lib/log";
 
 async function run(work: () => Promise<string>): Promise<AdminResult> {
   try {
@@ -38,7 +39,7 @@ async function run(work: () => Promise<string>): Promise<AdminResult> {
     return { ok: true, message };
   } catch (error) {
     if (error instanceof CatalogInputError) return { ok: false, error: error.message };
-    console.error("[admin] error en marcas o restaurantes", error);
+    logServerError("[admin] error en marcas o restaurantes", error);
     return { ok: false, error: "No se pudo guardar. Inténtalo de nuevo." };
   }
 }

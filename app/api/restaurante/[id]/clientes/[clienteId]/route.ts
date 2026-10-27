@@ -8,6 +8,7 @@ import { guardApi } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { ACTIVE_WAITLIST_STATUSES } from "@/lib/db/enums";
 import { waitlistEntries } from "@/lib/db/schema";
+import { logServerError } from "@/lib/log";
 
 type Context = { params: Promise<{ id: string; clienteId: string }> };
 const updateSchema = z.object({ status: z.enum(["listo", "ausente"]) });
@@ -54,7 +55,7 @@ export async function PATCH(request: Request, { params }: Context) {
     }
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Failed to update restaurant waitlist entry", error);
+    logServerError("Failed to update restaurant waitlist entry", error);
     return NextResponse.json({ error: "No se pudo actualizar el cliente." }, { status: 500 });
   }
 }
