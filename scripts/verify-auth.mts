@@ -1840,6 +1840,61 @@ section("Usuario desactivado");
 }
 
 // ---------------------------------------------------------------------------
+section("Límite de intentos fallidos de inicio de sesión");
+// ---------------------------------------------------------------------------
+
+{
+  // Cada bloque con su propia IP (`X-Forwarded-For`), para no mezclarse con el
+  // resto de la prueba, que entra muchas veces desde la misma.
+  const desde = (ip: string) => ({ "X-Forwarded-For": ip });
+  const intento = (email: string, password: string, ip: string) =>
+    http("POST", "/api/auth/sign-in/email", { body: { email, password }, headers: desde(ip) });
+
+  // 1. Todas las tablets de un restaurante comparten IP: entrar BIEN muchas
+  //    veces seguidas nunca bloquea (solo cuentan los fallos).
+  const bien: number[] = [];
+  for (let i = 0; i < 12; i += 1) bien.push((await intento("kfc@grupocomidas.test", PASSWORD, "198.51.100.10")).status);
+  check("12 inicios de sesión correctos seguidos desde la misma IP: ninguno se bloquea", bien.every((st) => st === 200), bien.join(","));
+
+  // 2. Por correo: 5 contraseñas malas bloquean ESE correo, aunque luego se
+  //    escriba la buena.
+  const malas: number[] = [];
+  for (let i = 0; i < 5; i += 1) malas.push((await intento("dennys@grupocomidas.test", "contrasena-mala", "198.51.100.20")).status);
+  check("5 contraseñas malas: «correo o contraseña incorrectos» (401) las 5 veces", malas.every((st) => st === 401), malas.join(","));
+  const sexto = await intento("dennys@grupocomidas.test", PASSWORD, "198.51.100.20");
+  check("el 6.º intento, aun con la contraseña buena, se rechaza con 429", sexto.status === 429, `HTTP ${sexto.status}`);
+  check("  y con un mensaje claro de cuánto esperar", /Demasiados intentos fallidos con este correo\. Espera \d+ minutos?/.test(sexto.text), sexto.text.slice(0, 160));
+  check("  aunque cambie de IP (el límite es del correo)", (await intento("dennys@grupocomidas.test", PASSWORD, "198.51.100.21")).status === 429);
+  check("otro correo desde esa misma IP sí entra (no castiga a los compañeros)", (await intento(USERS.chinawok, PASSWORD, "198.51.100.20")).status === 200);
+
+  // 3. Por conexión: 30 fallos desde una IP la bloquean, sea cual sea el correo.
+  for (let i = 0; i < 30; i += 1) await intento(`nadie-${i}@grupocomidas.test`, "x".repeat(10), "198.51.100.30");
+  const ipBloqueada = await intento(USERS.analitica, PASSWORD, "198.51.100.30");
+  check("30 fallos desde una IP: el siguiente intento desde ahí se rechaza (429)", ipBloqueada.status === 429 && /desde esta conexión/.test(ipBloqueada.text), `HTTP ${ipBloqueada.status}`);
+  check("  y desde otra IP ese usuario entra normal", (await intento(USERS.analitica, PASSWORD, "198.51.100.31")).status === 200);
+
+  // 4. Las reglas, directamente (también las usa el formulario de /login).
+  const limite = await import("@/lib/auth/login-limit");
+  limite.resetLoginLimitForTests();
+  const t0 = 1_000_000;
+  for (let i = 0; i < 4; i += 1) limite.recordLoginFailure("a@b.test", "10.0.0.1", t0 + i);
+  check("4 fallos todavía no bloquean", !limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + 10).blocked);
+  limite.recordLoginFailure("a@b.test", "10.0.0.1", t0 + 5);
+  check("el 5.º sí bloquea ese correo", limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + 10).blocked);
+  check("  pasados 15 minutos se desbloquea solo", !limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + limite.LOGIN_WINDOW_MS + 10).blocked);
+  limite.recordLoginSuccess("a@b.test");
+  check("entrar bien borra los fallos de ese correo", !limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + 20).blocked);
+  check("una IP falsa (texto raro) no se guarda tal cual", limite.clientIp(new Headers({ "x-forwarded-for": "<script>" })) === "desconocida");
+
+  // Los logs nunca imprimen datos personales ni secretos.
+  const { redactMessage } = await import("@/lib/log");
+  const sucio = "Failed query: insert into waitlist_entries values (?, ?) params: Ana Torres,9999-0000 ana@correo.hn eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghij sk-or-v1-abcdefghijklmnop";
+  const limpio = redactMessage(sucio);
+  check("los logs quitan los parámetros de las consultas (nombres, teléfonos)", !limpio.includes("Ana Torres") && !limpio.includes("9999-0000") && limpio.includes("params: [omitidos]"), limpio);
+  check("  y correos, tokens y claves", redactMessage("user ana@correo.hn token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghij key sk-or-v1-abcdefghijklmnop") === "user [correo] token [token] key [clave]", redactMessage("user ana@correo.hn token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghij key sk-or-v1-abcdefghijklmnop"));
+}
+
+// ---------------------------------------------------------------------------
 
 stopServer();
 console.log(`\n${passed} comprobaciones ok, ${failures.length} fallos`);

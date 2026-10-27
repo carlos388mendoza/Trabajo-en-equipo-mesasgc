@@ -17,6 +17,7 @@ import { getCounters } from "@/lib/map/counters";
 import { canJoinOverview } from "./auth";
 import { OVERVIEW_ROOM } from "./events";
 import { getRealtimeServer } from "./registry";
+import { logServerError } from "@/lib/log";
 
 /**
  * Manda a la sala `overview` los contadores actuales de un restaurante.
@@ -43,6 +44,6 @@ export async function emitOverview(restaurantId: string): Promise<void> {
       else socket.leave(OVERVIEW_ROOM);
     }
   } catch (err) {
-    console.error("[realtime] error avisando a la sala overview", err);
+    logServerError("[realtime] error avisando a la sala overview", err);
   }
 }

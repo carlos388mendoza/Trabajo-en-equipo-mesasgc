@@ -8,6 +8,7 @@
 import { revalidatePath } from "next/cache";
 
 import { guardAction } from "@/lib/auth/session";
+import { logServerError } from "@/lib/log";
 import {
   RETENTION_LABELS,
   anonymizeExpiredEntries,
@@ -27,7 +28,7 @@ export async function savePrivacySettingsAction(raw: unknown): Promise<SettingsR
     revalidatePath("/admin");
     return { ok: true, message: `Configuración guardada. Historial: ${RETENTION_LABELS[parsed.data.retention].toLowerCase()}.` };
   } catch (error) {
-    console.error("[admin] configuración", error);
+    logServerError("[admin] configuración", error);
     return { ok: false, error: "No se pudo guardar. Inténtalo de nuevo." };
   }
 }
@@ -47,7 +48,7 @@ export async function runRetentionNowAction(): Promise<SettingsResult> {
           : `Listo: ${run.anonymized} cliente(s) anonimizado(s).`,
     };
   } catch (error) {
-    console.error("[admin] retención", error);
+    logServerError("[admin] retención", error);
     return { ok: false, error: "No se pudo aplicar. Inténtalo de nuevo." };
   }
 }

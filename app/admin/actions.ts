@@ -29,6 +29,7 @@ import {
   setUserPassword,
 } from "@/lib/auth/users";
 import { ROLES } from "@/lib/db/enums";
+import { logServerError } from "@/lib/log";
 
 export type AdminResult = { ok: true; message: string } | { ok: false; error: string };
 
@@ -39,7 +40,7 @@ async function run(work: () => Promise<string>): Promise<AdminResult> {
     return { ok: true, message };
   } catch (error) {
     if (error instanceof UserInputError) return { ok: false, error: error.message };
-    console.error("[admin] error", error);
+    logServerError("[admin] error", error);
     return { ok: false, error: "No se pudo guardar. Inténtalo de nuevo." };
   }
 }

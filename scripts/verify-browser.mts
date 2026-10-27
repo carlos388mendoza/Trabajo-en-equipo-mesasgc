@@ -13,6 +13,12 @@
 //    ninguno (nombre de la mesa y cliente) se salga del sitio de su mesa (la
 //    mesa con sus sillas) ni se encime con los de otra mesa. Se informa
 //    también la letra más pequeña en pantalla.
+//  - #86: el select de «Personas» de «Agregar cliente», en «Uno» y en «Varios»:
+//    que la lista abierta se vea entera (o con su scroll) y no la corte el
+//    panel, que Esc cierre solo la lista, que el teclado elija, que Tab la
+//    cierre, que no se repitan ids y que todo mida 44 px o más.
+//  - #88: que tocar una sugerencia del asistente pregunta de una vez (una
+//    sola petición) y que mientras responde no se puede mandar otra.
 //  - #61: que la página NO tiene scroll horizontal en 320, 375, 414, 768,
 //    1024 ni escritorio, midiendo en cada tamaño
 //    `document.documentElement.scrollWidth` contra `window.innerWidth` (lo
@@ -570,6 +576,37 @@ await esperar(500);
 const analiticaSinBoton = (JSON.parse(String(await evaluar(botonLista))) as { existe: boolean }).existe === false;
 
 // ---------------------------------------------------------------------------
+// #88: las sugerencias del asistente preguntan de una vez
+// ---------------------------------------------------------------------------
+
+// La IA de verdad no se llama: `fetch` a /api/assistant se sustituye por una
+// respuesta que tarda 1,5 s, y se cuenta cuántas veces se pidió.
+await tab.send("Page.navigate", { url: `${BASE}/analiticas` });
+const sugerencias = `[...document.querySelectorAll('button')].filter((b) => ['¿Cuál fue el día más lento?', 'Dame el top de clientes', 'Compara restaurantes'].includes(b.textContent.trim()))`;
+for (let i = 0; i < 200 && (await evaluar(`${sugerencias}.length === 3 && ${sugerencias}.every((b) => !b.disabled)`)) !== true; i += 1) await esperar(300);
+await evaluar(`(() => {
+  window.__preguntas = 0;
+  const original = window.fetch.bind(window);
+  window.fetch = (url, init) => {
+    if (String(url).includes('/api/assistant')) {
+      window.__preguntas += 1;
+      return new Promise((ok) => setTimeout(() => ok(new Response(JSON.stringify({ answer: 'Respuesta de prueba del asistente' }), { status: 200, headers: { 'Content-Type': 'application/json' } })), 1500));
+    }
+    return original(url, init);
+  };
+  return true;
+})()`);
+await evaluar(`${sugerencias}[0].click(), true`);
+await esperar(150);
+// Mientras responde: otra sugerencia y «Preguntar» están desactivados, y
+// tocarlos no manda nada.
+const mientras = JSON.parse(String(await evaluar(`JSON.stringify({ desactivadas: ${sugerencias}.every((b) => b.disabled), cuadro: document.querySelector('input[maxlength="500"]')?.value ?? null, preguntar: [...document.querySelectorAll('button')].find((b) => /Consultando/.test(b.textContent))?.disabled === true })`))) as { desactivadas: boolean; cuadro: string | null; preguntar: boolean };
+await evaluar(`${sugerencias}[1].click(), [...document.querySelectorAll('button')].find((b) => /Consultando|Preguntar/.test(b.textContent))?.click(), true`);
+await esperar(2200);
+const filaAsistente = JSON.parse(String(await evaluar(`JSON.stringify({ preguntas: window.__preguntas, respuesta: document.body.innerText.includes('Respuesta de prueba del asistente'), libres: ${sugerencias}.every((b) => !b.disabled) })`))) as { preguntas: number; respuesta: boolean; libres: boolean };
+const asistentePasa = filaAsistente.preguntas === 1 && mientras.desactivadas && mientras.preguntar && mientras.cuadro === "¿Cuál fue el día más lento?" && filaAsistente.respuesta && filaAsistente.libres;
+
+// ---------------------------------------------------------------------------
 // Plano en vivo: los textos de las mesas, dentro de su mesa y sin encimarse
 // ---------------------------------------------------------------------------
 
@@ -647,6 +684,81 @@ for (const t of [
 }
 
 // ---------------------------------------------------------------------------
+// #86: el select de «Personas» (Agregar cliente)
+// ---------------------------------------------------------------------------
+
+async function tecla(key: string): Promise<void> {
+  const vk = ({ ArrowDown: 40, ArrowUp: 38, Escape: 27, Enter: 13, Tab: 9 } as Record<string, number>)[key] ?? 0;
+  await tab.send("Input.dispatchKeyEvent", { type: "keyDown", key, code: key, windowsVirtualKeyCode: vk });
+  await tab.send("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode: vk });
+}
+
+// La lista abierta: ¿se ve entera dentro de lo que la recorta (o tiene su
+// propio scroll), y no la tapa nada?
+const medirLista = `(() => {
+  const lb = [...document.querySelectorAll('[role=listbox]')].at(-1);
+  if (!lb) return JSON.stringify({ abierta: false });
+  const r = lb.getBoundingClientRect();
+  let clip = { top: 0, bottom: innerHeight };
+  for (let el = lb.parentElement; el; el = el.parentElement) {
+    if (/(auto|scroll|hidden)/.test(getComputedStyle(el).overflowY)) { const c = el.getBoundingClientRect(); clip = { top: Math.max(clip.top, c.top), bottom: Math.min(clip.bottom, c.bottom) }; }
+  }
+  const dentro = r.top >= clip.top - 1 && r.bottom <= clip.bottom + 1;
+  const opciones = [...lb.querySelectorAll('[role=option]')];
+  const tapa = document.elementFromPoint(r.left + r.width / 2, r.top + 10);
+  return JSON.stringify({ abierta: true, dentro, opciones: opciones.length, minAlto: Math.min(...opciones.map((o) => Math.round(o.getBoundingClientRect().height))), tapada: !!tapa && !lb.contains(tapa) });
+})()`;
+
+const filasSelect: Array<{ tamano: string; pasa: boolean; detalle: string }> = [];
+await entrarComo("chinawok@grupocomidas.test");
+for (const t of [
+  { nombre: "tablet acostada", ancho: 1024, alto: 768 },
+  { nombre: "tablet de pie", ancho: 768, alto: 1024 },
+  { nombre: "celular acostado", ancho: 812, alto: 375 },
+]) {
+  await tab.send("Emulation.setDeviceMetricsOverride", { width: t.ancho, height: t.alto, deviceScaleFactor: 1, mobile: true, screenOrientation: t.ancho > t.alto ? { type: "landscapePrimary", angle: 90 } : { type: "portraitPrimary", angle: 0 } });
+  await tab.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+  await tab.send("Page.navigate", { url: `${BASE}/restaurante/rest_centro/rapido` });
+  for (let i = 0; i < 200 && (await evaluar(`[...document.querySelectorAll('button')].some((x) => /Agregar cliente/.test(x.textContent))`)) !== true; i += 1) await esperar(300);
+  await evaluar(`[...document.querySelectorAll('button')].find((x) => /Agregar cliente/.test(x.textContent)).click(), true`);
+  await esperar(900);
+  const boton = `document.querySelectorAll('[role=dialog] [aria-haspopup=listbox]')[0]`;
+  await evaluar(`${boton}.scrollIntoView({ block: "center" }), ${boton}.click(), true`);
+  await esperar(400);
+  const uno = JSON.parse(String(await evaluar(medirLista))) as { abierta: boolean; dentro: boolean; minAlto: number; tapada: boolean };
+  // Esc: cierra la lista, no el panel.
+  await evaluar(`${boton}.focus(), true`);
+  await tecla("Escape");
+  await esperar(300);
+  const esc = (await evaluar(`!document.querySelector('[role=listbox]') && !!document.querySelector('[role=dialog] [aria-haspopup=listbox]')`)) === true;
+  // Teclado: ↓ abre, ↓ ↓ baja, Enter elige; aria-activedescendant apunta a algo que existe.
+  const antes = String(await evaluar(`${boton}.textContent.trim()`));
+  await evaluar(`${boton}.focus(), true`);
+  await tecla("ArrowDown"); await esperar(150); await tecla("ArrowDown"); await tecla("ArrowDown");
+  const activo = (await evaluar(`(() => { const id = ${boton}.getAttribute('aria-activedescendant'); return !!(id && document.getElementById(id)); })()`)) === true;
+  await tecla("Enter"); await esperar(250);
+  const despues = String(await evaluar(`${boton}.textContent.trim()`));
+  // Tab con la lista abierta: la cierra.
+  await evaluar(`${boton}.focus(), true`);
+  await tecla("ArrowDown"); await esperar(150); await tecla("Tab"); await esperar(250);
+  const tab_ = (await evaluar(`!document.querySelector('[role=listbox]')`)) === true;
+  // «Varios» con 5 filas: la última abre bien y no se repiten ids.
+  await evaluar(`[...document.querySelectorAll('[role=dialog] button')].find((x) => x.textContent.trim() === 'Varios')?.click(), true`);
+  await esperar(500);
+  for (let i = 0; i < 2; i += 1) { await evaluar(`[...document.querySelectorAll('[role=dialog] button')].find((x) => x.textContent.trim() === 'Agregar fila')?.click(), true`); await esperar(150); }
+  const ultimo = `[...document.querySelectorAll('[role=dialog] [aria-haspopup=listbox]')].at(-1)`;
+  await evaluar(`${ultimo}.scrollIntoView({ block: "end" }), ${ultimo}.click(), true`);
+  await esperar(400);
+  const varios = JSON.parse(String(await evaluar(medirLista))) as { abierta: boolean; dentro: boolean; tapada: boolean };
+  const idsRepetidos = Number(await evaluar(`(() => { const all = [...document.querySelectorAll('[id]')].map((e) => e.id); return all.length - new Set(all).size; })()`));
+  const minBoton = Number(await evaluar(`Math.min(...[...document.querySelectorAll('[role=dialog] [aria-haspopup=listbox]')].map((x) => x.getBoundingClientRect().height))`));
+  const captura = await tab.send("Page.captureScreenshot", { format: "png" });
+  writeFileSync(join(SHOTS, `select-personas-${t.ancho}x${t.alto}.png`), Buffer.from(captura.data as string, "base64"));
+  const pasa = uno.abierta && uno.dentro && !uno.tapada && uno.minAlto >= 44 && esc && activo && antes !== despues && tab_ && varios.abierta && varios.dentro && !varios.tapada && idsRepetidos === 0 && minBoton >= 44;
+  filasSelect.push({ tamano: `${t.nombre} ${t.ancho}×${t.alto}`, pasa, detalle: JSON.stringify({ uno, esc, activo, antes, despues, tab: tab_, varios, idsRepetidos, minBoton }) });
+}
+
+// ---------------------------------------------------------------------------
 // Resultado
 // ---------------------------------------------------------------------------
 
@@ -689,7 +801,17 @@ for (const fila of filasTextos) {
   console.log(`  ${fila.pasa ? "ok  " : "FALLA"} ${fila.tamano.padEnd(48)} ${fila.detalle}`);
 }
 
-writeFileSync(join(DIR, "resultado.json"), JSON.stringify({ filas, ejes, filasLista, analiticaSinBoton, filasTextos }, null, 2));
+console.log("\n#86: select de «Personas» (Uno y Varios: se ve entero, Esc, teclado, Tab, ids y 44 px)");
+for (const fila of filasSelect) {
+  if (!fila.pasa) fallos += 1;
+  console.log(`  ${fila.pasa ? "ok  " : "FALLA"} ${fila.tamano.padEnd(26)} ${fila.pasa ? "" : fila.detalle}`);
+}
+
+console.log("\n#88: sugerencias del asistente");
+if (!asistentePasa) fallos += 1;
+console.log(`  ${asistentePasa ? "ok  " : "FALLA"} una sugerencia pregunta de una vez y no se manda otra mientras responde ${asistentePasa ? "" : JSON.stringify({ ...mientras, ...filaAsistente })}`);
+
+writeFileSync(join(DIR, "resultado.json"), JSON.stringify({ filas, ejes, filasLista, analiticaSinBoton, filasTextos, filasSelect, asistente: { ...mientras, ...filaAsistente } }, null, 2));
 console.log(`\nCapturas en ${SHOTS}`);
 
 tab.close();
@@ -699,5 +821,5 @@ if (fallos > 0) {
   console.log(`verify:browser — ${fallos} fallo(s).`);
   process.exit(1);
 }
-console.log(`verify:browser — ${filas.length} mediciones sin scroll horizontal, ejes etiquetados, el botón «Lista de espera» en ${filasLista.length} casos y los textos del plano en ${filasTextos.length} zonas.`);
+console.log(`verify:browser — ${filas.length} mediciones sin scroll horizontal, ejes etiquetados, el botón «Lista de espera» en ${filasLista.length} casos, los textos del plano en ${filasTextos.length} zonas y el select de «Personas» en ${filasSelect.length} tamaños.`);
 process.exit(0);
