@@ -652,6 +652,41 @@ section("Ver clientes: volver a la espera");
     ["pag-viejo-sentado", "pag-viejo-listo", "pag-viejo-espera"].every((id) => juntos.includes(id)) && !juntos.includes("pag-viejo-ausente"),
     JSON.stringify(ids([...p1.entries, ...p2.entries]).filter((id) => id.includes("viejo"))),
   );
+  // #87: lo que pinta la tablet es «página del servidor + cola sin conexión»
+  // (`applyOperations`, que devuelve por orden de llegada) reordenado con
+  // `newestFirst`. Tiene que dar el MISMO orden que el servidor, poner arriba
+  // al cliente que se acaba de agregar sin conexión, y «Ver más» no puede
+  // repetir ni saltarse a nadie.
+  const { applyOperations } = await import("@/lib/offline/apply");
+  const { newestFirst } = await import("@/lib/waitlist/card-options");
+  const orden = (list: { id: string }[]) => list.map((e) => e.id);
+  const bajando = (list: { arrivedAt: number; id: string }[]) => list.every((e, i) => i === 0 || newestFirst(list[i - 1], e) < 0);
+  check("#87: el orden del servidor es el mismo que `newestFirst` (también en empates de hora)", JSON.stringify(orden([...p1.entries, ...p2.entries])) === JSON.stringify(orden([...p1.entries, ...p2.entries].sort(newestFirst))));
+  const recienLlegado = p1.entries[0].arrivedAt + 60_000;
+  let paso = 0;
+  const pendiente = (data: object) => ({ operationId: `op87-${++paso}`, userId: "u", restaurantId: REST, targetId: "x", label: "x", sequence: paso, createdAt: recienLlegado + paso, state: "pendiente" as const, attempts: 0, ...data });
+  const cola = [
+    pendiente({ action: "waitlist:add", data: { customerName: "Sin conexión", partySize: 2, notes: "", entryId: "pag-cola-nuevo", arrivedAt: recienLlegado } }),
+    pendiente({ action: "waitlist:resolve", data: { entryId: "pag-viejo-espera", status: "listo" } }),
+  ] as Parameters<typeof applyOperations>[1];
+  const vista = (lista: typeof p1.entries) => [...applyOperations({ entries: lista, tables: [] }, cola, recienLlegado).entries].sort(newestFirst);
+  const pagina1 = vista(p1.entries);
+  check("  con la cola sin conexión aplicada, el cliente de hoy recién agregado sale primero", pagina1[0]?.id === "pag-cola-nuevo", orden(pagina1).slice(0, 3).join(", "));
+  check("  y el resto sigue de lo más reciente a lo más viejo", bajando(pagina1) && pagina1.length === p1.entries.length + 1);
+  // «Ver más» como lo hace la tablet: añade la página 2 sin repetir ids.
+  const vistos = new Set(p1.entries.map((e) => e.id));
+  const pagina2 = vista([...p1.entries, ...p2.entries.filter((e) => !vistos.has(e.id))]);
+  const deUnaVez = await queryWaitlistCards(REST, { range: "hoy", filter: "todas", limit: 100 }, now);
+  check(
+    "  «Ver más» con la cola: sin repetidos ni huecos (igual que pedirlo todo de una vez, más el de la cola)",
+    new Set(orden(pagina2)).size === pagina2.length && JSON.stringify(orden(pagina2).filter((id) => id !== "pag-cola-nuevo")) === JSON.stringify(orden(deUnaVez.entries)) && bajando(pagina2),
+    `${pagina2.length} vs ${deUnaVez.entries.length}`,
+  );
+  check("  el cambio pendiente (marcar listo) se ve sin mover al cliente de su sitio", pagina2.find((e) => e.id === "pag-viejo-espera")?.status === "listo" && orden(pagina2).indexOf("pag-viejo-espera") === orden(deUnaVez.entries).indexOf("pag-viejo-espera") + 1);
+  // El montón del modo sencillo y el abanico NO cambian: siguen por orden de llegada.
+  const monton = applyOperations({ entries: await listQuickModeEntries(REST, now), tables: [] }, cola, recienLlegado).entries;
+  check("  el modo sencillo y el abanico siguen por orden de llegada (el más antiguo primero)", monton.every((e, i) => i === 0 || monton[i - 1].arrivedAt <= e.arrivedAt) && monton.at(-1)?.id === "pag-cola-nuevo");
+
   const ocupando = await queryWaitlistCards(REST, { range: "hoy", filter: "ocupando" }, now);
   check("«Ocupando mesa» trae a quien ocupa una mesa, aunque sea viejo", !libre || (ids(ocupando.entries).includes("pag-viejo-sentado") && ocupando.counts.ocupando >= 1), JSON.stringify(ids(ocupando.entries)));
   const mes = await queryWaitlistCards(REST, { range: "30dias", filter: "ausente", limit: 100 }, now);

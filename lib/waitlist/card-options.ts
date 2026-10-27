@@ -56,5 +56,8 @@ export function normalizeName(text: string): string {
  */
 export function newestFirst(a: { arrivedAt: number; id: string }, b: { arrivedAt: number; id: string }): number {
   if (b.arrivedAt !== a.arrivedAt) return b.arrivedAt - a.arrivedAt;
-  return b.id.localeCompare(a.id);
+  // Comparación por código, como el `ORDER BY id DESC` de SQLite: con
+  // `localeCompare` (reglas del idioma) dos ids pueden quedar al revés que en
+  // el servidor y, al empatar la hora, mover a un cliente de sitio.
+  return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
 }
