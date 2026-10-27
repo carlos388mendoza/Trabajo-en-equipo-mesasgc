@@ -43,7 +43,7 @@ Las migraciones de Drizzle son incrementales. El despliegue **nunca** ejecuta el
 
 **La base de Turso de producción debe ser nueva y vacía** (por ejemplo, `mesasgc-prod`). Railway aplica las migraciones desde cero en el primer despliegue.
 
-**No uses la base de desarrollo creada con `db:push`.** Una base creada así no tiene la tabla `__drizzle_migrations`. El primer `db:migrate` intentaría crear tablas que ya existen, fallaría y el despliegue no arrancaría. Además, esa base tiene los usuarios de prueba con la contraseña pública `12345abc`.
+**No uses la base de desarrollo creada con `db:push`.** Una base creada así no tiene la tabla `__drizzle_migrations`. El primer `db:migrate` intentaría crear tablas que ya existen, fallaría y el despliegue no arrancaría. Además, esa base tiene los usuarios de prueba con la contraseña pública la de desarrollo del seed.
 
 1. En Turso, crea una base nueva, por ejemplo `mesasgc-prod`, y no le cargues nada.
 2. Copia su URL y crea un token para ella: van en `TURSO_DATABASE_URL` y `TURSO_AUTH_TOKEN` (ver 2).
@@ -89,7 +89,7 @@ Después del primer despliegue, con las variables de Railway ya guardadas:
 
    `railway run` ejecuta el script **en tu computadora** con las variables del servicio, así que se conecta a la base de producción. `dotenv` no pisa esas variables con las de tu `.env.local`. Otra opción es `railway ssh` y, dentro del contenedor, `npm run create-admin`.
 
-4. Sigue las preguntas: correo, nombre y contraseña. La contraseña no se muestra al escribirla y necesita el largo mínimo que pide la app. Usa una contraseña nueva y segura, distinta de `12345abc`. No la guardes en este repositorio ni la compartas por chat.
+4. Sigue las preguntas: correo, nombre y contraseña. La contraseña no se muestra al escribirla y necesita el largo mínimo que pide la app. Usa una contraseña nueva y segura, distinta de la de desarrollo del seed. No la guardes en este repositorio ni la compartas por chat.
 
 El comando crea solo al administrador inicial; no ejecutes el seed en producción.
 
@@ -98,7 +98,7 @@ El comando crea solo al administrador inicial; no ejecutes el seed en producció
 Para crear (o actualizar) cualquier otro usuario sin entrar a `/admin`, por ejemplo los del piloto:
 
 ```powershell
-railway run npm run create-user -- --correo dennys@grupocomidas.test --nombre "Denny's" --rol restaurante --marca "Denny's"
+railway run npm run create-user -- --correo nombre@grupocomidas.com --nombre "Denny's" --rol restaurante --marca "Denny's"
 ```
 
 Muestra la base (solo el host) y un resumen, pide la contraseña dos veces sin mostrarla y confirmar con «si». Si el correo ya existe, solo cambia nombre, roles y restaurantes, sin tocar la contraseña. Detalles en el README («`npm run create-user`»).

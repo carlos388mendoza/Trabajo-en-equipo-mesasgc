@@ -1113,19 +1113,20 @@ dirección en `docs/configuracion.md`.
 ## 15. Usuarios de prueba
 
 > **Solo para desarrollo.** El seed los crea únicamente si `NODE_ENV` no es
-> `production`, y solo si no existen. La contraseña `12345abc` es pública, está
-> en este README: **nunca** la uses en producción.
+> `production`, y solo si no existen. Los correos y la contraseña están en
+> `scripts/seed.ts` (`TEST_PASSWORD`). El repositorio es **público**: esa
+> contraseña no se usa en producción. Si un usuario real la tiene, /admin lo
+> avisa al guardarla, con «Revisar contraseñas» y al entrar (ver
+> `docs/seguridad.md`).
 
-Todos tienen la contraseña **`12345abc`**:
-
-| Correo | Nombre | Roles | Restaurantes |
-|---|---|---|---|
-| `admin@grupocomidas.test` | Administrador | admin | todos |
-| `analitica@grupocomidas.test` | Analista | analitica | todos (solo lectura) |
-| `pizzahut@grupocomidas.test` | Pizza Hut | restaurante | rest_norte, rest_tgu_pizza |
-| `dennys@grupocomidas.test` | Denny's | restaurante | rest_tgu_dennys, rest_sps_dennys |
-| `kfc@grupocomidas.test` | KFC | restaurante | rest_tgu_kfc, rest_sps_kfc |
-| `chinawok@grupocomidas.test` | China Wok | restaurante | rest_centro, rest_sps_chinawok |
+| Usuario | Roles | Restaurantes |
+|---|---|---|
+| Administrador | admin | todos |
+| Analista | analitica | todos (solo lectura) |
+| Pizza Hut | restaurante | rest_norte, rest_tgu_pizza |
+| Denny's | restaurante | rest_tgu_dennys, rest_sps_dennys |
+| KFC | restaurante | rest_tgu_kfc, rest_sps_kfc |
+| China Wok | restaurante | rest_centro, rest_sps_chinawok |
 
 **Un usuario de restaurante por marca**, con todos los locales de su marca
 (desde el 5 de octubre). Entran a `/inicio`, con una tarjeta por local, y
@@ -1147,7 +1148,7 @@ cubre `verify:auth` con dos cuentas propias (`prueba-local@` y
 Para dar de alta usuarios en producción sin entrar a `/admin`:
 
 ```bash
-npm run create-user -- --correo dennys@grupocomidas.test --nombre "Denny's" --rol restaurante --marca "Denny's"
+npm run create-user -- --correo nombre@grupocomidas.com --nombre "Denny's" --rol restaurante --marca "Denny's"
 ```
 
 - `--rol` (admin, restaurante o analitica), `--restaurante` (slug, p. ej.

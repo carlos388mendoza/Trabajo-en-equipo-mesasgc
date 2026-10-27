@@ -1895,6 +1895,25 @@ section("Límite de intentos fallidos de inicio de sesión");
 }
 
 // ---------------------------------------------------------------------------
+section("Contraseñas públicas o muy débiles");
+// ---------------------------------------------------------------------------
+
+{
+  // El repositorio es público: la contraseña de desarrollo se avisa (no se
+  // prohíbe) si la usa alguien en producción. Ver `lib/auth/weak-passwords.ts`.
+  const claves = await import("@/lib/auth/weak-passwords");
+  check("la contraseña del seed cuenta como pública", claves.passwordWeakness(PASSWORD) === "publica");
+  check("  «12345678», «abcdefghijk» y una corta cuentan como débiles", ["12345678", "abcdefghijk", "Ab1-x"].every((p) => claves.passwordWeakness(p) === "debil"));
+  check("  una larga y mezclada no avisa", claves.passwordWeakness("Tl7-mesas-Rq2025") === null);
+  check("  en local y en el CI (sin https) no se avisa al entrar", !claves.isPublicDeployment());
+  // Los usuarios de esta prueba entran con la del seed: «Revisar contraseñas»
+  // tiene que encontrarlos comparando contra el hash, y nunca devolver la clave.
+  const conClavePublica = await claves.findUsersWithPublicPassword();
+  check("«Revisar contraseñas» encuentra a los usuarios con la contraseña del código", conClavePublica.some((u) => u.email === "admin@grupocomidas.test"), `${conClavePublica.length}`);
+  check("  y solo devuelve id, nombre y correo", conClavePublica.every((u) => Object.keys(u).sort().join(",") === "email,id,name"));
+}
+
+// ---------------------------------------------------------------------------
 
 stopServer();
 console.log(`\n${passed} comprobaciones ok, ${failures.length} fallos`);
