@@ -14,6 +14,7 @@ import { revalidatePath } from "next/cache";
 
 import {
   createUserSchema,
+  deleteUserSchema,
   firstError,
   resetPasswordSchema,
   setActiveSchema,
@@ -23,6 +24,7 @@ import { guardAction } from "@/lib/auth/session";
 import {
   UserInputError,
   createUserWithPassword,
+  deleteUser,
   loadAuthUser,
   setUserAccess,
   setUserActive,
@@ -125,5 +127,21 @@ export async function setActiveAction(raw: unknown): Promise<AdminResult> {
   return run(async () => {
     await setUserActive(parsed.data.userId, parsed.data.active);
     return parsed.data.active ? "Usuario activado." : "Usuario desactivado. Sus sesiones se cerraron.";
+  });
+}
+
+export async function deleteUserAction(raw: unknown): Promise<AdminResult> {
+  const guard = await guardAction("usuarios:gestionar");
+  if (!guard.ok) return guard;
+  const parsed = deleteUserSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: firstError(parsed.error) };
+  if (parsed.data.userId === guard.user.id) {
+    return { ok: false, error: "No puedes eliminar tu propia cuenta." };
+  }
+  const target = await loadAuthUser(parsed.data.userId);
+  if (!target) return { ok: false, error: "Ese usuario no existe." };
+  return run(async () => {
+    await deleteUser(target.id);
+    return `Cuenta de ${target.email} eliminada.`;
   });
 }

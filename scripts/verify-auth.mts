@@ -1926,6 +1926,48 @@ section("Contraseñas públicas o muy débiles");
 }
 
 // ---------------------------------------------------------------------------
+section("Eliminar cuenta");
+// ---------------------------------------------------------------------------
+
+{
+  const usuarios = await import("@/lib/auth/users");
+  const { db: bd } = await import("@/lib/db");
+  const { account: cuentas, user: usuariosTabla } = await import("@/lib/db/schema");
+  const { eq: igual } = await import("drizzle-orm");
+  const id = await usuarios.createUserWithPassword({
+    name: "Para borrar",
+    email: "para-borrar@x.test",
+    password: `${PASSWORD}-borrar`,
+    roles: ["restaurante"],
+    restaurantIds: [],
+  });
+  check("la cuenta de prueba existe antes de eliminarla", (await usuarios.loadAuthUser(id)) !== null);
+  await usuarios.deleteUser(id);
+  check("eliminar cuenta: el usuario ya no existe", (await usuarios.loadAuthUser(id)) === null);
+  check("  y su contraseña se borró con él", (await bd.select().from(cuentas).where(igual(cuentas.userId, id))).length === 0);
+  let rechazo = "";
+  try {
+    await usuarios.deleteUser(id);
+  } catch (e) {
+    rechazo = e instanceof usuarios.UserInputError ? e.message : "otro error";
+  }
+  check("  eliminar uno que no existe se rechaza", rechazo === "Ese usuario no existe.", rechazo);
+  // Si solo queda un administrador activo, no se puede borrar.
+  const admins = (await usuarios.listUsers()).filter((u) => u.active && u.roles.includes("admin"));
+  // Directo a la base (no `setUserActive`): así no se cierran las sesiones de esos admins.
+  for (const extra of admins.slice(1)) await bd.update(usuariosTabla).set({ active: false }).where(igual(usuariosTabla.id, extra.id));
+  let ultimo = "";
+  try {
+    await usuarios.deleteUser(admins[0].id);
+  } catch (e) {
+    ultimo = e instanceof usuarios.UserInputError ? e.message : "otro error";
+  }
+  for (const extra of admins.slice(1)) await bd.update(usuariosTabla).set({ active: true }).where(igual(usuariosTabla.id, extra.id));
+  check("  no se elimina al único administrador activo", /único administrador/.test(ultimo), ultimo);
+  check("  y ese administrador sigue ahí", (await usuarios.loadAuthUser(admins[0].id)) !== null);
+}
+
+// ---------------------------------------------------------------------------
 
 stopServer();
 console.log(`\n${passed} comprobaciones ok, ${failures.length} fallos`);
