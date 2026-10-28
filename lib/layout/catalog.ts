@@ -3,7 +3,7 @@
 // Vive aquí y no en el seed porque también lo necesita producción: el seed no
 // se corre allí, y sin estas filas el editor no tiene nada que poner en su
 // paleta. Lo cargan `npm run db:seed` (desarrollo) y `npm run db:catalog`, que
-// va en el Pre-deploy de Railway detrás de `db:migrate`.
+// corre `scripts/vercel-build.mjs` en el despliegue de producción, detrás de `db:migrate`.
 //
 // Solo toca `element_types`, y por clave: repetirlo no duplica nada, y las
 // mesas que ya apuntan a un tipo siguen apuntando al mismo id.

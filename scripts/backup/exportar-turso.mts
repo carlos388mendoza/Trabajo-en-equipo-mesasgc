@@ -1,9 +1,9 @@
 // Respaldo de la base (Turso / libSQL) a un archivo SQLite, SOLO LEYENDO.
 //
 //   npm run db:respaldo -- <archivo-destino.db>
-//   & "$(npm prefix -g)\railway.cmd" run npm run db:respaldo -- C:\ruta\respaldo.db   (producción)
+//   (producción: ver `docs/entrega-empresa.md`, «Respaldos»)
 //
-// Lee la base de `TURSO_DATABASE_URL` (con `railway run`, la de producción)
+// Lee la base de `TURSO_DATABASE_URL` (la de producción, si así lo indican las variables)
 // y copia el esquema y todas las filas a un archivo SQLite NUEVO. Con la base
 // de origen solo hace `SELECT` (nunca escribe en ella): sirve en Windows sin la
 // CLI de Turso. El archivo resultante se restaura desde la web de Turso
@@ -34,7 +34,7 @@ if (existsSync(ruta)) {
 }
 const url = process.env.TURSO_DATABASE_URL;
 if (!url) {
-  console.error("Falta TURSO_DATABASE_URL (en producción, corre el comando con `railway run`).");
+  console.error("Falta TURSO_DATABASE_URL (ver `docs/entrega-empresa.md`, «Respaldos»).");
   process.exit(2);
 }
 if (url.startsWith("file:") && resolve(url.slice(5)) === ruta) {

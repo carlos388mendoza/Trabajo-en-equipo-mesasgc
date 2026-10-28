@@ -1,7 +1,7 @@
 // Borra el lote de DATOS DE DEMOSTRACIÓN.
 //
 //   npm run db:demo:borrar
-//   railway run npm run db:demo:borrar   (contra la base de producción)
+//   (contra la base de producción: ver `docs/entrega-empresa.md`)
 //
 // Es la única forma de borrarlos: la sección de datos demo de /admin se quitó
 // de la interfaz el 5 de octubre. Llama a `borrarDemoData()` de `lib/demo/`.

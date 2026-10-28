@@ -55,7 +55,7 @@ Los tiempos son orientativos: suman unos 10 minutos.
 - **Toca KFC Boulevard Morazán** (está en rojo): el zoom entra al **plano en
   vivo**, con mesas libres, ocupadas y reservadas y el nombre de cada
   cliente. Vuelve con **«Volver al mapa general»**.
-- **Di:** «El mapa se actualiza solo por una sala de Socket.IO que lleva
+- **Di:** «El mapa se actualiza solo por una sala de tiempo real que lleva
   únicamente números, nunca nombres de clientes».
 
 ### 2.3 Editor de mesas (Carlos, 2 min)
@@ -122,7 +122,7 @@ llega a `/restaurante/rest_centro/rapido`.
   para «listo»** y **a la izquierda para «ausente»**. Funciona con el dedo y
   con el ratón, y la tarjeta gira y muestra el sello.
 - **Deshacer:** con el botón o con **Ctrl+Z**; el cliente vuelve a la fila.
-- **Di:** «Todo va en vivo por Socket.IO: si otra tablet del mismo local
+- **Di:** «Todo va en vivo por tiempo real: si otra tablet del mismo local
   tiene la lista abierta, ve el cambio al momento, y el mapa general también».
 
 ### 2.6 Estadísticas y asistente IA (compañero, 1 min)
@@ -153,7 +153,7 @@ a `/analiticas`.
   - `/restaurante/rest_norte/mapa` → **`/sin-acceso`**;
   - `/restaurante/rest_norte/editor` → **`/sin-acceso`**.
 - **Di:** «Ocultar un botón no protege nada: cada página, action, API y
-  evento de Socket.IO vuelve a comprobar el permiso en el servidor».
+  evento de tiempo real vuelve a comprobar el permiso en el servidor».
 - **Si da tiempo:** como analitica, el zoom del mapa **no muestra nombres
   de clientes**; el servidor los quita antes de responder.
 
@@ -217,7 +217,7 @@ a `/analiticas`.
    momento, así que salen los tres colores (normal, amarillo y rojo). Si
    cargaste el lote de demostración, `db:demo` también es idempotente: volver a
    correrlo no duplica nada y deja las esperas como estaban.
-2. Arranca la app con `npm run dev` (Next y Socket.IO en el puerto 3000).
+2. Arranca la app con `npm run dev` (Next y tiempo real en el puerto 3000).
 3. Abre y deja listas:
    - **Pestaña 1:** `/login`.
    - **Pestañas 2 y 3:** `/restaurante/rest_centro/editor` (se entra como
@@ -260,18 +260,18 @@ Todas las reglas están en un solo archivo, `lib/auth/rbac.ts`, con la
 función `can(usuario, acción, restaurante)`. Un usuario puede tener varios
 roles y sus permisos se suman. El rol restaurante solo vale en sus
 restaurantes (tabla `user_restaurants`). La comprobación de verdad se hace en
-el servidor, en cada página, server action, API y evento de Socket.IO. El
+el servidor, en cada página, server action, API y evento de tiempo real. El
 `proxy.ts` solo mira si hay cookie. Sin permiso, una página redirige a
 `/sin-acceso` y una API responde 403. La tabla completa está en
 `docs/rbac.md`, y `verify:auth` levanta la app real y lo prueba por rol.
 
-**¿Por qué Socket.IO y por qué un `server.ts` propio?**
+**¿Por qué tiempo real y por qué un `server.ts` propio?**
 Hace falta que el servidor avise a las tablets cuando algo cambia, y
-Socket.IO trae reconexión automática y salas (*rooms*): hay una sala por
+tiempo real trae reconexión automática y salas (*rooms*): hay una sala por
 restaurante, así cada local solo recibe sus eventos, y otra sala `overview`
 para el mapa general. Next por sí solo no mantiene conexiones WebSocket
-abiertas. Por eso `server.ts` sirve Next y Socket.IO en el mismo servidor y
-el mismo puerto: Railway expone un solo puerto, y así el navegador se conecta
+abiertas. (Nota de octubre de 2026: hoy el tiempo real va por HTTP con sondeo, sin
+servidor propio, para poder correr en Vercel.) El navegador se conecta siempre
 al mismo origen, sin CORS.
 
 **¿Tienen CI/CD?**
@@ -282,8 +282,8 @@ ningún *runner* de tests: son scripts que levantan una SQLite temporal y aplica
 las migraciones del repositorio, así que nunca tocan Turso ni OpenRouter. Las dos
 ramas tienen un *ruleset* que exige el CI en verde y **no permite borrarlas ni
 hacer *force push***, ni siquiera para los administradores. El despliegue a
-Railway solo se dispara al fusionar `testing` → `main`, y con «Wait for CI»
-activo, así que Railway tampoco despliega nada con el CI en rojo.
+Producción (Vercel) solo se dispara al fusionar `testing` → `main`, y esa
+fusión exige el CI en verde.
 
 **Otras que pueden salir:**
 

@@ -1,7 +1,7 @@
 // Avisar a las pantallas de un restaurante desde fuera de un evento de tiempo
 // real (por ejemplo, una server action del editor después de guardar).
 //
-// Antes buscaba el servidor de Socket.IO en `globalThis`; ahora deja el aviso
+// Deja el aviso
 // en la base (`lib/realtime/bus.ts`), que es lo que leen todas las pantallas
 // por su sondeo, estén en la instancia que estén (Vercel).
 

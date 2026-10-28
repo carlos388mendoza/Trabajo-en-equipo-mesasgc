@@ -112,11 +112,11 @@ defecto. Están explicadas en palabras sencillas en `docs/configuracion.md`.
 
 ## 5. Si nadie puede entrar a /admin (recuperación)
 
-Si el admin olvidó su contraseña, se cambia desde la terminal, con la CLI de
-Railway, contra la base de producción:
+Si el admin olvidó su contraseña, se cambia desde la terminal, contra la base de
+producción (ver `docs/entrega-empresa.md`, «Comandos contra producción»):
 
 ```powershell
-& "$(npm prefix -g)\railway.cmd" run npm run reset-password
+npx dotenv-cli -e .env.produccion -- npm run reset-password
 ```
 
 1. Pregunta el **correo** y la **contraseña nueva** dos veces, sin mostrarla.
@@ -127,10 +127,10 @@ Railway, contra la base de producción:
 Para crear un usuario desde la terminal (por ejemplo, el primer admin):
 
 ```powershell
-& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo nombre@grupocomidas.test --nombre "Nombre" --rol admin
+npx dotenv-cli -e .env.produccion -- npm run create-user -- --correo nombre@grupocomidas.test --nombre "Nombre" --rol admin
 ```
 
-Más detalle: `docs/despliegue.md` (sección 3) y `docs/salida-a-produccion.md`.
+Más detalle: `docs/entrega-empresa.md` y `docs/salida-a-produccion.md`.
 
 ## 6. Respaldos
 

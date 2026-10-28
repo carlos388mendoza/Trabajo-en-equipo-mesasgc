@@ -12,7 +12,7 @@
 // room. Un id que pertenece a otro restaurante se rechaza: no se puede usar
 // para leer respuestas ajenas.
 //
-// Sin nada de Next ni de Socket.IO: lo usa `lib/realtime/server.ts` y lo
+// Sin nada de Next: lo usa `lib/realtime/server.ts` y lo
 // prueba `scripts/verify-realtime.mts`.
 
 import { and, eq, lt } from "drizzle-orm";

@@ -1,7 +1,7 @@
 // Carga el lote de DATOS DE DEMOSTRACIÓN.
 //
 //   npm run db:demo
-//   railway run npm run db:demo   (contra la base de producción)
+//   (contra la base de producción: ver `docs/entrega-empresa.md`)
 //
 // Qué hace exactamente está en `lib/demo/`: crea, en los 8 restaurantes reales,
 // una zona demo con la sala completa (mesas con sillas, bancada, baños, caja y

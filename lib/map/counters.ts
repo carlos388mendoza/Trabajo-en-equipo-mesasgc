@@ -1,11 +1,11 @@
 // Contadores agregados de cada restaurante: lo que pinta el mapa general.
 //
-// Es lo ÚNICO que viaja por la sala `overview` de Socket.IO: números, sin
+// Es lo ÚNICO que viaja por la sala `overview` del tiempo real: números, sin
 // nombres ni ids de clientes. Así el mapa general se puede enseñar a quien ve
 // todos los restaurantes (admin, analitica) sin repartir datos personales.
 //
 // No importa nada de Next: lo usan la página /mapa, `emitOverview` (el
-// servidor de Socket.IO) y `scripts/verify-realtime.mts`.
+// servidor de tiempo real) y `scripts/verify-realtime.mts`.
 
 import { and, avg, count, eq, inArray, sql } from "drizzle-orm";
 

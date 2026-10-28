@@ -148,10 +148,10 @@ Si un usuario de producciÃ³n tiene esa contraseÃ±a, cualquiera que lea el cÃ³dig
 
 ## Incidente de Railway (octubre 2026)
 
-- El 20-21 de octubre de 2026 Railway confirmó acceso a variables de entorno de clientes.
+- El 20-21 de octubre de 2026 Railway confirmï¿½ acceso a variables de entorno de clientes.
 - Todas las llaves que estuvieron en Railway se consideran EXPUESTAS: token de Turso de mesasgc-prod, llave de OpenRouter y BETTER_AUTH_SECRET.
-- Las llaves se rotaron vía la web UI de Railway (la CLI estaba bloqueada por App Control de Windows).
-- La app se migró a Vercel Hobby. Railway queda descartado para siempre.
-- Pasos de limpieza final: ver docs/checklist-salida-railway.md.
-- Las migraciones solo corren en Production (build de Vercel). Nunca db:push ni seed en producción.
+- Las llaves se rotaron vï¿½a la web UI de Railway (la CLI estaba bloqueada por App Control de Windows).
+- La app se migrï¿½ a Vercel Hobby. Railway queda descartado para siempre.
+- Pasos de limpieza final: hechos el 28 de octubre de 2026 (ver docs/entrega-empresa.md).
+- Las migraciones solo corren en Production (build de Vercel). Nunca db:push ni seed en producciï¿½n.
 

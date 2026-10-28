@@ -15,7 +15,7 @@ Soy el **Miembro A**. Mis áreas son:
 
 1. **Editor de mesas**: drag & drop con `react-konva`, copiar la estructura a
    otro restaurante, galería de zonas (rotación de configuraciones).
-2. **Tiempo real**: servidor Socket.IO con una *room* por `restaurantId`, así
+2. **Tiempo real**: avisos por HTTP con una *room* por `restaurantId`, así
    cada restaurante recibe solo sus eventos de asignación de mesa.
 3. **Manejo de conflictos**: bloqueo optimista, donde gana el primer evento que
    llega al servidor.
@@ -32,7 +32,7 @@ trabajo de los dos. No toques el código del Miembro B salvo que te lo pida.
 | Base de datos | Turso (libSQL) | Instalado |
 | ORM / migraciones | Drizzle ORM 0.45 + drizzle-kit 0.31 | Instalado |
 | Auth y roles | Better Auth | Pendiente: las tablas ya están en el schema, falta el paquete |
-| Tiempo real | Socket.IO | Pendiente: solo están las variables en `.env.example` |
+| Tiempo real | HTTP con sondeo sobre Turso (`lib/realtime/`) | Instalado: sin servidor propio, funciona en Vercel |
 | Canvas | `konva` + `react-konva` | Instalado |
 | Validación | Zod 4 | Instalado |
 | Estilos | Tailwind 3 | Instalado |
@@ -120,8 +120,8 @@ Piezas que ya existen para esto:
   sepan que el layout cambió.
 - El índice único `tables_current_entry_unique`, como red de seguridad.
 
-Para Socket.IO, `.env.example` prevé un servidor Node custom en `PORT=3001`
-(`NEXT_PUBLIC_SOCKET_URL`), desplegado en Railway.
+El tiempo real va por HTTP con sondeo (`app/api/tiempo-real`, `lib/realtime/`),
+sin servidor propio, y la app se despliega en Vercel (ver `docs/entrega-empresa.md`).
 
 **El editor nunca escribe `status` ni `current_entry_id`**, y una mesa ocupada
 no se puede borrar desde el editor. `verify:editor` lo comprueba; no lo

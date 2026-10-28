@@ -2,7 +2,7 @@
 // modificarlos.
 //
 // No importa nada de Next: lo usan igual las actions de /admin, el seed,
-// `create-admin`, el handshake de Socket.IO y los `verify:*`.
+// `create-admin`, la identidad del tiempo real y los `verify:*`.
 //
 // Las contraseñas se hashean con la misma función que usa Better Auth al
 // iniciar sesión (`better-auth/crypto`), y se guardan en `account` con el

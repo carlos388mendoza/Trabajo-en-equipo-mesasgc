@@ -2,10 +2,10 @@
 //
 //   npm run verify:auth
 //
-// Levanta la app DE VERDAD (server.ts, con Next y Socket.IO) en un puerto
+// Levanta la app DE VERDAD (server.ts, con Next) en un puerto
 // libre, contra una base SQLite temporal (`.verify-auth.db`) con las
 // migraciones del repo y el seed, y comprueba con peticiones HTTP y clientes
-// Socket.IO reales:
+// de tiempo real reales:
 //
 //  - login correcto con los 5 usuarios de prueba e incorrecto con una
 //    contraseña mala;
@@ -480,7 +480,7 @@ for (const [method, path, body] of API_NO_SESSION) {
   check(`sin sesión, ${method} ${path} -> 401`, res.status === 401, `HTTP ${res.status}`);
 }
 
-section("Healthcheck de Railway");
+section("Healthcheck público");
 
 {
   // El healthcheck es la ÚNICA API pública (excepción exacta en `proxy.ts`).
@@ -743,7 +743,7 @@ if (saveId) {
 }
 
 {
-  // Detrás del proxy de Railway llega `x-forwarded-proto: https`. Cuando una
+  // Detrás del proxy de Vercel llega `x-forwarded-proto: https`. Cuando una
   // server action redirige, Next pide la página de destino a su propio
   // servidor; sin __NEXT_PRIVATE_ORIGIN la pedía por https al puerto interno,
   // que habla http («SSL wrong version number»), y caía a una redirección
@@ -1009,7 +1009,7 @@ section("RBAC del enunciado");
   check("analitica filtra por marca", onlyKfc.restaurants.length === 2 && onlyKfc.restaurants.every((r) => r.id.includes("kfc")));
   check("dual: POST a la lista de rest_norte -> 403", (await status("dual", "POST", "/api/restaurante/rest_norte/clientes", newGuest)) === 403);
 
-  // 3. Socket.IO: el restaurante sale de la room, no del payload.
+  // 3. Tiempo real: el restaurante sale de la room, no del payload.
   const chinawok = await connect(cookies.chinawok);
   const analitica = await connect(cookies.analitica);
   const dual = await connect(cookies.dual);

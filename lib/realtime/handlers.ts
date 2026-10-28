@@ -1,4 +1,4 @@
-// Los eventos de tiempo real, sin Socket.IO: sentar, liberar, la lista de
+// Los eventos de tiempo real: sentar, liberar, la lista de
 // espera, deshacer... Es la misma lógica que tenía `lib/realtime/server.ts`,
 // pero llega por una petición HTTP (`app/api/tiempo-real/route.ts`) y avisa a
 // las demás pantallas guardando el aviso en la base (`lib/realtime/bus.ts`).

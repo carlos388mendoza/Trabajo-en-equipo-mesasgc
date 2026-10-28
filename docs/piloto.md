@@ -8,8 +8,8 @@ restaurantes, cuánto dura, qué medir y cuándo pasar a más locales) está en
 
 ### Equipo técnico (Carlos)
 
-- [ ] Railway en el plan **Hobby** con un método de pago (la prueba gratuita
-      se acaba; ver «Lo que hace Carlos» en `docs/estado-del-proyecto.md`).
+- [ ] Vercel en el plan **Pro** (Hobby es solo para uso no comercial; ver
+      `docs/consumo-turso-sondeo.md`).
 - [ ] OpenRouter con **crédito cargado** (sin crédito, el asistente contesta
       solo con la respuesta básica).
 - [ ] **Contraseñas cambiadas** en /admin → «Contraseña» para el admin,
@@ -19,7 +19,7 @@ restaurantes, cuánto dura, qué medir y cuándo pasar a más locales) está en
       (`docs/configuracion.md`) y están guardadas en /admin → Configuración.
 - [ ] **Respaldo** de la base sacado y guardado en un sitio privado
       (`docs/respaldos.md`).
-- [ ] `/api/health` y `/login` responden (Railway en verde).
+- [ ] `/api/health` y `/login` responden (Vercel en verde).
 
 ### En cada restaurante del piloto
 

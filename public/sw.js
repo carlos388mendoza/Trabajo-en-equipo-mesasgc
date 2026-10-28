@@ -35,7 +35,7 @@ self.addEventListener("activate", (event) => {
 
 function cacheable(url, request) {
   if (request.method !== "GET" || url.origin !== self.location.origin) return false;
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/socket.io")) return false;
+  if (url.pathname.startsWith("/api/")) return false;
   if (request.mode === "navigate") return /^\/restaurante\/[^/]+\/rapido\/?$/.test(url.pathname);
   return (
     url.pathname.startsWith("/_next/static/") ||

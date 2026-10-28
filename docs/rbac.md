@@ -49,10 +49,10 @@ Los accesos directos de la cabecera salen solo con `rapido:ver` («Modo sencillo
 | `meseros:gestionar` | Crear, editar, borrar y **activar** configuraciones de zonas de meseros (`app/restaurante/[id]/meseros/actions.ts`). Verlas solo pide `plano:ver` | Sí | Suyos | — |
 | `rapido:ver` | `GET /api/restaurante/[id]/clientes` | Sí | Suyos | — |
 | `rapido:modificar` | `POST …/clientes` y `PATCH …/clientes/[clienteId]` | Sí | Suyos | — |
-| `mesas:asignar` | Socket.IO `table:assign` y `table:release` | Sí | Suyos | — |
+| `mesas:asignar` | tiempo real `table:assign` y `table:release` | Sí | Suyos | — |
 | `analiticas:ver` | `GET /api/analiticas` | Sí | — | Sí |
 | `asistente:usar` | `POST /api/assistant` (10 preguntas por minuto y por usuario) | Sí | — | Sí |
-| `mapa:ver` | `/mapa`, la action `loadOverviewCounters` y la sala `overview` de Socket.IO | Sí | — | Sí |
+| `mapa:ver` | `/mapa`, la action `loadOverviewCounters` y la sala `overview` de tiempo real | Sí | — | Sí |
 | `plano:ver` | `/restaurante/[id]/mapa` y la action `loadLivePlan` (estados y ocupación) | Sí | Suyos | Sí |
 | `plano:clientes` | Nombre del cliente de cada mesa en el plano en vivo | Sí | Suyos | — |
 | `demo:ver` | Ver que hay datos de demostración y cuántos son. Sin pantalla desde el 5 de octubre: se conserva para `lib/demo` | Sí | — | Sí |
@@ -84,7 +84,7 @@ Cinco casos que vale la pena tener presentes:
 
 - **Copiar la estructura a otro restaurante** exige `editor:guardar` en los
   **dos** restaurantes, y copiar una zona también en el de la zona de destino.
-- **Entrar en la room de Socket.IO de un restaurante** exige `editor:ver` o
+- **Entrar en la room de tiempo real de un restaurante** exige `editor:ver` o
   `rapido:ver` en él. Por eso analitica no entra en ninguna: no edita nada en
   vivo, y en esas rooms viajan los ids de los clientes.
 - **Borrar los datos de demostración** ya no se hace desde la web: solo con
@@ -98,7 +98,7 @@ no existe**: ni el aviso «Hay datos de demostración cargados», ni el enlace
 «Datos demo», ni la sección de `/admin`, ni `/admin/datos-demo` (da 404), ni
 su server action. Los datos se quedan, con `is_demo` y `demo_batch_id`, y se
 cargan y borran desde la terminal (`npm run db:demo` y `npm run db:demo:borrar`,
-o con `railway run` en producción).
+o con las variables de producción en un archivo temporal).
 
 - En el modo sencillo cada carta de demostración sigue llevando la etiqueta
   **«Demo»**.
@@ -162,7 +162,7 @@ las hacen los usuarios de los restaurantes».
 | Páginas | `proxy.ts` redirige a `/login?next=…`. La página vuelve a comprobarlo en el servidor. |
 | API routes | **401** con «Tu sesión terminó. Vuelve a entrar.» |
 | Server actions | Devuelven el mismo mensaje. Si se llaman sin cookie, el proxy redirige a `/login`. |
-| Socket.IO | El handshake rechaza la conexión. |
+| tiempo real | El handshake rechaza la conexión. |
 
 ## Usuario desactivado
 
@@ -206,7 +206,7 @@ El enlace «Mapa» del encabezado lleva a `/mapa` a quien tiene `mapa:ver`, y a
 Revisado el 1 de octubre de 2026 contra la app real en local, con los
 usuarios del seed, y ampliado el 5 de octubre con las zonas de meseros y el
 plano por defecto. Todas las pruebas están en `npm run verify:auth` (392/392):
-levanta la app y hace peticiones HTTP y de Socket.IO de verdad con la cookie
+levanta la app y hace peticiones HTTP y de tiempo real de verdad con la cookie
 de cada usuario.
 
 | Requisito | ¿Cumple? | Cómo se probó (`verify:auth`) |
@@ -218,7 +218,7 @@ de cada usuario.
 | **Restaurante: solo su restaurante**, por URL | Sí | centro y norte reciben `/sin-acceso` en `rapido`, `editor` y `mapa` del otro restaurante («Páginas por rol»). |
 | … por API | Sí | GET, POST y PATCH de `/api/restaurante/<otro>/clientes` → 403 («API por rol»). |
 | … por server action | Sí | Guardar el plano de `rest_norte` como centro → «sin permiso» («Server actions del editor»). |
-| … por Socket.IO | Sí | centro y norte no entran en la room del otro («Socket.IO»). centro, dentro de su room, no puede sentar en una mesa de `rest_norte` ni resolver a un cliente de `rest_norte`, y ese cliente no cambia («RBAC del enunciado»). |
+| … por tiempo real | Sí | centro y norte no entran en la room del otro («tiempo real»). centro, dentro de su room, no puede sentar en una mesa de `rest_norte` ni resolver a un cliente de `rest_norte`, y ese cliente no cambia («RBAC del enunciado»). |
 | **Restaurante: modo sencillo y completo** | Sí | centro: 200 en `/restaurante/rest_centro/rapido` y en `/editor`. Guarda su plano y sienta clientes por socket. |
 | **Restaurante no ve `/admin`** ni las analíticas | Sí | `/admin` y `/analiticas` → `/sin-acceso`. `/api/analiticas` y `/api/assistant` → 403. |
 | **Analítica: estadísticas de todos**, vista general | Sí | `/analiticas` → 200. `/api/analiticas` devuelve los 8 restaurantes y las 4 marcas. También tiene el mapa general y el asistente. |
@@ -226,6 +226,6 @@ de cada usuario.
 | **Analítica no opera mesas ni lista de espera** | Sí | API de clientes (GET, POST y PATCH) → 403. `rapido` y `editor` → `/sin-acceso`. Guardar el plano → «sin permiso». Socket: no entra en rooms, no puede asignar mesas ni añadir a la lista. En el plano en vivo no ve nombres. |
 | **Analítica no ve `/admin`** | Sí | `/admin` → `/sin-acceso`, y `createUserAction` → «No tienes permiso». |
 | **Múltiples roles: el gerente** (restaurante + analitica) tiene la suma y nada más | Sí | Tiene `rapido` y `editor` de `rest_centro`, `/analiticas`, `/mapa`, el asistente, la room de `rest_centro` y la sala overview. **No** tiene `rest_norte` (páginas, API GET/POST y socket), ni `/admin`, ni `createUserAction`. |
-| **Protecciones en el servidor**, no solo botones escondidos | Sí | Todo lo de arriba se prueba **sin la interfaz**: peticiones directas a páginas, API routes, server actions y eventos de Socket.IO con la cookie de cada rol. `can()` (`lib/auth/rbac.ts`) se comprueba en cada página, action, API y evento de socket. `proxy.ts` solo mira si hay cookie. |
+| **Protecciones en el servidor**, no solo botones escondidos | Sí | Todo lo de arriba se prueba **sin la interfaz**: peticiones directas a páginas, API routes, server actions y eventos de tiempo real con la cookie de cada rol. `can()` (`lib/auth/rbac.ts`) se comprueba en cada página, action, API y evento de socket. `proxy.ts` solo mira si hay cookie. |
 | **Zonas de meseros**: varias configuraciones por restaurante, una activa, cambio con un toque | Sí | «Zonas de meseros y plano por defecto»: el host de `rest_centro` activa «3 meseros» por la server action y la otra tablet recibe `waiters:changed`; analítica y norte reciben «No tienes permiso» al activar, guardar, crear o borrar, y una configuración de `rest_centro` no se activa con el id de `rest_norte`. Al sentar, el ack, el aviso y el cliente guardan el mesero. |
 | **Plano por defecto**, y la estructura la actualizan los usuarios de su restaurante | Sí | Mismo bloque: centro marca la Terraza como plano por defecto y el editor la abre; norte y analítica no pueden; una zona de otro restaurante no se puede marcar; el admin también puede. Guardar, copiar y pegar la estructura pide `editor:guardar` («Server actions del editor»). |

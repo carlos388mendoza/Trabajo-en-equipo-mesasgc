@@ -38,10 +38,10 @@ Cada punto tiene un responsable. «Equipo» es Carlos y su compañero;
 - [ ] **(Dirección)** Decidir quién tiene el rol **analitica** (estadísticas
       y mapa, solo lectura).
 
-### 2.2 Configuración del servidor (Railway)
+### 2.2 Configuración del servidor (Vercel)
 
-La aplicación vive en Railway. Estas variables se cargan en el panel de
-Railway, **nunca en el código**:
+La aplicación vive en Vercel. Estas variables se cargan en el panel de
+Vercel (entorno Production), **nunca en el código**:
 
 | Variable | Qué es | Quién la pone |
 |---|---|---|
@@ -191,13 +191,14 @@ dos formas; las dos usan las mismas reglas.
 
 *Desde la terminal* (recomendado: cada contraseña la escribe quien corre el
 comando, oculta, y no pasa por ninguna pantalla compartida). En PowerShell,
-dentro de la carpeta del proyecto y con la CLI de Railway enlazada:
+dentro de la carpeta del proyecto y y con las variables de producción en un archivo temporal (ver
+`docs/entrega-empresa.md`):
 
 ```powershell
-& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo <correo-dennys> --nombre "Denny's" --rol restaurante --marca "Denny's"
-& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo <correo-pizzahut> --nombre "Pizza Hut" --rol restaurante --marca "Pizza Hut"
-& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo <correo-kfc> --nombre "KFC" --rol restaurante --marca "KFC"
-& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo <correo-chinawok> --nombre "China Wok" --rol restaurante --marca "China Wok"
+npx dotenv-cli -e .env.produccion -- npm run create-user -- --correo <correo-dennys> --nombre "Denny's" --rol restaurante --marca "Denny's"
+npx dotenv-cli -e .env.produccion -- npm run create-user -- --correo <correo-pizzahut> --nombre "Pizza Hut" --rol restaurante --marca "Pizza Hut"
+npx dotenv-cli -e .env.produccion -- npm run create-user -- --correo <correo-kfc> --nombre "KFC" --rol restaurante --marca "KFC"
+npx dotenv-cli -e .env.produccion -- npm run create-user -- --correo <correo-chinawok> --nombre "China Wok" --rol restaurante --marca "China Wok"
 ```
 
 Cada uno muestra la base (solo el host), el resumen con los restaurantes de su marca,
@@ -493,7 +494,7 @@ así que se consultan en la página de cada proveedor el día que se decida.
 
 | Servicio | Para qué | Plan elegido | Costo mensual | Quién paga | Notas |
 |---|---|---|---|---|---|
-| Railway | Servidor donde corre la aplicación | | | | |
+| Vercel | Servidor donde corre la aplicación | | | | |
 | Turso | Base de datos y respaldos | | | | |
 | OpenRouter | Asistente de IA (opcional) | | | | Con límite de gasto (2.4) |
 | Dominio (opcional) | Dirección propia, por ejemplo `espera.grupocomidas.com` | | | | |
@@ -506,7 +507,7 @@ Las tablets y el wifi de cada restaurante no están incluidos.
 | Riesgo | Qué pasa | Qué hacemos |
 |---|---|---|
 | Se cae internet en el restaurante | La tablet dice «Sin conexión» y no guarda cambios | Pasar a la lista en papel (ver abajo) |
-| Se cae el servidor o la base | Nadie puede entrar | Papel en todos los restaurantes; el equipo revisa Railway y Turso |
+| Se cae el servidor o la base | Nadie puede entrar | Papel en todos los restaurantes; el equipo revisa Vercel y Turso |
 | Se reinicia el servidor | Se pierde el «Deshacer» pendiente; el resto de la lista queda guardada | Nada: corregir a mano si hacía falta deshacer |
 | Una tablet se descarga o se rompe | Ese host no puede usar la aplicación | Otra tablet o un teléfono con el mismo usuario; si no hay, papel |
 | Un host olvida su contraseña | No puede entrar | El administrador la restablece en `/admin` |

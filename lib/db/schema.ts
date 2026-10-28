@@ -727,8 +727,8 @@ export const waitlistUndo = sqliteTable("waitlist_undo", {
 /**
  * Los avisos de cada sala (un restaurante, o el mapa general), en orden. Las
  * pantallas preguntan cada pocos segundos «¿qué hay después del aviso N?»
- * (`lib/realtime/bus.ts`). Es lo que antes hacían las rooms de Socket.IO en la
- * memoria de un solo proceso; aquí vale con varias instancias a la vez.
+ * (`lib/realtime/bus.ts`). Hace de «rooms» por restaurante y vale con varias
+ * instancias a la vez.
  *
  * Solo se guardan unos minutos (ver `EVENT_RETENTION_MS`): una pantalla que
  * estuvo más tiempo sin conexión vuelve a cargarlo todo.
