@@ -3,7 +3,7 @@
 // /admin:
 //
 //   npm run create-user -- --correo dennys@grupocomidas.test --nombre "Denny's" --rol restaurante --marca "Denny's"
-//   railway run npm run create-user -- ...   (contra la base de producción)
+//   (contra la base de producción: ver `docs/entrega-empresa.md`)
 //
 // Argumentos (se pueden repetir o separar con comas):
 //   --correo      correo del usuario (obligatorio)

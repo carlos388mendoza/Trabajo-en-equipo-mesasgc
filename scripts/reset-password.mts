@@ -3,7 +3,7 @@
 // propio admin olvidó la suya).
 //
 //   npm run reset-password
-//   railway run npm run reset-password   (contra la base de producción)
+//   (contra la base de producción: ver `docs/entrega-empresa.md`)
 //
 // Pregunta el correo y la contraseña nueva (dos veces, sin mostrarla) en la
 // terminal de quien lo corre. A propósito NO la acepta por variables de

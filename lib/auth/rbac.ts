@@ -1,11 +1,11 @@
 // Permisos: el ÚNICO sitio que decide quién puede hacer qué.
 //
 // Todo pasa por `can(usuario, acción, restaurantId?)`: páginas, server
-// actions, API routes y Socket.IO. Si cambia una regla, cambia aquí y en
+// actions, API routes y el tiempo real. Si cambia una regla, cambia aquí y en
 // ningún otro sitio. La tabla legible está en `docs/rbac.md`.
 //
 // Funciones puras, sin base de datos ni Next: se pueden probar solas y las
-// usa igual el servidor de Socket.IO.
+// usan igual los handlers de tiempo real.
 //
 // Un usuario puede tener varios roles: sus permisos SE SUMAN. Por ejemplo,
 // "restaurante + analitica" edita solo sus restaurantes y ve las
@@ -39,13 +39,13 @@ export type Action =
   | "rapido:ver"
   /** Añadir clientes y marcarlos listos o ausentes. */
   | "rapido:modificar"
-  /** Sentar o liberar mesas (Socket.IO). */
+  /** Sentar o liberar mesas (tiempo real). */
   | "mesas:asignar"
   /** Estadísticas, vista global y por restaurante. */
   | "analiticas:ver"
   /** Asistente IA sobre las estadísticas. */
   | "asistente:usar"
-  /** Mapa general (/mapa) y la sala `overview` de Socket.IO. */
+  /** Mapa general (/mapa) y la sala `overview` del tiempo real. */
   | "mapa:ver"
   /** Plano en vivo de un restaurante, en solo lectura: estados y ocupación. */
   | "plano:ver"

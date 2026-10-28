@@ -17,7 +17,7 @@
 // Estadísticas: marcar ausente y liberar una mesa CONSERVAN la fila y sus
 // cifras; eliminar la quita (ese grupo deja de contar).
 //
-// Sin nada de Next: lo usan el servidor de Socket.IO y las pruebas.
+// Sin nada de Next: lo usan los handlers de tiempo real y las pruebas.
 
 import { and, eq, inArray, isNotNull, lt, notInArray, sql } from "drizzle-orm";
 

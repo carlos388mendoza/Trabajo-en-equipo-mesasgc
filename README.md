@@ -26,7 +26,10 @@ El workflow usa Node.js 22 y `npm ci`. Las verificaciones usan bases SQLite temp
 
 ## Despliegue
 
-La guía paso a paso para desplegar en Railway está en [`docs/despliegue.md`](docs/despliegue.md).
+La app está en Vercel + Turso. La guía de entrega a la empresa (servicios, variables,
+publicar, respaldos, usuarios, límites y transferencia de cuentas) está en
+[`docs/entrega-empresa.md`](docs/entrega-empresa.md); los detalles del despliegue, en
+[`docs/despliegue-vercel.md`](docs/despliegue-vercel.md).
 
 Para el uso real:
 
@@ -52,7 +55,7 @@ Para el uso real:
 | Base de datos | Turso |
 | ORM / migraciones | Drizzle |
 | Autenticación y roles (RBAC) | Better Auth |
-| Tiempo real | Socket.IO |
+| Tiempo real | tiempo real |
 | IA / lenguaje natural | AI SDK + OpenRouter |
 | Gestión de tareas | GitHub Issues + Projects |
 
@@ -79,7 +82,7 @@ Un usuario puede tener varios roles a la vez. Cómo está hecho: sección 14 y
 2. Editor de mesas drag & drop (`react-konva` o `dnd-kit`)
 3. Función "copiar configuración de mesas" a otro restaurante
 4. Rotación de configuraciones guardadas (navegación tipo galería)
-5. Servidor WebSocket (Socket.IO) — eventos de asignación de mesa, por "room" según restaurante
+5. Servidor WebSocket (tiempo real) — eventos de asignación de mesa, por "room" según restaurante
 6. Manejo de conflictos: bloqueo optimista (el primer evento que llega al servidor gana; el segundo recibe un error y se refresca)
 
 ### Miembro B — Modo rápido, estadísticas e IA
@@ -208,8 +211,8 @@ obligatorio para iniciar sesión (`openssl rand -base64 32`).
 **Contra una base remota (Turso) no se usa `db:push`**: los cambios de esquema
 se generan con `npm run db:generate` (quedan en `drizzle/`) y se aplican con
 `npm run db:migrate`. El catálogo de elementos del editor lo carga
-`npm run db:catalog` (solo toca `element_types`; Railway lo corre en el
-Pre-deploy). Las 4 marcas, los 8 restaurantes y una zona vacía por
+`npm run db:catalog` (solo toca `element_types`; `scripts/vercel-build.mjs` lo corre en el
+despliegue de producción). Las 4 marcas, los 8 restaurantes y una zona vacía por
 restaurante los carga `npm run db:restaurantes`: solo añade lo que falta y
 nunca crea mesas, clientes ni usuarios. El primer admin de producción se crea
 con `npm run create-admin` (sección 15).
@@ -376,7 +379,7 @@ encaje de una zona copiada dentro de otra de tamaño distinto.
 ## 10. Tiempo real y conflictos (pasos 5 y 6)
 
 `npm run dev` ya no es `next dev`: arranca `server.ts`, que sirve Next **y**
-Socket.IO en el mismo puerto (3000). `npm run dev:next` sigue existiendo por si
+tiempo real en el mismo puerto (3000). `npm run dev:next` sigue existiendo por si
 solo quieres la web, pero sin tiempo real.
 
 ### Cómo funciona
@@ -404,7 +407,7 @@ solo quieres la web, pero sin tiempo real.
 
 | Fichero | Para qué |
 | --- | --- |
-| `server.ts` | Next + Socket.IO en un solo `http.Server`. |
+| `server.ts` | Next + tiempo real en un solo `http.Server`. |
 | `lib/realtime/events.ts` | El contrato: tipos de los eventos y schemas Zod. |
 | `lib/realtime/server.ts` | Rooms y handlers. No importa nada de Next. |
 | `lib/realtime/registry.ts` | `io` en `globalThis`, para emitir desde las actions. |
@@ -415,8 +418,8 @@ solo quieres la web, pero sin tiempo real.
 
 ### Decisiones que conviene no deshacer sin pensarlo
 
-- **Un solo puerto.** Railway expone uno, y así el navegador se conecta al
-  mismo origen sin CORS. `NEXT_PUBLIC_SOCKET_URL` es opcional.
+- **Un solo origen.** El navegador pregunta siempre al mismo origen que la
+  página, sin CORS.
 - **`destroyUpgrade: false`.** Engine.io cierra al segundo cualquier WebSocket
   que no sea suyo; sin esto podría cortar el HMR de Next (`/_next/hmr`).
 - **`io` vive en `globalThis`.** Next empaqueta las server actions en otro
@@ -438,7 +441,7 @@ npm run verify:realtime
 ```
 
 Base SQLite temporal (`.verify-realtime.db`, gitignorada) con la migración real
-y un servidor Socket.IO de verdad en un puerto libre. Comprueba las reglas de
+y un servidor de tiempo real de verdad en un puerto libre. Comprueba las reglas de
 asignación y liberación, las carreras (2 y 10 hosts a por la misma mesa, un
 cliente en dos mesas a la vez), el aislamiento entre rooms, que el perdedor
 reciba el error solo él, y que el restaurante salga de la room.
@@ -487,7 +490,7 @@ El modo rápido (`/restaurante/[id]/rapido`) lee y escribe clientes de
 una nota, y marcar al grupo siguiente como listo o ausente; en pantallas
 táctiles también acepta deslizar la tarjeta a izquierda o derecha.
 
-Estas tres acciones viajan por Socket.IO (`waitlist:add`, `waitlist:resolve` y
+Estas tres acciones viajan por tiempo real (`waitlist:add`, `waitlist:resolve` y
 `waitlist:undo`) y se notifican a las tablets conectadas a la room del mismo
 restaurante. `Deshacer` revierte la última acción del local: elimina un grupo
 que acaba de agregarse o restaura el estado anterior. El registro de deshacer
@@ -496,7 +499,7 @@ vive en memoria y se reinicia al reiniciar el servidor.
 ### Modo sin conexión (requisito de la dirección)
 
 El modo sencillo sigue funcionando sin Internet. Con conexión, todo es como
-antes (Socket.IO, avisos a la room, validaciones del servidor).
+antes (tiempo real, avisos a la room, validaciones del servidor).
 
 - **Cola persistente** (`lib/offline/store.ts`, IndexedDB `tw-modo-sencillo`).
   Cada cambio se guarda **antes** de mandarlo, con `operationId` (UUID),
@@ -1026,7 +1029,7 @@ Drizzle y libSQL. No hay registro público: los usuarios los crea un admin en
      dentro de cada página, server action y API route. Lee la sesión y el
      usuario de la base, así que desactivar o quitar un rol vale al momento.
      Sin permiso: `/sin-acceso` en las páginas y 403 en las API.
-4. **Socket.IO** lee la misma cookie en el handshake (`lib/realtime/auth.ts`).
+4. **tiempo real** lee la misma cookie en el handshake (`lib/realtime/auth.ts`).
    Entrar en la room de un restaurante y cada asignación vuelven a comprobar
    el permiso.
 
@@ -1427,8 +1430,8 @@ npm run db:demo          # carga el lote (pide escribir «si»)
 npm run db:demo:borrar   # lo borra (pide escribir «BORRAR»)
 ```
 
-En producción se corre con `railway run npm run db:demo`; los pasos exactos
-están en `docs/despliegue.md`.
+En producción se corre con `npm run db:demo`; los pasos exactos
+están en `docs/entrega-empresa.md`.
 
 ### Qué carga
 
@@ -1478,7 +1481,7 @@ que se ve en la app es la etiqueta **«Demo»** en las cartas del modo sencillo.
 
 **Los datos y el sistema se quedan**: `is_demo`, `demo_batch_id`, `lib/demo`,
 `verify:demo`, y los dos comandos (`npm run db:demo` y
-`npm run db:demo:borrar`; en producción, con `railway run`). `borrarDemoData()`
+`npm run db:demo:borrar`; en producción, con las variables de producción: ver `docs/entrega-empresa.md`). `borrarDemoData()`
 (`lib/demo/delete.ts`) sigue siendo el único sitio que borra datos de
 demostración: transaccional, solo `is_demo`, y aborta sin escribir nada si algún
 dato **real** dependiera de algo de demostración. `npm run db:demo:borrar` pide

@@ -301,7 +301,7 @@ export class RealtimeClient {
     return this.request(event, payload, null) as Promise<AckOf<E>>;
   }
 
-  /** Como en Socket.IO: `timeout(ms).emit(evento, datos, (err, res) => …)` o `.emitWithAck`. */
+  /** Con acuse de recibo: `timeout(ms).emit(evento, datos, (err, res) => …)` o `.emitWithAck`. */
   timeout(ms: number) {
     return {
       emit: <E extends EventName>(event: E, payload: PayloadOf<E>, callback: AckCallback) => {

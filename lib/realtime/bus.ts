@@ -1,7 +1,7 @@
-// Registro de avisos en la base: el «Socket.IO» de cuando no hay servidor
+// Registro de avisos en la base: las «rooms» de cuando no hay servidor
 // propio (Vercel).
 //
-// Antes, un aviso («la Mesa 3 se ocupó») se mandaba a la room de Socket.IO,
+// Antes, un aviso («la Mesa 3 se ocupó») se mandaba a una room en memoria,
 // que vivía en la memoria de UN proceso. En Vercel hay varias instancias, se
 // apagan solas y no dejan conexiones abiertas más de 300 s, así que el aviso se
 // guarda aquí (`realtime_events`) y cada pantalla pregunta cada pocos segundos

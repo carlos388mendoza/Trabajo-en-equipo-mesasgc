@@ -1,7 +1,7 @@
 // Demo del tiempo real: hace de "otro host" contra un servidor ya arrancado.
 //
-// Sirve para ver la asignación en vivo mientras no exista la UI del modo
-// rápido: abre el editor en el navegador y lanza esto desde otra terminal.
+// Sirve para ver la asignación en vivo: abre el editor o el modo rápido en el
+// navegador y lanza esto desde otra terminal.
 //
 //   npm run demo:host -- sentar  <mesa> <cliente>
 //   npm run demo:host -- liberar <mesa> <cliente>
@@ -11,12 +11,10 @@
 // del restaurante `rest_centro`. Variables opcionales: URL (por defecto
 // http://localhost:3000) y RESTAURANTE (por defecto rest_centro).
 //
-// Pasa por los mismos eventos y permisos que el navegador: no toca la base de
-// datos directamente. Por eso inicia sesión primero: el socket exige una
-// sesión de Better Auth. Por defecto entra con el admin de los usuarios de
-// prueba del seed (solo desarrollo); DEMO_EMAIL y DEMO_PASSWORD lo cambian.
-
-import { io } from "socket.io-client";
+// Pasa por los mismos eventos y permisos que el navegador (`POST
+// /api/tiempo-real`): no toca la base de datos directamente. Por eso inicia
+// sesión primero. Por defecto entra con el admin de los usuarios de prueba del
+// seed (solo desarrollo); DEMO_EMAIL y DEMO_PASSWORD (o SEED_PASSWORD) lo cambian.
 
 const URL = process.env.URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
 const RESTAURANT = process.env.RESTAURANTE ?? "rest_centro";
@@ -29,7 +27,7 @@ const USAGE =
   "Uso: npm run demo:host -- sentar|liberar <mesa> <cliente>\n" +
   "     npm run demo:host -- carrera <mesa> <clienteA> <clienteB>";
 
-/** Inicia sesión y devuelve la cookie para el handshake del socket. */
+/** Inicia sesión y devuelve la cookie de sesión. */
 async function login() {
   let response;
   try {
@@ -45,29 +43,28 @@ async function login() {
   if (!response.ok) {
     throw new Error(`No se pudo iniciar sesión como ${EMAIL} (HTTP ${response.status}).`);
   }
-  return (response.headers.get("set-cookie") ?? "").split(";")[0];
+  return response.headers
+    .getSetCookie()
+    .map((c) => c.split(";")[0])
+    .join("; ");
 }
 
-let cookie;
+/** Manda un evento como lo hace el navegador y devuelve el acuse del servidor. */
+async function send(cookie, event, payload) {
+  const response = await fetch(`${URL}/api/tiempo-real`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ event, payload, restaurantId: RESTAURANT }),
+  });
+  if (!response.ok) throw new Error(`${event}: el servidor respondió HTTP ${response.status}.`);
+  return (await response.json()).ack;
+}
 
-async function host(name) {
-  cookie ??= await login();
-  const socket = io(URL, {
-    transports: ["websocket"],
-    reconnection: false,
-    extraHeaders: { cookie },
-  });
-  await new Promise((resolve, reject) => {
-    socket.once("connect", resolve);
-    socket.once("connect_error", (err) =>
-      reject(new Error(`${name}: el servidor rechazó la conexión (${err.message}).`)),
-    );
-  });
-  const join = await socket
-    .timeout(3000)
-    .emitWithAck("restaurant:join", { restaurantId: RESTAURANT });
+/** Entra a la sala del restaurante (hace falta antes de sentar o liberar). */
+async function host(name, cookie) {
+  const join = await send(cookie, "restaurant:join", { restaurantId: RESTAURANT });
   if (!join.ok) throw new Error(`${name}: ${join.error}`);
-  return socket;
+  return cookie;
 }
 
 function show(name, res) {
@@ -79,22 +76,20 @@ function show(name, res) {
 }
 
 try {
+  const cookie = await login();
   if ((mode === "sentar" || mode === "liberar") && tableId && entryA) {
-    const socket = await host("host");
+    await host("host", cookie);
     const event = mode === "sentar" ? "table:assign" : "table:release";
-    show("host", await socket.timeout(3000).emitWithAck(event, { tableId, entryId: entryA }));
-    socket.close();
+    show("host", await send(cookie, event, { tableId, entryId: entryA }));
   } else if (mode === "carrera" && tableId && entryA && entryB) {
-    const [a, b] = await Promise.all([host("host A"), host("host B")]);
+    await Promise.all([host("host A", cookie), host("host B", cookie)]);
     // Las dos peticiones salen antes de esperar a ninguna.
     const [resA, resB] = await Promise.all([
-      a.timeout(3000).emitWithAck("table:assign", { tableId, entryId: entryA }),
-      b.timeout(3000).emitWithAck("table:assign", { tableId, entryId: entryB }),
+      send(cookie, "table:assign", { tableId, entryId: entryA }),
+      send(cookie, "table:assign", { tableId, entryId: entryB }),
     ]);
     show(`host A (${entryA})`, resA);
     show(`host B (${entryB})`, resB);
-    a.close();
-    b.close();
   } else {
     console.log(USAGE);
     process.exitCode = 1;

@@ -19,6 +19,7 @@
 .env*.local
 .env.preview
 .env.vercel-preview
+.env.produccion
 .vercel/
 
 # misc

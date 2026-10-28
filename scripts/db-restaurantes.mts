@@ -7,7 +7,7 @@
 // actualiza nada, no crea mesas, clientes ni usuarios, y repetirlo no
 // duplica nada. Usa la base de TURSO_DATABASE_URL, que tiene que tener las
 // migraciones aplicadas. En producción se corre una vez con
-// `railway run npm run db:restaurantes`.
+// `npm run db:restaurantes` y las variables de producción (ver `docs/entrega-empresa.md`).
 
 import { config } from "dotenv";
 

@@ -15,11 +15,11 @@ escribe en ella) y la copia entera, esquema y filas, a un archivo SQLite
 nuevo. Al terminar enseña cuántas filas tiene cada tabla en el origen y en la
 copia: tienen que coincidir.
 
-Con la CLI de Railway (lee la base de producción de las variables del
-servicio, sin enseñarlas):
+Con las variables de producción en un archivo temporal `.env.produccion`
+(ver `docs/entrega-empresa.md`, «Comandos contra producción»):
 
 ```powershell
-& "$(npm prefix -g)\railway.cmd" run npm run db:respaldo -- C:\Respaldos\mesasgc-2026-10-12.respaldo.db
+npx dotenv-cli -e .env.produccion -- npm run db:respaldo -- C:\Respaldos\mesasgc-2026-10-12.respaldo.db
 ```
 
 - Se recomienda **uno antes de cada publicación a producción** con migraciones,
@@ -54,9 +54,9 @@ mal, se vuelve a la base anterior cambiando las mismas dos variables.
    (`aws-us-east-1`).
 3. En la base nueva, copia su **URL** (`libsql://…`) y crea un **token** de
    acceso.
-4. En Railway → servicio `Trabajo-en-equipo-mesasgc` → **Variables**, cambia
-   `TURSO_DATABASE_URL` y `TURSO_AUTH_TOKEN` por los de la base nueva. Railway
-   vuelve a desplegar solo.
+4. En Vercel → proyecto `mesasgc-demo` → **Settings → Environment Variables**
+   (entorno Production), cambia `TURSO_DATABASE_URL` y `TURSO_AUTH_TOKEN` por
+   los de la base nueva y haz **Redeploy** del último despliegue de Production.
 5. Comprueba que `/api/health` y `/login` respondan 200, que puedas entrar y
    que el plano y la lista de espera se vean bien.
 
