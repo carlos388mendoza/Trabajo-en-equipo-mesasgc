@@ -140,10 +140,10 @@ function SingleForm({ connected, onClose, onSubmit }: Omit<AddGuestSheetProps, "
         />
       </label>
       <div className="grid grid-cols-2 gap-3">
-        <label className="block text-sm font-medium text-panel-text">
-          Personas
+        <div className="block text-sm font-medium text-panel-text">
+          <span className="block">Personas</span>
           <PartySelect value={party} onChange={setParty} className="mt-1.5" />
-        </label>
+        </div>
         <label className="block text-sm font-medium text-panel-text">
           Nota (opcional)
           <input

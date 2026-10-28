@@ -43,8 +43,11 @@ export function PartySelect({
   const optionId = (index: number) => `${id}-opcion-${index}`;
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [position, setPosition] = useState<CSSProperties | null>(null);
-  const [host, setHost] = useState<HTMLElement | null>(null);
+  // La posición se guarda en un ref (no en estado) para que esté disponible
+  // de forma síncrona en el primer render tras abrir: así el portal se monta
+  // sin esperar a un segundo setState.
+  const positionRef = useRef<CSSProperties | null>(null);
+  const hostRef = useRef<HTMLElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -65,19 +68,19 @@ export function PartySelect({
     // Al menos 150 px de ancho («10 personas» en una línea) y sin salirse de la pantalla.
     const width = Math.max(r.width, 150);
     const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
-    setPosition({
+    positionRef.current = {
       position: "fixed",
       left,
       width,
       maxHeight: Math.min(wanted, room),
       ...(up ? { bottom: window.innerHeight - r.top + GAP } : { top: r.bottom + GAP }),
-    });
+    };
   }, []);
 
   const openList = () => {
     // La capa fija del panel (sin transformaciones ni scroll), o la página.
     const panel = buttonRef.current?.closest<HTMLElement>("[data-overlay-panel]");
-    setHost(panel?.parentElement ?? document.body);
+    hostRef.current = panel?.parentElement ?? document.body;
     setActiveIndex(selectedIndex);
     place();
     setOpen(true);
@@ -187,14 +190,14 @@ export function PartySelect({
         <span className="truncate">{label(selected)}</span>
         <ChevronDown aria-hidden size={16} className={`shrink-0 transition ${open ? "rotate-180" : ""}`} />
       </button>
-      {open && host && position
+      {open && positionRef.current
         ? createPortal(
             <div
               ref={listRef}
               id={listId}
               role="listbox"
               aria-label={ariaLabel || "Número de personas"}
-              style={position}
+              style={positionRef.current}
               className="z-[60] overflow-y-auto overscroll-contain rounded-2xl border border-app-border bg-panel p-1.5 text-panel-text shadow-xl"
             >
               {PARTY_OPTIONS.map((count, index) => {
@@ -221,7 +224,7 @@ export function PartySelect({
                 );
               })}
             </div>,
-            host,
+            hostRef.current ?? document.body,
           )
         : null}
     </div>
