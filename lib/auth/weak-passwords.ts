@@ -15,8 +15,16 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { account, user } from "@/lib/db/schema";
 
-/** Las que aparecen escritas en el código del repositorio (seed, pruebas, guiones). */
-export const PUBLIC_PASSWORDS: readonly string[] = ["12345abc", "12345abcd"];
+/**
+ * Las contraseñas públicas que se conocen en ESTE entorno: la del seed
+ * (`SEED_PASSWORD`) y las ya filtradas que el admin quiera vigilar
+ * (`LEAKED_PASSWORDS`, separadas por comas). Ya no hay ninguna escrita en el
+ * código del repositorio; se leen del entorno en cada uso.
+ */
+export function publicPasswords(): string[] {
+  const list = [process.env.SEED_PASSWORD, ...(process.env.LEAKED_PASSWORDS ?? "").split(",")];
+  return [...new Set(list.map((p) => (p ?? "").trim()).filter(Boolean))];
+}
 
 /** Las de siempre: las primeras que prueba cualquiera. */
 const COMMON_PASSWORDS = new Set([
@@ -36,7 +44,7 @@ const COMMON_PASSWORDS = new Set([
 export type PasswordWeakness = "publica" | "debil";
 
 export function passwordWeakness(password: string): PasswordWeakness | null {
-  if (PUBLIC_PASSWORDS.includes(password)) return "publica";
+  if (publicPasswords().includes(password)) return "publica";
   if (
     COMMON_PASSWORDS.has(password.toLowerCase()) ||
     password.length < 10 ||
@@ -57,7 +65,7 @@ export const WEAKNESS_TEXT: Record<PasswordWeakness, string> = {
 export type UserWithPublicPassword = { id: string; name: string; email: string };
 
 /**
- * Los usuarios activos cuya contraseña es una de `PUBLIC_PASSWORDS`. Compara
+ * Los usuarios activos cuya contraseña es una de `publicPasswords()`. Compara
  * contra el hash (scrypt): es lento a propósito, por eso va detrás de un
  * botón y no al cargar /admin. Uno a uno, para no acaparar el servidor.
  */
@@ -70,7 +78,7 @@ export async function findUsersWithPublicPassword(): Promise<UserWithPublicPassw
   const found: UserWithPublicPassword[] = [];
   for (const row of rows) {
     if (!row.hash) continue;
-    for (const password of PUBLIC_PASSWORDS) {
+    for (const password of publicPasswords()) {
       if (await verifyPassword({ hash: row.hash, password })) {
         found.push({ id: row.id, name: row.name, email: row.email });
         break;

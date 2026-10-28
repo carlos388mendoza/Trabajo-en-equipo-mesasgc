@@ -28,7 +28,9 @@ import { RealtimeClient } from "@/lib/realtime/client";
 const ROOT = process.cwd();
 const DB_FILE = resolve(process.env.VERIFY_AUTH_DB_FILE ?? join(ROOT, ".verify-auth.db"));
 const DIST_DIR = process.env.VERIFY_AUTH_DIST_DIR ?? ".next-verify";
-const PASSWORD = "12345abc";
+// Contraseña de prueba: la del entorno o una al azar por ejecución (el seed y los
+// procesos hijos la heredan por `SEED_PASSWORD`). No se escribe en el repositorio.
+const PASSWORD = (process.env.SEED_PASSWORD ||= `Vf-${crypto.randomUUID()}`);
 
 for (const suffix of ["", "-wal", "-shm"]) rmSync(DB_FILE + suffix, { force: true });
 
@@ -331,7 +333,7 @@ for (const [who, email] of Object.entries(USERS) as [Who, string][]) {
   const res = await login(USERS.chinawok, "contrasena-mala");
   check("login con contraseña mala se rechaza (401)", res.status === 401 && !res.cookie, `HTTP ${res.status}`);
   const signUp = await http("POST", "/api/auth/sign-up/email", {
-    body: { email: "nuevo@x.test", password: "12345abcd", name: "Nuevo" },
+    body: { email: "nuevo@x.test", password: `${PASSWORD}-x`, name: "Nuevo" },
   });
   check("no hay registro público", signUp.status >= 400, `HTTP ${signUp.status}`);
 }

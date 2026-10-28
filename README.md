@@ -1113,10 +1113,10 @@ dirección en `docs/configuracion.md`.
 ## 15. Usuarios de prueba
 
 > **Solo para desarrollo.** El seed los crea únicamente si `NODE_ENV` no es
-> `production`, y solo si no existen. Los correos y la contraseña están en
-> `scripts/seed.ts` (`TEST_PASSWORD`). El repositorio es **público**: esa
-> contraseña no se usa en producción. Si un usuario real la tiene, /admin lo
-> avisa al guardarla, con «Revisar contraseñas» y al entrar (ver
+> `production`, y solo si no existen. Los correos están en
+> `scripts/seed.ts`; la contraseña NO está en el código: sale de `SEED_PASSWORD` (en `.env.local`). El repositorio es **público**:
+> la contraseña de desarrollo no se usa en producción. Si un usuario real la tiene, /admin lo
+> avisa al guardarla y con «Revisar contraseñas», que busca `SEED_PASSWORD` y `LEAKED_PASSWORDS` (ver
 > `docs/seguridad.md`).
 
 | Usuario | Roles | Restaurantes |

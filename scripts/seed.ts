@@ -550,7 +550,11 @@ async function resetLayoutData() {
 // son cuentas de desarrollo. Por eso no se crean nunca con NODE_ENV=production.
 // ---------------------------------------------------------------------------
 
-const TEST_PASSWORD = "12345abc";
+const TEST_PASSWORD: string = process.env.SEED_PASSWORD ?? "";
+if (!TEST_PASSWORD) {
+  console.error("Falta SEED_PASSWORD: ponla en .env.local (cualquier contraseña de desarrollo). No se escribe en el código.");
+  process.exit(1);
+}
 
 const TEST_USERS: { email: string; name: string; roles: Role[]; restaurantIds: string[] }[] = [
   { email: "admin@grupocomidas.test", name: "Administrador", roles: ["admin"], restaurantIds: [] },
