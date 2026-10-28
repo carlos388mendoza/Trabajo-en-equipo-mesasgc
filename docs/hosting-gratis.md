@@ -1,4 +1,7 @@
-# Hosting gratis: opciones y plan de cambio
+# OBSOLETO — Hosting gratis: opciones y plan de cambio
+
+> **OBSOLETO.** La app se migró a Vercel Hobby. Railway queda descartado para
+> siempre. Ver `docs/despliegue-vercel.md` para los pasos actuales.
 
 Revisado el 27 de octubre de 2026. Los planes gratis cambian seguido: antes de mover nada, confirma los datos en la página de precios de cada uno.
 

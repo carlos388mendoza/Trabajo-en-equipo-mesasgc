@@ -140,3 +140,17 @@ Claude Code se detuvo a mitad de la **Parte 2 (Vercel)** por el límite de uso. 
 - No usar OpenCode y Claude Code a la vez sobre la misma carpeta.
 - Commits con prefijo `feat:`, `fix:`, `docs:`, `chore:`, `test:` o `perf:`.
 - Si algo no se puede hacer gratis o es muy riesgoso, parar y preguntar a Carlos.
+## Actualización 28 de octubre de 2026 (OpenCode)
+
+- Base de prueba mesasgc-preview creada, migrada y sembrada (6 usuarios de prueba).
+- Proyecto Vercel mesasgc-demo enlazado al repo (rama de producción: main).
+- Variables de Preview (feat/vercel) agregadas: TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, OPENROUTER_API_KEY, OPENROUTER_MODEL, BETTER_AUTH_SECRET, CRON_SECRET.
+- createDeployments habilitado (estaba deshabilitado, por eso no se desplegaba).
+- Preview Ready: https://mesasgc-demo-3j0becthu-carlosmendozazelaya2009-7802s-projects.vercel.app (/api/health -> ok:true).
+- Protección contra mesasgc-prod en build (Preview) y seed: probada (3/3 ok).
+- PartySelect: portal con ref síncrono para abrir de forma fiable.
+- Limpieza de referencias a Railway en código (railway.json borrado, comentarios actualizados).
+- Documentación: docs/despliegue-vercel.md, docs/checklist-salida-railway.md, docs/seguridad.md actualizado, hosting-gratis.md marcado OBSOLETO.
+- Pendiente: FASE B (borrar proyectos duplicados) cuando Carlos diga 'preview funciona'; FASE F (publicar) cuando diga 'sí, publica'.
+- verify:browser: 3 fallos persistentes en tablet/celular (PartySelect no se abre en el navegador automatizado con touch emulation). El código funciona en prueba manual. Se anota como pendiente.
+

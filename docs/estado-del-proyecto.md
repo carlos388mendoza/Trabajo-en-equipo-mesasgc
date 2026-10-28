@@ -4,8 +4,8 @@ _Actualizado el 5 de octubre de 2026._
 
 **Table Waitlist:** listas de espera en tiempo real para los restaurantes de
 Grupo Comidas.
-- Stack: Next.js 16, React 19, Drizzle y Turso, Better Auth, Socket.IO y
-  TypeScript.
+- Stack: Next.js 16, React 19, Drizzle y Turso, Better Auth, TypeScript.
+  Tiempo real por HTTP con sondeo (sin Socket.IO). Despliegue en Vercel Hobby.
 - Equipo: Miembro A (editor, tiempo real, conflictos y auth) y Miembro B (modo
   rápido, estadísticas e IA).
 
