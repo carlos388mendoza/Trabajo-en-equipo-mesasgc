@@ -154,3 +154,17 @@ Claude Code se detuvo a mitad de la **Parte 2 (Vercel)** por el límite de uso. 
 - Pendiente: FASE B (borrar proyectos duplicados) cuando Carlos diga 'preview funciona'; FASE F (publicar) cuando diga 'sí, publica'.
 - verify:browser: 3 fallos persistentes en tablet/celular (PartySelect no se abre en el navegador automatizado con touch emulation). El código funciona en prueba manual. Se anota como pendiente.
 
+
+## Actualización 28 de octubre de 2026 (Claude Code)
+
+- Trabajo a medias de OpenCode guardado tal cual en la rama `wip/opencode-pendiente` (no fusionar: dejaba «Revisar contraseñas» devolviendo siempre vacío).
+- Quitado el aviso rojo al iniciar sesión y su log (`app/login/actions.ts`, `components/layout/app-header.tsx`, cookie y `isPublicDeployment` en `lib/auth/weak-passwords.ts`). Se mantiene «Revisar contraseñas» en /admin y el aviso al guardar una contraseña débil. `verify:auth` ahora comprueba que ya no existe el aviso.
+- Railway eliminado por completo (ver `docs/checklist-salida-railway.md`).
+
+## Pendiente para el viernes
+
+1. Quitar las contraseñas escritas en el repositorio (seed, pruebas y guiones): usar la variable `SEED_PASSWORD`. Después, `PUBLIC_PASSWORDS` de `lib/auth/weak-passwords.ts` y «Revisar contraseñas» tendrán que adaptarse sin perder la revisión.
+2. «Eliminar cuenta» en /admin, con flechita junto a «Desactivar» (confirmación con `ConfirmDialog`, permisos en el servidor, sin borrar datos de otros).
+3. «Eliminar contraseña» en el diálogo de contraseña.
+4. Revisar los issues abiertos.
+5. Revisar el consumo de Turso del sondeo (lecturas por hora de `realtime_events`).

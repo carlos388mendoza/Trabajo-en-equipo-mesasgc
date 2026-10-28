@@ -7,14 +7,13 @@
 // Los errores se traducen a mensajes claros en español, sin decir nunca si el
 // fallo fue el correo o la contraseña (eso ayudaría a adivinar cuentas).
 
-import { cookies, headers } from "next/headers";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { APIError } from "better-auth/api";
 
 import { INACTIVE_USER_MESSAGE, getAuth } from "@/lib/auth/auth";
 import { checkLoginLimit, clientIp, recordLoginFailure, recordLoginSuccess } from "@/lib/auth/login-limit";
 import { safeNext } from "@/lib/auth/session";
-import { WEAK_PASSWORD_COOKIE, isPublicDeployment, passwordWeakness } from "@/lib/auth/weak-passwords";
 import { logServerError } from "@/lib/log";
 
 export type LoginState = { error: string | null; email: string };
@@ -41,7 +40,6 @@ export async function signInAction(_prev: LoginState, formData: FormData): Promi
   try {
     await getAuth().api.signInEmail({ body: { email, password }, headers: requestHeaders });
     await recordLoginSuccess(email);
-    await rememberWeakPassword(password);
   } catch (error) {
     if (error instanceof APIError) {
       const code = (error.body as { code?: string } | undefined)?.code;
@@ -64,25 +62,7 @@ export async function signInAction(_prev: LoginState, formData: FormData): Promi
   redirect(next ?? "/inicio");
 }
 
-/**
- * En producción, entrar con una contraseña pública (la del código) o muy
- * débil deja un aviso en el encabezado y una línea en el log, sin el correo
- * (ver `lib/auth/weak-passwords.ts`). No impide entrar.
- */
-async function rememberWeakPassword(password: string): Promise<void> {
-  if (!isPublicDeployment()) return;
-  const jar = await cookies();
-  const weakness = passwordWeakness(password);
-  if (!weakness) {
-    jar.delete(WEAK_PASSWORD_COOKIE);
-    return;
-  }
-  jar.set(WEAK_PASSWORD_COOKIE, weakness, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 12 * 60 * 60 });
-  console.warn(`[login] se entró a producción con una contraseña ${weakness === "publica" ? "que está en el código" : "muy débil"}`);
-}
-
 export async function signOutAction(): Promise<void> {
-  (await cookies()).delete(WEAK_PASSWORD_COOKIE);
   try {
     await getAuth().api.signOut({ headers: await headers() });
   } catch {

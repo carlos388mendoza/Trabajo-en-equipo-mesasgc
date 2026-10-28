@@ -1,8 +1,7 @@
-import { cookies } from "next/headers";
 import Image from "next/image";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { ChartColumn, Map as MapIcon, Settings, ShieldAlert, ShieldCheck } from "lucide-react";
+import { ChartColumn, Map as MapIcon, Settings, ShieldCheck } from "lucide-react";
 
 import { RestaurantModeLink, type ModeLinkRestaurant } from "@/components/layout/restaurant-mode-link";
 import { RestaurantSwitcher, type SwitcherRestaurant } from "@/components/layout/restaurant-switcher";
@@ -10,7 +9,6 @@ import { SignOutButton } from "@/components/layout/sign-out-button";
 import { ROLE_LABELS, can } from "@/lib/auth/rbac";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listRestaurants } from "@/lib/auth/users";
-import { WEAKNESS_TEXT, WEAK_PASSWORD_COOKIE, type PasswordWeakness } from "@/lib/auth/weak-passwords";
 import { ROLES } from "@/lib/db/enums";
 
 // Encabezado de toda la app.
@@ -23,10 +21,6 @@ type NavLink = { href: string; label: string; icon: LucideIcon };
 
 export async function AppHeader() {
   const user = await getCurrentUser();
-  // Lo deja el login en producción si se entró con una contraseña pública o
-  // muy débil (ver `lib/auth/weak-passwords.ts`).
-  const weakCookie = user ? (await cookies()).get(WEAK_PASSWORD_COOKIE)?.value : undefined;
-  const weakness = weakCookie === "publica" || weakCookie === "debil" ? (weakCookie as PasswordWeakness) : null;
 
   const links: NavLink[] = [];
   // Accesos directos a un modo del restaurante (ver `RestaurantModeLink`):
@@ -130,18 +124,6 @@ export async function AppHeader() {
           </div>
         ) : null}
       </header>
-      {weakness ? (
-        <p
-          role="alert"
-          className="flex items-center gap-2 border-b border-estado-ocupada/40 bg-estado-ocupada/10 px-4 py-2 text-sm text-app-text con-plano-inmersivo:hidden embebido:hidden"
-        >
-          <ShieldAlert aria-hidden size={18} className="shrink-0 text-estado-ocupada" />
-          <span>
-            Entraste con una contraseña que {WEAKNESS_TEXT[weakness]}. Cualquiera que la conozca puede entrar con tu usuario:
-            pide al administrador que la cambie (en Administración → «Contraseña» → «Generar otra»).
-          </span>
-        </p>
-      ) : null}
     </>
   );
 }
