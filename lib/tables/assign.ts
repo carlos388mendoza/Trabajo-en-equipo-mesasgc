@@ -1,6 +1,6 @@
 // Asignación de clientes a mesas, con bloqueo optimista (paso 6).
 //
-// No importa nada de Next ni de Socket.IO: la llaman los handlers de
+// No importa nada de Next ni de ningún servidor: la llaman los handlers de
 // `lib/realtime/server.ts` y la ejercita `scripts/verify-realtime.mts` sin
 // levantar nada.
 //

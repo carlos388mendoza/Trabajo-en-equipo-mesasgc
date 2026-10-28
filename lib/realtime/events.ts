@@ -1,4 +1,4 @@
-// Contrato de los eventos de Socket.IO entre el navegador y el servidor.
+// Contrato de los eventos de tiempo real entre el navegador y el servidor.
 //
 // Lo importan las dos puntas: `lib/realtime/server.ts` (Node) y el hook del
 // cliente. Por eso no importa nada de Node ni de React, y los datos son planos
@@ -17,7 +17,7 @@ import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
 
 export type { TableOccupancy };
 
-/** Room de Socket.IO de un restaurante: cada local solo oye lo suyo. */
+/** Room de un restaurante: cada local solo oye lo suyo. */
 export function roomFor(restaurantId: string): string {
   return `restaurant:${restaurantId}`;
 }

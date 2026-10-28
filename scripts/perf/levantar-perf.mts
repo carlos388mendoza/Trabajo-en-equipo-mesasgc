@@ -55,7 +55,6 @@ const child = spawn("npx", ["tsx", "server.ts", "--prod"], {
     NODE_ENV: "production",
     TURSO_DATABASE_URL: `file:./${DB}`,
     BETTER_AUTH_URL: `http://127.0.0.1:${PORT}`,
-    NEXT_PUBLIC_SOCKET_URL: `http://127.0.0.1:${PORT}`,
     // Sin esto, el primer login que llega a /restaurante/[id]/editor con datos
     // vivos abre un socket de producción.
     OPENROUTER_API_KEY: "",

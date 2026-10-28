@@ -2,7 +2,7 @@
 // servidor propio (`npm start`). En Vercel NO se usa: Vercel sirve el build de
 // Next directamente (ver `docs/despliegue-vercel.md`).
 //
-// Ya no lleva Socket.IO: el tiempo real va por HTTP con sondeo corto
+// El tiempo real va por HTTP con sondeo corto
 // (`app/api/tiempo-real`, `lib/realtime/client.ts`), que funciona igual aquí
 // y en Vercel. Lo que sí añade a `next dev` / `next start` es la tarea diaria
 // de retención (en Vercel la hace un cron: `app/api/cron/retencion`).

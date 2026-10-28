@@ -9,7 +9,7 @@
 //    las CARRERAS. Dos asignaciones lanzadas a la vez pasan las dos las
 //    lecturas previas (ven la mesa libre), así que lo que se comprueba es que
 //    el UPDATE condicional deje entrar a una sola.
-//  - Un servidor Socket.IO de verdad en un puerto libre, con clientes de
+//  - Un servidor HTTP de tiempo real de verdad en un puerto libre, con clientes de
 //    verdad: rooms por restaurante, que el perdedor reciba el error solo él, y
 //    que el restaurante salga de la room y no del payload.
 //  - La sala `overview` del mapa general: solo entra quien tiene `mapa:ver`,
@@ -305,7 +305,7 @@ section("Liberar una mesa");
 }
 
 // ---------------------------------------------------------------------------
-// Socket.IO de verdad
+// Servidor de tiempo real de verdad
 // ---------------------------------------------------------------------------
 
 section("Tiempo real por HTTP: salas y avisos");

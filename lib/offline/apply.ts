@@ -16,7 +16,7 @@ import type { TableStatus, WaitlistStatus } from "@/lib/db/enums";
 import type { SeatableTable } from "@/lib/tables/list";
 import type { WaitlistEntrySnapshot } from "@/lib/waitlist/quick-actions";
 
-/** Los eventos de Socket.IO que se pueden dejar en cola sin conexión. */
+/** Los eventos de tiempo real que se pueden dejar en cola sin conexión. */
 export const OFFLINE_ACTIONS = [
   "waitlist:add",
   "waitlist:add-many",

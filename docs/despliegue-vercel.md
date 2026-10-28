@@ -1,9 +1,11 @@
 # Despliegue en Vercel (pasos para Carlos)
 
 Este documento recoge los pasos que **tú** haces en la web (Vercel, Turso,
-OpenRouter, Railway, GitHub). El código ya está en la rama `feat/vercel`
-(PR #109). La app funciona en Vercel Hobby: serverless, sin Socket.IO, tiempo
-real por HTTP con sondeo, cron diario con `CRON_SECRET`.
+OpenRouter, GitHub). El código se publica desde la rama `main`. La app
+corre en Vercel: serverless, tiempo real por HTTP con sondeo, cron diario con
+`CRON_SECRET`. Para uso real de la empresa hace falta el plan Pro (Hobby es solo
+para uso no comercial; ver `docs/consumo-turso-sondeo.md`). La guía general de
+entrega está en `docs/entrega-empresa.md`.
 
 > Regla: nunca pongas tokens ni contraseñas en archivos del repo. Usa notepad
 > para pegarlos y bórralos al terminar.
@@ -55,7 +57,7 @@ Ya creada, migrada, con catálogo y usuarios de prueba. Para repetirla:
    $b = New-Object byte[] 48; [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b) | Set-Clipboard
    ```
 6. OpenRouter: crear UNA llave nueva para Vercel (con límite de gasto si se
-   puede). NO reutilizar la de Railway.
+   puede). NO reutilizar una llave anterior.
 7. En Hobby, las Previews piden iniciar sesión en Vercel para verse (SSO
    protection). Puedes desactivarla en Settings → Deployment Protection si quieres
    probar sin login.
@@ -88,21 +90,11 @@ Ya creada, migrada, con catálogo y usuarios de prueba. Para repetirla:
 6. El build migra la base solo en Production (vercel-build.mjs). Comprobar que
    no haya errores en el log del build.
 
-## E) Limpieza (solo con Production funcionando)
+## E) Limpieza
 
-1. OpenRouter: borrar la llave VIEJA (la de Railway); revisar Activity desde el
-   20 de octubre.
-2. Turso: revisar actividad de `mesasgc-prod` desde el 20 de octubre.
-3. Railway: borrar el proyecto noble-energy (Settings → Danger → Delete
-   Project); borrar tokens en Account Settings → Tokens.
-4. GitHub → Settings → Applications:
-   - Installed GitHub Apps: Railway → Configure → Uninstall.
-   - Authorized OAuth Apps: Railway → Revoke.
-   - Revisar que no haya otras apps raras con acceso al repo.
-5. GitHub → repo → Settings → Secrets and variables: borrar cualquier secreto
-   relacionado con Railway.
-6. GitHub → repo → Settings → Environments/Deployments: quitar entornos de
-   Railway si existen.
+Hecha el 28 de octubre de 2026: llaves y tokens anteriores invalidados, proyecto y
+accesos del hosting anterior eliminados, y revisión de apps con acceso al repositorio.
+Revisar de vez en cuando GitHub → Settings → Applications.
 
 ## F) Después
 
