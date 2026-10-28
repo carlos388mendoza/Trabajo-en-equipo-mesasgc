@@ -1914,7 +1914,8 @@ section("Contraseñas públicas o muy débiles");
   check("la contraseña del seed cuenta como pública", claves.passwordWeakness(PASSWORD) === "publica");
   check("  «12345678», «abcdefghijk» y una corta cuentan como débiles", ["12345678", "abcdefghijk", "Ab1-x"].every((p) => claves.passwordWeakness(p) === "debil"));
   check("  una larga y mezclada no avisa", claves.passwordWeakness("Tl7-mesas-Rq2025") === null);
-  check("  en local y en el CI (sin https) no se avisa al entrar", !claves.isPublicDeployment());
+  // El aviso rojo al iniciar sesión se quitó: ya no hay cookie ni función que lo decida.
+  check("  el login ya no deja aviso de contraseña (sin cookie ni isPublicDeployment)", !("isPublicDeployment" in claves) && !("WEAK_PASSWORD_COOKIE" in claves));
   // Los usuarios de esta prueba entran con la del seed: «Revisar contraseñas»
   // tiene que encontrarlos comparando contra el hash, y nunca devolver la clave.
   const conClavePublica = await claves.findUsersWithPublicPassword();

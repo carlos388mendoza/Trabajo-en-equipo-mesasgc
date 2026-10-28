@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-_Actualizado el 5 de octubre de 2026._
+_Actualizado el 28 de octubre de 2026: app en Vercel (https://mesasgc-demo.vercel.app), Railway eliminado por completo, aviso rojo de contraseña al entrar quitado (queda «Revisar contraseñas» en /admin). Pendiente: ver `docs/traspaso-opencode.md`._
 
 **Table Waitlist:** listas de espera en tiempo real para los restaurantes de
 Grupo Comidas.

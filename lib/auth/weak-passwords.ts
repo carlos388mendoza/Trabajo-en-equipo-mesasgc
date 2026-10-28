@@ -5,9 +5,9 @@
 // pruebas se lee en GitHub, igual que los correos de los usuarios de ejemplo.
 // Si un usuario de producción la usa, cualquiera que lea el código puede entrar
 // con sus permisos. No se prohíbe (lo decide el admin), pero se avisa en tres
-// sitios: al guardarla en /admin, al entrar a producción con ella (aviso en el
-// encabezado y una línea en el log, sin el correo) y con «Revisar contraseñas»
-// en /admin, que las comprueba contra el hash guardado.
+// sitios: al guardarla en /admin y con «Revisar contraseñas» en /admin, que las
+// comprueba contra el hash guardado. (El aviso rojo al iniciar sesión y su log
+// se quitaron el 28 de octubre de 2026.)
 
 import { verifyPassword } from "better-auth/crypto";
 import { and, eq } from "drizzle-orm";
@@ -53,18 +53,6 @@ export const WEAKNESS_TEXT: Record<PasswordWeakness, string> = {
   publica: "está escrita en el código del repositorio, que es público",
   debil: "es muy fácil de adivinar (menos de 10 caracteres, solo números o solo letras, o de las más usadas)",
 };
-
-/**
- * ¿Es la app de verdad, en internet? Producción con una URL https. En local y
- * en el CI (http://localhost) no se avisa: ahí la contraseña de desarrollo es
- * la normal y el aviso solo movería las pantallas que se miden.
- */
-export function isPublicDeployment(): boolean {
-  return process.env.NODE_ENV === "production" && (process.env.BETTER_AUTH_URL ?? "").startsWith("https://");
-}
-
-/** Cookie que deja el login para el aviso del encabezado (solo dice el tipo, nada más). */
-export const WEAK_PASSWORD_COOKIE = "tw-clave-debil";
 
 export type UserWithPublicPassword = { id: string; name: string; email: string };
 
