@@ -73,6 +73,8 @@ export const resetPasswordSchema = z
 
 export const setActiveSchema = z.object({ userId: idSchema, active: z.boolean() });
 
+export const deleteUserSchema = z.object({ userId: idSchema });
+
 /** El primer mensaje de error de Zod, para mostrarlo tal cual. */
 export function firstError(error: z.ZodError): string {
   return error.issues[0]?.message ?? "Los datos no son válidos.";
