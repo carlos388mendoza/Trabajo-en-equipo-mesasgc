@@ -347,12 +347,13 @@ function connect(cookie?: string): Promise<Client> {
 //  - hostA: admin (entra en cualquier restaurante).
 //  - hostB: rol restaurante en REST.
 //  - otro:  rol restaurante en REST_2.
+const PASSWORD = process.env.SEED_PASSWORD || `Vf-${crypto.randomUUID()}`;
 const { createUserWithPassword, setUserAccess, setUserActive } = await import("@/lib/auth/users");
 const { getAuth } = await import("@/lib/auth/auth");
 async function sessionCookie(email: string, roles: ("admin" | "restaurante" | "analitica")[], restaurantIds: string[]) {
-  await createUserWithPassword({ name: email, email, password: "12345abc", roles, restaurantIds });
+  await createUserWithPassword({ name: email, email, password: PASSWORD, roles, restaurantIds });
   const res = await getAuth().api.signInEmail({
-    body: { email, password: "12345abc" },
+    body: { email, password: PASSWORD },
     returnHeaders: true,
   });
   return res.headers.get("set-cookie")?.split(";")[0] ?? "";
@@ -1140,7 +1141,14 @@ section("Modo offline: cola, reenvíos y conflictos entre dispositivos");
   // 5. Un operationId de OTRO restaurante no sirve para leer su respuesta.
   const stolen = (await ask(otro, "waitlist:add", { ...add, operationId: addOp })) as OpAck;
   check("un operationId de otro restaurante se rechaza", !stolen.ok && !stolen.entry, stolen.error);
-  check("  y no avisa a nadie de su room", changesOtro.length === 0);
+  await settle();
+  // El contador de `otro` se creó al empezar la sección y puede recibir tarde
+  // algún aviso de una sección anterior (el sondeo es asíncrono), así que no se
+  // cuenta «cuántos llegaron» sino si llegó alguno de ESTA operación: el alta
+  // robada lleva el mismo `entryId` que el alta de la room de REST. Un aviso
+  // filtrado de verdad (de ésa o de la alta original) lo llevaría.
+  const leaked = changesOtro.filter((c) => JSON.stringify(c).includes(entryId));
+  check("  y no avisa a nadie de su room", leaked.length === 0, `${leaked.length} avisos con ese cliente`);
 
   // 6. Validación: el id de operación tiene que ser un UUID.
   const badId = await ask(hostA, "waitlist:resolve", { entryId: "off-listo", status: "ausente", operationId: "no-es-uuid" });

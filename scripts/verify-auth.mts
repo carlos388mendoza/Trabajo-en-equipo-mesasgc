@@ -28,7 +28,9 @@ import { RealtimeClient } from "@/lib/realtime/client";
 const ROOT = process.cwd();
 const DB_FILE = resolve(process.env.VERIFY_AUTH_DB_FILE ?? join(ROOT, ".verify-auth.db"));
 const DIST_DIR = process.env.VERIFY_AUTH_DIST_DIR ?? ".next-verify";
-const PASSWORD = "12345abc";
+// Contraseña de prueba: la del entorno o una al azar por ejecución (el seed y los
+// procesos hijos la heredan por `SEED_PASSWORD`). No se escribe en el repositorio.
+const PASSWORD = (process.env.SEED_PASSWORD ||= `Vf-${crypto.randomUUID()}`);
 
 for (const suffix of ["", "-wal", "-shm"]) rmSync(DB_FILE + suffix, { force: true });
 
@@ -331,7 +333,7 @@ for (const [who, email] of Object.entries(USERS) as [Who, string][]) {
   const res = await login(USERS.chinawok, "contrasena-mala");
   check("login con contraseña mala se rechaza (401)", res.status === 401 && !res.cookie, `HTTP ${res.status}`);
   const signUp = await http("POST", "/api/auth/sign-up/email", {
-    body: { email: "nuevo@x.test", password: "12345abcd", name: "Nuevo" },
+    body: { email: "nuevo@x.test", password: `${PASSWORD}-x`, name: "Nuevo" },
   });
   check("no hay registro público", signUp.status >= 400, `HTTP ${signUp.status}`);
 }
@@ -1921,6 +1923,70 @@ section("Contraseñas públicas o muy débiles");
   const conClavePublica = await claves.findUsersWithPublicPassword();
   check("«Revisar contraseñas» encuentra a los usuarios con la contraseña del código", conClavePublica.some((u) => u.email === "admin@grupocomidas.test"), `${conClavePublica.length}`);
   check("  y solo devuelve id, nombre y correo", conClavePublica.every((u) => Object.keys(u).sort().join(",") === "email,id,name"));
+}
+
+// ---------------------------------------------------------------------------
+section("Eliminar contraseña");
+// ---------------------------------------------------------------------------
+
+{
+  const usuarios = await import("@/lib/auth/users");
+  const id = await usuarios.createUserWithPassword({
+    name: "Sin clave",
+    email: "sin-clave@x.test",
+    password: `${PASSWORD}-sinclave`,
+    roles: ["restaurante"],
+    restaurantIds: [],
+  });
+  check("antes de eliminar la contraseña, entra", (await login("sin-clave@x.test", `${PASSWORD}-sinclave`)).status === 200);
+  await usuarios.clearUserPassword(id);
+  check("eliminar contraseña: ya no entra con la anterior", (await login("sin-clave@x.test", `${PASSWORD}-sinclave`)).status !== 200);
+  check("  ni con una vacía", (await login("sin-clave@x.test", "")).status !== 200);
+  check("  la cuenta sigue ahí (solo se quitó la contraseña)", (await usuarios.loadAuthUser(id)) !== null);
+  await usuarios.setUserPassword(id, `${PASSWORD}-nueva`);
+  check("  y con una contraseña nueva vuelve a entrar", (await login("sin-clave@x.test", `${PASSWORD}-nueva`)).status === 200);
+}
+
+// ---------------------------------------------------------------------------
+section("Eliminar cuenta");
+// ---------------------------------------------------------------------------
+
+{
+  const usuarios = await import("@/lib/auth/users");
+  const { db: bd } = await import("@/lib/db");
+  const { account: cuentas, user: usuariosTabla } = await import("@/lib/db/schema");
+  const { eq: igual } = await import("drizzle-orm");
+  const id = await usuarios.createUserWithPassword({
+    name: "Para borrar",
+    email: "para-borrar@x.test",
+    password: `${PASSWORD}-borrar`,
+    roles: ["restaurante"],
+    restaurantIds: [],
+  });
+  check("la cuenta de prueba existe antes de eliminarla", (await usuarios.loadAuthUser(id)) !== null);
+  await usuarios.deleteUser(id);
+  check("eliminar cuenta: el usuario ya no existe", (await usuarios.loadAuthUser(id)) === null);
+  check("  y su contraseña se borró con él", (await bd.select().from(cuentas).where(igual(cuentas.userId, id))).length === 0);
+  let rechazo = "";
+  try {
+    await usuarios.deleteUser(id);
+  } catch (e) {
+    rechazo = e instanceof usuarios.UserInputError ? e.message : "otro error";
+  }
+  check("  eliminar uno que no existe se rechaza", rechazo === "Ese usuario no existe.", rechazo);
+  // Si solo queda un administrador activo, no se puede borrar.
+  const admins = (await usuarios.listUsers()).filter((u) => u.active && u.roles.includes("admin"));
+  // Directo a la base (no `setUserActive`): así no se cierran las sesiones de esos admins.
+  for (const extra of admins.slice(1)) await bd.update(usuariosTabla).set({ active: false }).where(igual(usuariosTabla.id, extra.id));
+  let ultimo = "";
+  try {
+    await usuarios.deleteUser(admins[0].id);
+  } catch (e) {
+    ultimo = e instanceof usuarios.UserInputError ? e.message : "otro error";
+  }
+  for (const extra of admins.slice(1)) await bd.update(usuariosTabla).set({ active: true }).where(igual(usuariosTabla.id, extra.id));
+  check("  no se elimina al único administrador activo", /único administrador/.test(ultimo), ultimo);
+  check("  y ese administrador sigue ahí", (await usuarios.loadAuthUser(admins[0].id)) !== null);
 }
 
 // ---------------------------------------------------------------------------

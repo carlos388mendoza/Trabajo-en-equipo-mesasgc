@@ -107,7 +107,7 @@ Ya creada, migrada, con catálogo y usuarios de prueba. Para repetirla:
 ## F) Después
 
 - Todos deben volver a iniciar sesión (secreto nuevo).
-- Cambiar la contraseña `12345abc` del admin (y de analítica) desde `/admin` y
+- Cambiar la contraseña de desarrollo (la que estuvo escrita en el repo) del admin (y de analítica) desde `/admin` y
   pulsar "Revisar contraseñas".
 - Copiar planos si siguen vacíos: desde `/restaurante/rest_tgu_kfc/editor`
   "Copiar plano" → KFC Río Piedras; desde `rest_tgu_pizza` → Pizza Hut Norte;

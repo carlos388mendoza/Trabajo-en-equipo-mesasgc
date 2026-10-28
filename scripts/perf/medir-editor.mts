@@ -72,7 +72,7 @@ if (!["127.0.0.1", "localhost", "[::1]"].includes(new URL(BASE_URL).hostname)) {
   process.exit(2);
 }
 /** La contraseña del seed de desarrollo (`scripts/seed.ts`). No se acepta otra. */
-const DEV_PASSWORD = "12345abc";
+const DEV_PASSWORD = process.env.SEED_PASSWORD ?? "";
 const CHROME = process.env.CHROME_PATH ?? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const OUT_DIR = "perf-resultados";
 const ETIQUETA = process.env.PERF_ETIQUETA ?? "editor";

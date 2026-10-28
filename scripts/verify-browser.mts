@@ -48,7 +48,8 @@ const DB_FILE = resolve(ROOT, ".verify-browser.db");
 // Dist dir propio: si usara el mismo que `verify:auth` (`.next-verify`), Next
 // se niega a levantar dos dev servers a la vez y el script se queda sin arrancar.
 const DIST_DIR = process.env.VERIFY_BROWSER_DIST_DIR ?? ".next-browser";
-const PASSWORD = process.env.VERIFY_BROWSER_PASSWORD ?? "12345abc";
+// Al azar por ejecución si no hay SEED_PASSWORD; el seed hijo la hereda.
+const PASSWORD = (process.env.SEED_PASSWORD ||= `Vf-${crypto.randomUUID()}`);
 const SHOTS = join(DIR, "shots");
 const PERFIL = join(DIR, "chrome-profile");
 

@@ -8,7 +8,7 @@
 // iniciar sesión (`better-auth/crypto`), y se guardan en `account` con el
 // proveedor "credential", que es donde Better Auth las busca.
 
-import { and, asc, eq, inArray, notInArray } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, notInArray } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
 
 import { db } from "@/lib/db";
@@ -258,4 +258,40 @@ export async function listRestaurants({ includeInactive = false } = {}): Promise
     active: r.active,
     brand: r.brandId && r.brandName && r.brandColor ? { id: r.brandId, name: r.brandName, accentColor: r.brandColor } : null,
   }));
+}
+
+/**
+ * Borra la cuenta: usuario, contraseña, sesiones, roles y restaurantes (todo
+ * en cascada). Lo que esa persona hizo (quién sentó o resolvió a un cliente)
+ * se guarda como texto sin llave foránea, así que el historial no se toca.
+ * No se puede borrar al único administrador activo: nadie más podría entrar a
+ * /admin a arreglarlo.
+ */
+export async function deleteUser(userId: string): Promise<void> {
+  const target = await loadAuthUser(userId);
+  if (!target) throw new UserInputError("Ese usuario no existe.");
+  if (target.roles.includes("admin")) {
+    const otherAdmins = await db
+      .select({ id: user.id })
+      .from(userRoles)
+      .innerJoin(user, eq(user.id, userRoles.userId))
+      .where(and(eq(userRoles.role, "admin"), eq(user.active, true), ne(user.id, userId)));
+    if (otherAdmins.length === 0) {
+      throw new UserInputError("No se puede eliminar al único administrador activo.");
+    }
+  }
+  await db.delete(user).where(eq(user.id, userId));
+}
+
+/**
+ * Quita la contraseña de la cuenta: sin contraseña no se puede entrar (no hay
+ * otro método de acceso) hasta que un admin ponga una nueva. Cierra sus
+ * sesiones. La cuenta, sus roles y su historial siguen ahí.
+ */
+export async function clearUserPassword(userId: string): Promise<void> {
+  await db
+    .update(account)
+    .set({ password: null, updatedAt: new Date() })
+    .where(and(eq(account.userId, userId), eq(account.providerId, CREDENTIAL_PROVIDER)));
+  await revokeSessions(userId);
 }

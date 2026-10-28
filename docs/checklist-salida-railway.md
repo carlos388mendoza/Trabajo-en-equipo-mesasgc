@@ -23,7 +23,7 @@ Casillas para ir marcando. Solo marcar cuando esté hecho y verificado.
 
 ## F) Después
 - [ ] Todos vuelven a iniciar sesión
-- [ ] Cambiar contraseña 12345abc del admin y analítica
+- [ ] Cambiar la contraseña de desarrollo (la que estuvo en el repo) del admin y analítica
 - [ ] Pulsar "Revisar contraseñas" en /admin
 - [ ] Copiar planos vacíos (KFC, Pizza Hut Norte)
 - [ ] Mandar link nuevo de Vercel a Grupo Comidas

@@ -14,6 +14,7 @@
 import { useState, useTransition } from "react";
 import {
   CircleAlert,
+  ChevronDown,
   CircleCheck,
   Eye,
   EyeOff,
@@ -22,6 +23,7 @@ import {
   Search,
   ShieldAlert,
   Shuffle,
+  Trash2,
   UserCheck,
   UserPlus,
   UserX,
@@ -31,6 +33,8 @@ import {
   type AdminResult,
   checkPublicPasswordsAction,
   createUserAction,
+  deleteUserAction,
+  removePasswordAction,
   resetPasswordAction,
   setActiveAction,
   updateAccessAction,
@@ -67,6 +71,9 @@ export function AdminUsers({ users, restaurants, currentUserId, minPasswordLengt
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<{ id: string; mode: "access" | "password" } | null>(null);
   const [confirming, setConfirming] = useState<Confirmation | null>(null);
+  // Menú de la flechita junto a Desactivar (id del usuario) y el correo que se escribe para confirmar.
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [typedEmail, setTypedEmail] = useState("");
   const restaurantName = new Map(restaurants.map((r) => [r.id, r.name]));
 
   const submit = (work: () => Promise<AdminResult>, onOk?: () => void) => {
@@ -174,6 +181,46 @@ export function AdminUsers({ users, restaurants, currentUserId, minPasswordLengt
                   >
                     {u.active ? "Desactivar" : "Activar"}
                   </Button>
+                  <div
+                    className="relative"
+                    onBlur={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget)) setMenuFor(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") setMenuFor(null);
+                    }}
+                  >
+                    <button
+                      type="button"
+                      aria-label={`Más acciones para ${u.name}`}
+                      aria-haspopup="menu"
+                      aria-expanded={menuFor === u.id}
+                      disabled={pending || isMe}
+                      title={isMe ? "No puedes eliminar tu propia cuenta" : undefined}
+                      onClick={() => setMenuFor(menuFor === u.id ? null : u.id)}
+                      className="flex h-11 w-9 items-center justify-center rounded-xl text-panel-text hover:bg-app-border/60 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <ChevronDown aria-hidden size={18} strokeWidth={ICON_STROKE} />
+                    </button>
+                    {menuFor === u.id ? (
+                      <div role="menu" className="absolute right-0 top-12 z-20 min-w-44 rounded-xl border border-app-border bg-panel p-1 shadow-lg">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          autoFocus
+                          onClick={() => {
+                            setMenuFor(null);
+                            setTypedEmail("");
+                            setConfirming({ kind: "eliminar", user: u });
+                          }}
+                          className="flex h-11 w-full items-center gap-2 rounded-lg px-3 text-sm font-medium text-estado-ocupada hover:bg-estado-ocupada/10"
+                        >
+                          <Trash2 aria-hidden size={18} strokeWidth={ICON_STROKE} />
+                          Eliminar cuenta
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 
@@ -194,6 +241,7 @@ export function AdminUsers({ users, restaurants, currentUserId, minPasswordLengt
                   minPasswordLength={minPasswordLength}
                   pending={pending}
                   onCancel={() => setEditing(null)}
+                  onRemove={isMe ? null : () => setConfirming({ kind: "quitar-clave", user: u })}
                   onSubmit={(password, confirmPassword) =>
                     setConfirming({ kind: "contrasena", user: u, isMe, password, confirmPassword, step: 1 })
                   }
@@ -253,13 +301,61 @@ export function AdminUsers({ users, restaurants, currentUserId, minPasswordLengt
           <p>No podrá entrar y se cerrarán sus sesiones abiertas. Puedes volver a activarlo cuando quieras.</p>
         </ConfirmDialog>
       ) : null}
+      {confirming?.kind === "quitar-clave" ? (
+        <ConfirmDialog
+          title={`¿Eliminar la contraseña de ${confirming.user.name} (${confirming.user.email})?`}
+          danger
+          pending={pending}
+          confirmLabel="Eliminar contraseña"
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            const target = confirming.user;
+            setConfirming(null);
+            submit(() => removePasswordAction({ userId: target.id }), () => setEditing(null));
+          }}
+        >
+          <p>No podrá entrar y se cerrarán sus sesiones abiertas. La cuenta y su historial se quedan; le pones una contraseña nueva cuando quieras.</p>
+        </ConfirmDialog>
+      ) : null}
+
+      {confirming?.kind === "eliminar" ? (
+        <ConfirmDialog
+          title={`¿Eliminar la cuenta de ${confirming.user.name}?`}
+          danger
+          pending={pending}
+          confirmLabel="Eliminar cuenta"
+          confirmDisabled={typedEmail.trim().toLowerCase() !== confirming.user.email.toLowerCase()}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            const target = confirming.user;
+            setConfirming(null);
+            submit(() => deleteUserAction({ userId: target.id }));
+          }}
+        >
+          <p>
+            Se borra la cuenta, su contraseña y sus accesos. No se puede deshacer (para que vuelva, hay que crear el usuario de nuevo).
+            El historial de clientes no se toca. Si solo quieres que no entre, usa «Desactivar».
+          </p>
+          <label className="mt-3 block text-sm font-medium">
+            Escribe <span className="font-mono">{confirming.user.email}</span> para confirmar
+            <input
+              value={typedEmail}
+              onChange={(e) => setTypedEmail(e.target.value)}
+              autoComplete="off"
+              className={INPUT}
+            />
+          </label>
+        </ConfirmDialog>
+      ) : null}
     </section>
   );
 }
 
 type Confirmation =
   | { kind: "contrasena"; user: AuthUser; isMe: boolean; password: string; confirmPassword: string; step: 1 | 2 }
-  | { kind: "desactivar"; user: AuthUser };
+  | { kind: "desactivar"; user: AuthUser }
+  | { kind: "eliminar"; user: AuthUser }
+  | { kind: "quitar-clave"; user: AuthUser };
 
 // ---------------------------------------------------------------------------
 
@@ -361,11 +457,14 @@ function PasswordForm({
   pending,
   onCancel,
   onSubmit,
+  onRemove,
 }: {
   minPasswordLength: number;
   pending: boolean;
   onCancel: () => void;
   onSubmit: (password: string, confirmPassword: string) => void;
+  /** «Eliminar contraseña»; `null` para uno mismo (te dejaría fuera). */
+  onRemove: (() => void) | null;
 }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -410,6 +509,14 @@ function PasswordForm({
         Antes de guardar se pide confirmación. Al guardarla se cierran las sesiones abiertas de este usuario.
       </p>
       <FormButtons pending={pending} onCancel={onCancel} submitLabel="Restablecer contraseña" disabled={!ready} />
+      {onRemove ? (
+        <div className="border-t border-app-border pt-3">
+          <Button icon={Trash2} danger disabled={pending} onClick={onRemove}>
+            Eliminar contraseña
+          </Button>
+          <p className="mt-1 text-xs text-panel-muted">Sin contraseña no puede entrar hasta que le pongas una nueva.</p>
+        </div>
+      ) : null}
     </form>
   );
 }

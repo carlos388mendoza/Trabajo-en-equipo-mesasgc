@@ -21,7 +21,8 @@ import { io } from "socket.io-client";
 const URL = process.env.URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
 const RESTAURANT = process.env.RESTAURANTE ?? "rest_centro";
 const EMAIL = process.env.DEMO_EMAIL ?? "admin@grupocomidas.test";
-const PASSWORD = process.env.DEMO_PASSWORD ?? "12345abc";
+const PASSWORD = process.env.DEMO_PASSWORD ?? process.env.SEED_PASSWORD;
+if (!PASSWORD) throw new Error("Define DEMO_PASSWORD o SEED_PASSWORD (la del seed de desarrollo).");
 const [mode, tableId, entryA, entryB] = process.argv.slice(2);
 
 const USAGE =
