@@ -1926,6 +1926,28 @@ section("Contraseñas públicas o muy débiles");
 }
 
 // ---------------------------------------------------------------------------
+section("Eliminar contraseña");
+// ---------------------------------------------------------------------------
+
+{
+  const usuarios = await import("@/lib/auth/users");
+  const id = await usuarios.createUserWithPassword({
+    name: "Sin clave",
+    email: "sin-clave@x.test",
+    password: `${PASSWORD}-sinclave`,
+    roles: ["restaurante"],
+    restaurantIds: [],
+  });
+  check("antes de eliminar la contraseña, entra", (await login("sin-clave@x.test", `${PASSWORD}-sinclave`)).status === 200);
+  await usuarios.clearUserPassword(id);
+  check("eliminar contraseña: ya no entra con la anterior", (await login("sin-clave@x.test", `${PASSWORD}-sinclave`)).status !== 200);
+  check("  ni con una vacía", (await login("sin-clave@x.test", "")).status !== 200);
+  check("  la cuenta sigue ahí (solo se quitó la contraseña)", (await usuarios.loadAuthUser(id)) !== null);
+  await usuarios.setUserPassword(id, `${PASSWORD}-nueva`);
+  check("  y con una contraseña nueva vuelve a entrar", (await login("sin-clave@x.test", `${PASSWORD}-nueva`)).status === 200);
+}
+
+// ---------------------------------------------------------------------------
 section("Eliminar cuenta");
 // ---------------------------------------------------------------------------
 
