@@ -696,6 +696,11 @@ async function main() {
   if (process.env.NODE_ENV === "production") {
     throw new Error("El seed es solo para desarrollo y no se corre con NODE_ENV=production.");
   }
+  // Protección extra: nunca sembrar contra la base de producción.
+  const seedDbUrl = process.env.TURSO_DATABASE_URL || "";
+  if (seedDbUrl.includes("mesasgc-prod")) {
+    throw new Error("PROTECCIÓN: TURSO_DATABASE_URL contiene \"mesasgc-prod\". El seed se niega a correr contra la base de producción.");
+  }
 
   console.log("Sembrando base de datos...");
   if (reset) await resetLayoutData();

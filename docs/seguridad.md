@@ -144,3 +144,14 @@ Si un usuario de producción tiene esa contraseña, cualquiera que lea el códig
 3. Pulsa **Restablecer contraseña**. Sus sesiones abiertas se cierran solas.
 4. Pásasela a la persona por un canal privado, nunca por el chat del grupo.
 5. Para comprobarlo, pulsa **Revisar contraseñas**: debe decir que ningún usuario usa una del código.
+
+
+## Incidente de Railway (octubre 2026)
+
+- El 20-21 de octubre de 2026 Railway confirm� acceso a variables de entorno de clientes.
+- Todas las llaves que estuvieron en Railway se consideran EXPUESTAS: token de Turso de mesasgc-prod, llave de OpenRouter y BETTER_AUTH_SECRET.
+- Las llaves se rotaron v�a la web UI de Railway (la CLI estaba bloqueada por App Control de Windows).
+- La app se migr� a Vercel Hobby. Railway queda descartado para siempre.
+- Pasos de limpieza final: ver docs/checklist-salida-railway.md.
+- Las migraciones solo corren en Production (build de Vercel). Nunca db:push ni seed en producci�n.
+

@@ -1,13 +1,15 @@
-// Servidor propio: Next y Socket.IO en el mismo proceso y el mismo puerto.
+// Servidor para desarrollo local (`npm run dev`) y para alojar la app en un
+// servidor propio (`npm start`). En Vercel NO se usa: Vercel sirve el build de
+// Next directamente (ver `docs/despliegue-vercel.md`).
 //
-// Hace falta porque Socket.IO necesita un `http.Server` de larga vida al que
-// engancharse, y `next start` / `next dev` no lo exponen. Es el patrón de la
-// guía oficial (`node_modules/next/dist/docs/01-app/02-guides/custom-server.md`).
-// Esa guía avisa de que no se puede combinar con `output: "standalone"`: no lo
-// activéis en `next.config.mjs`.
+// Ya no lleva Socket.IO: el tiempo real va por HTTP con sondeo corto
+// (`app/api/tiempo-real`, `lib/realtime/client.ts`), que funciona igual aquí
+// y en Vercel. Lo que sí añade a `next dev` / `next start` es la tarea diaria
+// de retención (en Vercel la hace un cron: `app/api/cron/retencion`).
 //
-// Un solo puerto a propósito: Railway expone uno (`PORT`), y así el navegador
-// se conecta al socket en el mismo origen que la página, sin CORS.
+// Es el patrón de la guía oficial
+// (`node_modules/next/dist/docs/01-app/02-guides/custom-server.md`), que avisa
+// de que no se puede combinar con `output: "standalone"`.
 //
 // Se ejecuta con tsx (`npm run dev`, `npm start`), que respeta los alias `@/`
 // del tsconfig. No pasa por el compilador de Next.
@@ -26,21 +28,18 @@ async function main() {
 
   // Cuando una server action redirige (el login, cerrar sesión), Next pide la
   // página de destino a su propio servidor para mandarla en la misma
-  // respuesta. Sin esta variable arma esa URL con el protocolo que manda el
-  // proxy de Railway (`x-forwarded-proto: https`) y el puerto interno, que
-  // habla http: el TLS falla («SSL wrong version number», «failed to get
-  // redirect response») y cae a una redirección normal, con un viaje más.
+  // respuesta. Sin esta variable, detrás de un proxy con https, arma esa URL
+  // con `x-forwarded-proto: https` y el puerto interno, que habla http: el TLS
+  // falla y cae a una redirección normal, con un viaje más.
   // `next start` la fija igual (`next/dist/server/lib/start-server.js`); un
   // servidor propio como este tiene que hacerlo a mano. Es por loopback: no
   // sale del contenedor.
   process.env.__NEXT_PRIVATE_ORIGIN ??= `http://localhost:${port}`;
 
   const { default: next } = await import("next");
-  const { attachRealtime } = await import("@/lib/realtime/server");
 
   const httpServer = createServer();
-  // `httpServer` le deja a Next engancharse a los upgrades para su HMR. Solo
-  // atiende los suyos; los de `/socket.io/` los deja pasar.
+  // `httpServer` le deja a Next engancharse a los upgrades para su HMR.
   const app = next({ dev: !prod, port, httpServer });
   const handle = app.getRequestHandler();
 
@@ -51,12 +50,8 @@ async function main() {
   httpServer.on("request", (req, res) => {
     void handle(req, res);
   });
-  const io = attachRealtime(httpServer);
-
   httpServer.listen(port, () => {
-    console.log(
-      `> Table Waitlist en http://localhost:${port} (${prod ? "producción" : "desarrollo"}, Socket.IO activo)`,
-    );
+    console.log(`> Table Waitlist en http://localhost:${port} (${prod ? "producción" : "desarrollo"})`);
   });
 
   // Retención del historial de clientes (/admin → «Configuración»; por
@@ -78,11 +73,8 @@ async function main() {
     setInterval(runRetention, 24 * 60 * 60 * 1000).unref();
   }
 
-  // Railway manda SIGTERM al redesplegar: cerrar los sockets deja que los
-  // clientes reconecten al servidor nuevo en vez de esperar un timeout.
-  // `io.close` también cierra el `httpServer`.
   const shutdown = () => {
-    void io.close(() => process.exit(0));
+    httpServer.close(() => process.exit(0));
   };
   process.once("SIGTERM", shutdown);
   process.once("SIGINT", shutdown);

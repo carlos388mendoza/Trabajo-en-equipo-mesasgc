@@ -37,13 +37,14 @@ process.env.BETTER_AUTH_URL = "http://localhost:3000";
 
 const { applyAllMigrations } = await import("./migrations.mts");
 const { eq, inArray } = await import("drizzle-orm");
-const { io: ioClient } = await import("socket.io-client");
+const { RealtimeClient } = await import("@/lib/realtime/client");
 const { db } = await import("@/lib/db");
 const { elementTypes, restaurants, tableLayouts, tables, waitlistEntries } = await import(
   "@/lib/db/schema"
 );
 const { assignTable, releaseTable } = await import("@/lib/tables/assign");
-const { attachRealtime } = await import("@/lib/realtime/server");
+const { handleRealtimeGet, handleRealtimePost } = await import("@/lib/realtime/http");
+const { allowedRooms } = await import("@/lib/realtime/handlers");
 const { emitToRestaurant } = await import("@/lib/realtime/registry");
 const { emitOverview } = await import("@/lib/realtime/overview");
 const { getCounters, getRestaurantCounters, averageWaitMinutes, waitLevel } = await import("@/lib/map/counters");
@@ -307,26 +308,38 @@ section("Liberar una mesa");
 // Socket.IO de verdad
 // ---------------------------------------------------------------------------
 
-section("Socket.IO: rooms y avisos");
+section("Tiempo real por HTTP: salas y avisos");
 
-const httpServer = createServer();
-const io = attachRealtime(httpServer);
+// La misma puerta que `app/api/tiempo-real/route.ts` (`lib/realtime/http.ts`),
+// servida sin Next: un servidor HTTP mínimo que pasa cada petición a esas
+// funciones. Así se prueba lo que corre en Vercel, con varias «pantallas»
+// (clientes) que preguntan cada 40 ms en vez de cada 2 s.
+const httpServer = createServer(async (req, res) => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(req.headers)) if (typeof value === "string") headers.set(name, value);
+  const request = new Request(`http://localhost${req.url}`, { method: req.method, headers, body: req.method === "POST" ? Buffer.concat(chunks) : undefined });
+  const response = req.method === "POST" ? await handleRealtimePost(request) : await handleRealtimeGet(request);
+  res.writeHead(response.status, { "content-type": "application/json" });
+  res.end(await response.text());
+});
 await new Promise<void>((r) => httpServer.listen(0, r));
 const url = `http://localhost:${(httpServer.address() as AddressInfo).port}`;
 
-type Client = ReturnType<typeof ioClient>;
+type Client = InstanceType<typeof RealtimeClient>;
 type AnyAck = { ok: boolean; error?: string };
 
 /** Conecta con la cookie de sesión de `cookie` (o sin ella). */
 function connect(cookie?: string): Promise<Client> {
   return new Promise((res, rej) => {
-    const c = ioClient(url, {
-      transports: ["websocket"],
-      reconnection: false,
-      extraHeaders: cookie ? { cookie } : {},
-    });
+    const c = new RealtimeClient({ baseUrl: url, headers: cookie ? { cookie } : {}, fastMs: 40, slowMs: 40, maxBackoffMs: 200 });
     c.once("connect", () => res(c));
-    c.once("connect_error", rej);
+    c.once("connect_error", (err) => {
+      c.disconnect();
+      rej(err);
+    });
+    c.connect();
   });
 }
 
@@ -360,12 +373,12 @@ const cookieAnalitica = await sessionCookie("analitica@verify.test", ["analitica
   check("sin sesión, el socket no conecta", rejected);
 }
 async function ask(c: Client, event: string, payload: unknown): Promise<AnyAck> {
-  return c.timeout(3000).emitWithAck(event, payload);
+  return (await c.timeout(3000).emitWithAck(event as "restaurant:join", payload as never)) as AnyAck;
 }
 /** Cuenta los avisos que recibe un cliente. */
 function counter(c: Client, event: string) {
   const got: unknown[] = [];
-  c.on(event, (p: unknown) => got.push(p));
+  c.on(event as "table:assigned", ((p: unknown) => got.push(p)) as never);
   return got;
 }
 const settle = () => new Promise((r) => setTimeout(r, 300));
@@ -374,7 +387,7 @@ const hostA = await connect(cookieA);
 const hostB = await connect(cookieB);
 const otro = await connect(cookieOtro);
 const analitica = await connect(cookieAnalitica);
-check("cuatro clientes conectados por WebSocket", hostA.connected && hostB.connected && otro.connected && analitica.connected);
+check("cuatro clientes conectados (HTTP con sondeo)", hostA.connected && hostB.connected && otro.connected && analitica.connected);
 
 {
   // Un host no entra en la room de otro restaurante.
@@ -939,7 +952,7 @@ async function resolveViaDb(id: string) {
 
 {
   // Un cliente fabricado que no manda ack no tumba el servidor.
-  hostA.emit("table:assign", { tableId: "m2", entryId: "pepa" });
+  hostA.emit("table:assign", { tableId: "m2", entryId: "pepa" } as never);
   await settle();
   check("un evento sin ack no rompe el servidor", hostA.connected);
   // Se deshace para que no afecte a lo siguiente.
@@ -998,9 +1011,9 @@ async function resolveViaDb(id: string) {
   // Lo que usan las server actions: emitir por `globalThis`, sin handler.
   const layoutA = counter(hostA, "layout:updated");
   const layoutOtro = counter(otro, "layout:updated");
-  emitToRestaurant(REST, "layout:updated", { layoutId: "layout-1", version: 7 });
+  await emitToRestaurant(REST, "layout:updated", { layoutId: "layout-1", version: 7 });
   await settle();
-  check("emitToRestaurant llega a la room por globalThis", layoutA.length === 1);
+  check("emitToRestaurant llega al restaurante (por la base, sin servidor propio)", layoutA.length === 1);
   check("  y no a otros restaurantes", layoutOtro.length === 0);
 }
 
@@ -1008,7 +1021,7 @@ async function resolveViaDb(id: string) {
   // Un socket está en un solo restaurante: cambiar sale del anterior.
   await ask(hostA, "restaurant:join", { restaurantId: REST_2 });
   const layoutA = counter(hostA, "layout:updated");
-  emitToRestaurant(REST, "layout:updated", { layoutId: "layout-1", version: 8 });
+  await emitToRestaurant(REST, "layout:updated", { layoutId: "layout-1", version: 8 });
   await settle();
   check("cambiar de restaurante sale de la room anterior", layoutA.length === 0);
 }
@@ -1023,12 +1036,12 @@ async function resolveViaDb(id: string) {
   const varios = await connect(cookieVarios);
   check("un host con dos restaurantes entra en el primero", (await ask(varios, "restaurant:join", { restaurantId: REST })).ok);
   const layouts = counter(varios, "layout:updated");
-  emitToRestaurant(REST, "layout:updated", { layoutId: "layout-1", version: 20 });
+  await emitToRestaurant(REST, "layout:updated", { layoutId: "layout-1", version: 20 });
   await settle();
   check("  y recibe sus avisos", layouts.length === 1);
   check("  cambia al segundo", (await ask(varios, "restaurant:join", { restaurantId: REST_2 })).ok);
-  emitToRestaurant(REST, "layout:updated", { layoutId: "layout-1", version: 21 });
-  emitToRestaurant(REST_2, "layout:updated", { layoutId: "layout-2", version: 5 });
+  await emitToRestaurant(REST, "layout:updated", { layoutId: "layout-1", version: 21 });
+  await emitToRestaurant(REST_2, "layout:updated", { layoutId: "layout-2", version: 5 });
   await settle();
   check("  deja de recibir los del primero y recibe los del segundo", layouts.length === 2 && (layouts[1] as { layoutId: string }).layoutId === "layout-2");
   const added = (await ask(varios, "waitlist:add", { customerName: "Cliente del segundo", partySize: 2 })) as AnyAck & { entry?: { id: string } };
@@ -1291,7 +1304,7 @@ const COUNTER_KEYS = ["averageArrivedAt", "restaurantId", "tablesOccupied", "tab
   const got = counter(analitica, "overview:counters");
   await emitOverview(REST_2);
   await settle();
-  check("emitOverview llega a la sala por globalThis", got.length === 1 && (got[0] as { restaurantId?: string }).restaurantId === REST_2);
+  check("emitOverview llega a la sala del mapa (por la base)", got.length === 1 && (got[0] as { restaurantId?: string }).restaurantId === REST_2);
 }
 
 {
@@ -1344,7 +1357,7 @@ const COUNTER_KEYS = ["averageArrivedAt", "restaurantId", "tablesOccupied", "tab
   await emitOverview(REST);
   await settle();
   check("sin mapa:ver ya no recibe contadores", got.length === 0 && gotAdmin.length === 2, `${got.length}/${gotAdmin.length}`);
-  check("  y sale de la sala overview", !(await io.in("overview").fetchSockets()).some((s) => s.data.userId === session!.user.id));
+  check("  y ya no puede leer la sala del mapa general", (await allowedRooms({ userId: session!.user.id }, { overview: true })).length === 0);
 }
 
 {
@@ -1425,7 +1438,7 @@ section("Zonas de meseros: quién atiende al sentar, y el cambio de configuraci�
     // Cambio de configuración: los clientes nuevos se apuntan al mesero nuevo.
     const cambios = counter(hostA, "waiters:changed");
     const activada = await activateWaiterConfig({ restaurantId: REST, configId: tres.config.id });
-    emitToRestaurant(REST, "waiters:changed", { activeConfigId: tres.config.id });
+    await emitToRestaurant(REST, "waiters:changed", { activeConfigId: tres.config.id });
     await settle();
     check("se activa «3 meseros» con una llamada", activada.ok && (await listWaiterConfigs(REST)).find((c) => c.isActive)?.id === tres.config.id);
     check("  la room recibe «waiters:changed» con la activa", (cambios.at(-1) as { activeConfigId?: string } | undefined)?.activeConfigId === tres.config.id);
@@ -1631,7 +1644,7 @@ hostA.close();
 hostB.close();
 otro.close();
 analitica.close();
-await new Promise<void>((r) => io.close(() => r()));
+await new Promise<void>((r) => httpServer.close(() => r()));
 
 // ---------------------------------------------------------------------------
 

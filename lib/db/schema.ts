@@ -721,6 +721,58 @@ export const waitlistUndo = sqliteTable("waitlist_undo", {
 });
 
 // ---------------------------------------------------------------------------
+// Tiempo real sin servidor propio (Vercel): registro de avisos
+// ---------------------------------------------------------------------------
+
+/**
+ * Los avisos de cada sala (un restaurante, o el mapa general), en orden. Las
+ * pantallas preguntan cada pocos segundos «¿qué hay después del aviso N?»
+ * (`lib/realtime/bus.ts`). Es lo que antes hacían las rooms de Socket.IO en la
+ * memoria de un solo proceso; aquí vale con varias instancias a la vez.
+ *
+ * Solo se guardan unos minutos (ver `EVENT_RETENTION_MS`): una pantalla que
+ * estuvo más tiempo sin conexión vuelve a cargarlo todo.
+ */
+export const realtimeEvents = sqliteTable(
+  "realtime_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    /** `r:<restaurantId>` o `overview` (ver `roomFor`). */
+    room: text("room").notNull(),
+    event: text("event").notNull(),
+    /** Los argumentos del aviso, en JSON. */
+    payload: text("payload").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => [index("realtime_events_room_idx").on(t.room, t.id), index("realtime_events_created_idx").on(t.createdAt)],
+);
+
+// ---------------------------------------------------------------------------
+// Intentos fallidos de inicio de sesión
+// ---------------------------------------------------------------------------
+
+/**
+ * Un intento fallido por fila, con el correo y la IP (ver
+ * `lib/auth/login-limit.ts`). En la base y no en memoria: en Vercel cada
+ * petición puede caer en una instancia distinta.
+ */
+export const loginFailures = sqliteTable(
+  "login_failures",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    email: text("email").notNull(),
+    ip: text("ip").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [
+    index("login_failures_email_idx").on(t.email, t.createdAt),
+    index("login_failures_ip_idx").on(t.ip, t.createdAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Relaciones (para el API `db.query.*`)
 // ---------------------------------------------------------------------------
 

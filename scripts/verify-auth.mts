@@ -23,7 +23,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs
 import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 
-import { io as ioClient, type Socket } from "socket.io-client";
+import { RealtimeClient } from "@/lib/realtime/client";
 
 const ROOT = process.cwd();
 const DB_FILE = resolve(process.env.VERIFY_AUTH_DB_FILE ?? join(ROOT, ".verify-auth.db"));
@@ -818,23 +818,25 @@ if (planId) {
 }
 
 // ---------------------------------------------------------------------------
-// Socket.IO
+// Tiempo real (HTTP con sondeo)
 // ---------------------------------------------------------------------------
 
-section("Socket.IO");
+section("Tiempo real");
 
-function connect(cookie?: string): Promise<Socket | null> {
+type Client = InstanceType<typeof RealtimeClient>;
+
+function connect(cookie?: string): Promise<Client | null> {
   return new Promise((res) => {
-    const socket = ioClient(BASE, {
-      transports: ["websocket"],
-      reconnection: false,
-      extraHeaders: cookie ? { cookie } : {},
+    const c = new RealtimeClient({ baseUrl: BASE, headers: cookie ? { cookie } : {}, fastMs: 40, slowMs: 40, maxBackoffMs: 200 });
+    c.once("connect", () => res(c));
+    c.once("connect_error", () => {
+      c.disconnect();
+      res(null);
     });
-    socket.once("connect", () => res(socket));
-    socket.once("connect_error", () => res(null));
+    c.connect();
   });
 }
-async function emit(socket: Socket, event: string, payload: unknown): Promise<{ ok: boolean; error?: string }> {
+async function emit(socket: Client, event: string, payload: unknown): Promise<{ ok: boolean; error?: string }> {
   return socket.timeout(5000).emitWithAck(event, payload);
 }
 
@@ -1875,15 +1877,22 @@ section("Límite de intentos fallidos de inicio de sesión");
 
   // 4. Las reglas, directamente (también las usa el formulario de /login).
   const limite = await import("@/lib/auth/login-limit");
-  limite.resetLoginLimitForTests();
+  // Los fallos están en la base, no en la memoria del servidor: este proceso
+  // (otra «instancia») ve el bloqueo que se apuntó el servidor de la prueba.
+  // En Vercel es igual con varias instancias a la vez.
+  check("el bloqueo vale desde otra instancia (está en la base, no en memoria)", (await limite.checkLoginLimit("dennys@grupocomidas.test", "203.0.113.9")).blocked);
+  await limite.resetLoginLimitForTests();
   const t0 = 1_000_000;
-  for (let i = 0; i < 4; i += 1) limite.recordLoginFailure("a@b.test", "10.0.0.1", t0 + i);
-  check("4 fallos todavía no bloquean", !limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + 10).blocked);
-  limite.recordLoginFailure("a@b.test", "10.0.0.1", t0 + 5);
-  check("el 5.º sí bloquea ese correo", limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + 10).blocked);
-  check("  pasados 15 minutos se desbloquea solo", !limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + limite.LOGIN_WINDOW_MS + 10).blocked);
-  limite.recordLoginSuccess("a@b.test");
-  check("entrar bien borra los fallos de ese correo", !limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + 20).blocked);
+  for (let i = 0; i < 4; i += 1) await limite.recordLoginFailure("a@b.test", "10.0.0.1", t0 + i);
+  check("4 fallos todavía no bloquean", !(await limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + 10)).blocked);
+  await limite.recordLoginFailure("a@b.test", "10.0.0.1", t0 + 5);
+  check("el 5.º sí bloquea ese correo", (await limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + 10)).blocked);
+  check("  pasados 15 minutos se desbloquea solo", !(await limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + limite.LOGIN_WINDOW_MS + 10)).blocked);
+  await limite.recordLoginSuccess("a@b.test");
+  check("entrar bien borra los fallos de ese correo", !(await limite.checkLoginLimit("a@b.test", "10.0.0.1", t0 + 20)).blocked);
+  for (let i = 0; i < 30; i += 1) await limite.recordLoginFailure(`ip-${i}@b.test`, "10.0.0.2", t0 + i);
+  check("30 fallos desde una IP la bloquean (directo)", (await limite.checkLoginLimit("otro@b.test", "10.0.0.2", t0 + 40)).blocked);
+  await limite.resetLoginLimitForTests();
   check("una IP falsa (texto raro) no se guarda tal cual", limite.clientIp(new Headers({ "x-forwarded-for": "<script>" })) === "desconocida");
 
   // Los logs nunca imprimen datos personales ni secretos.

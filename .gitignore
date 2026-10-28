@@ -17,6 +17,9 @@
 .env
 .env.local
 .env*.local
+.env.preview
+.env.vercel-preview
+.vercel/
 
 # misc
 .DS_Store
@@ -57,3 +60,5 @@ local.db-shm
 .perf-editor.db*
 /perf-resultados/
 .lamina-paleta/
+.vercel
+.env*

@@ -27,12 +27,12 @@ export async function POST(request: Request) {
     // Sin cuerpo legible: Better Auth contestará el error; se limita por IP.
   }
   const ip = clientIp(request.headers);
-  const limit = checkLoginLimit(email, ip);
+  const limit = await checkLoginLimit(email, ip);
   if (limit.blocked) {
     return Response.json({ code: "TOO_MANY_ATTEMPTS", message: limit.message }, { status: 429 });
   }
   const response = await handler(request);
-  if (response.status === 401) recordLoginFailure(email, ip);
-  else if (response.ok) recordLoginSuccess(email);
+  if (response.status === 401) await recordLoginFailure(email, ip);
+  else if (response.ok) await recordLoginSuccess(email);
   return response;
 }
