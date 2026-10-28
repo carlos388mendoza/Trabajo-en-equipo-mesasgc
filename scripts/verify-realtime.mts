@@ -347,12 +347,13 @@ function connect(cookie?: string): Promise<Client> {
 //  - hostA: admin (entra en cualquier restaurante).
 //  - hostB: rol restaurante en REST.
 //  - otro:  rol restaurante en REST_2.
+const PASSWORD = process.env.SEED_PASSWORD || `Vf-${crypto.randomUUID()}`;
 const { createUserWithPassword, setUserAccess, setUserActive } = await import("@/lib/auth/users");
 const { getAuth } = await import("@/lib/auth/auth");
 async function sessionCookie(email: string, roles: ("admin" | "restaurante" | "analitica")[], restaurantIds: string[]) {
-  await createUserWithPassword({ name: email, email, password: "12345abc", roles, restaurantIds });
+  await createUserWithPassword({ name: email, email, password: PASSWORD, roles, restaurantIds });
   const res = await getAuth().api.signInEmail({
-    body: { email, password: "12345abc" },
+    body: { email, password: PASSWORD },
     returnHeaders: true,
   });
   return res.headers.get("set-cookie")?.split(";")[0] ?? "";
