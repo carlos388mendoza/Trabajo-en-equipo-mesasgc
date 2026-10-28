@@ -34,6 +34,7 @@ import {
   checkPublicPasswordsAction,
   createUserAction,
   deleteUserAction,
+  removePasswordAction,
   resetPasswordAction,
   setActiveAction,
   updateAccessAction,
@@ -240,6 +241,7 @@ export function AdminUsers({ users, restaurants, currentUserId, minPasswordLengt
                   minPasswordLength={minPasswordLength}
                   pending={pending}
                   onCancel={() => setEditing(null)}
+                  onRemove={isMe ? null : () => setConfirming({ kind: "quitar-clave", user: u })}
                   onSubmit={(password, confirmPassword) =>
                     setConfirming({ kind: "contrasena", user: u, isMe, password, confirmPassword, step: 1 })
                   }
@@ -299,6 +301,23 @@ export function AdminUsers({ users, restaurants, currentUserId, minPasswordLengt
           <p>No podrá entrar y se cerrarán sus sesiones abiertas. Puedes volver a activarlo cuando quieras.</p>
         </ConfirmDialog>
       ) : null}
+      {confirming?.kind === "quitar-clave" ? (
+        <ConfirmDialog
+          title={`¿Eliminar la contraseña de ${confirming.user.name} (${confirming.user.email})?`}
+          danger
+          pending={pending}
+          confirmLabel="Eliminar contraseña"
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            const target = confirming.user;
+            setConfirming(null);
+            submit(() => removePasswordAction({ userId: target.id }), () => setEditing(null));
+          }}
+        >
+          <p>No podrá entrar y se cerrarán sus sesiones abiertas. La cuenta y su historial se quedan; le pones una contraseña nueva cuando quieras.</p>
+        </ConfirmDialog>
+      ) : null}
+
       {confirming?.kind === "eliminar" ? (
         <ConfirmDialog
           title={`¿Eliminar la cuenta de ${confirming.user.name}?`}
@@ -335,7 +354,8 @@ export function AdminUsers({ users, restaurants, currentUserId, minPasswordLengt
 type Confirmation =
   | { kind: "contrasena"; user: AuthUser; isMe: boolean; password: string; confirmPassword: string; step: 1 | 2 }
   | { kind: "desactivar"; user: AuthUser }
-  | { kind: "eliminar"; user: AuthUser };
+  | { kind: "eliminar"; user: AuthUser }
+  | { kind: "quitar-clave"; user: AuthUser };
 
 // ---------------------------------------------------------------------------
 
@@ -437,11 +457,14 @@ function PasswordForm({
   pending,
   onCancel,
   onSubmit,
+  onRemove,
 }: {
   minPasswordLength: number;
   pending: boolean;
   onCancel: () => void;
   onSubmit: (password: string, confirmPassword: string) => void;
+  /** «Eliminar contraseña»; `null` para uno mismo (te dejaría fuera). */
+  onRemove: (() => void) | null;
 }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -486,6 +509,14 @@ function PasswordForm({
         Antes de guardar se pide confirmación. Al guardarla se cierran las sesiones abiertas de este usuario.
       </p>
       <FormButtons pending={pending} onCancel={onCancel} submitLabel="Restablecer contraseña" disabled={!ready} />
+      {onRemove ? (
+        <div className="border-t border-app-border pt-3">
+          <Button icon={Trash2} danger disabled={pending} onClick={onRemove}>
+            Eliminar contraseña
+          </Button>
+          <p className="mt-1 text-xs text-panel-muted">Sin contraseña no puede entrar hasta que le pongas una nueva.</p>
+        </div>
+      ) : null}
     </form>
   );
 }

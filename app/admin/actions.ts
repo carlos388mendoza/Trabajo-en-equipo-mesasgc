@@ -23,6 +23,7 @@ import {
 import { guardAction } from "@/lib/auth/session";
 import {
   UserInputError,
+  clearUserPassword,
   createUserWithPassword,
   deleteUser,
   loadAuthUser,
@@ -143,5 +144,21 @@ export async function deleteUserAction(raw: unknown): Promise<AdminResult> {
   return run(async () => {
     await deleteUser(target.id);
     return `Cuenta de ${target.email} eliminada.`;
+  });
+}
+
+export async function removePasswordAction(raw: unknown): Promise<AdminResult> {
+  const guard = await guardAction("usuarios:gestionar");
+  if (!guard.ok) return guard;
+  const parsed = deleteUserSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: firstError(parsed.error) };
+  if (parsed.data.userId === guard.user.id) {
+    return { ok: false, error: "No puedes eliminar tu propia contraseña: te quedarías fuera." };
+  }
+  const target = await loadAuthUser(parsed.data.userId);
+  if (!target) return { ok: false, error: "Ese usuario no existe." };
+  return run(async () => {
+    await clearUserPassword(target.id);
+    return `Contraseña de ${target.email} eliminada: no puede entrar hasta que le pongas una nueva. Sus sesiones se cerraron.`;
   });
 }

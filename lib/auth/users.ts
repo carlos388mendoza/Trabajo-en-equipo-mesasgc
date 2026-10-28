@@ -282,3 +282,16 @@ export async function deleteUser(userId: string): Promise<void> {
   }
   await db.delete(user).where(eq(user.id, userId));
 }
+
+/**
+ * Quita la contraseña de la cuenta: sin contraseña no se puede entrar (no hay
+ * otro método de acceso) hasta que un admin ponga una nueva. Cierra sus
+ * sesiones. La cuenta, sus roles y su historial siguen ahí.
+ */
+export async function clearUserPassword(userId: string): Promise<void> {
+  await db
+    .update(account)
+    .set({ password: null, updatedAt: new Date() })
+    .where(and(eq(account.userId, userId), eq(account.providerId, CREDENTIAL_PROVIDER)));
+  await revokeSessions(userId);
+}
