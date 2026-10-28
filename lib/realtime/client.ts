@@ -7,8 +7,15 @@
 // instancias. En su lugar:
 //   - cada acción es un POST a `/api/tiempo-real` (la respuesta es el «ack»);
 //   - los avisos de las demás pantallas se guardan en la base y este cliente
-//     pregunta cada `fastMs` (2 s) con la pestaña visible, y cada `slowMs`
-//     (15 s) en segundo plano: «¿qué hay después del aviso N?».
+//     pregunta cada `fastMs` (2 s) con la pestaña visible: «¿qué hay después
+//     del aviso N?». Para gastar menos (cada pregunta son ~10 consultas):
+//       · con la pestaña oculta o la pantalla bloqueada NO pregunta; al volver
+//         pregunta al instante y, si estuvo oculta `resyncAfterHiddenMs` (1 min)
+//         o más, recarga el estado completo (avisa «connect» como tras una caída);
+//       · sin actividad se espacia poco a poco: tras `quietAfter` (15) vueltas
+//         seguidas sin avisos suma `quietStepMs` (1 s) por vuelta hasta `slowMs`
+//         (15 s). Vuelve a `fastMs` al llegar un aviso remoto o al hacer algo
+//         aquí (cualquier POST).
 //
 // Reconexión: si una pregunta falla, pasa a «disconnect» y reintenta cada
 // vez más espaciado (2, 4, 8, 15 s). Cuando vuelve, avisa «connect» otra vez:
@@ -36,8 +43,14 @@ export type RealtimeClientOptions = {
   headers?: Record<string, string>;
   /** Cada cuánto pregunta con la pantalla visible. */
   fastMs?: number;
-  /** Cada cuánto pregunta en segundo plano. */
+  /** Lo más espaciado que llega a preguntar cuando no pasa nada (sin actividad). */
   slowMs?: number;
+  /** Vueltas seguidas sin avisos antes de empezar a espaciar. */
+  quietAfter?: number;
+  /** Cuánto se suma a la espera por cada vuelta tranquila más. */
+  quietStepMs?: number;
+  /** Tras estar oculta tanto tiempo (o más), al volver recarga el estado completo. */
+  resyncAfterHiddenMs?: number;
   /** Tope del reintento tras un fallo. */
   maxBackoffMs?: number;
 };
@@ -54,6 +67,12 @@ export class RealtimeClient {
   private readonly fastMs: number;
   private readonly slowMs: number;
   private readonly maxBackoffMs: number;
+  private readonly quietAfter: number;
+  private readonly quietStepMs: number;
+  private readonly resyncAfterHiddenMs: number;
+  private quietPolls = 0;
+  private hiddenSince: number | null = null;
+  private forceResync = false;
   private readonly listeners = new Map<string, Set<Listener>>();
   private active = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -63,7 +82,18 @@ export class RealtimeClient {
   private overview = false;
   private polling = false;
   private readonly onVisible = () => {
-    if (typeof document !== "undefined" && document.visibilityState === "visible") this.schedule(0);
+    if (typeof document === "undefined" || !this.active) return;
+    if (document.visibilityState === "visible") {
+      if (this.hiddenSince !== null && Date.now() - this.hiddenSince >= this.resyncAfterHiddenMs) this.forceResync = true;
+      this.hiddenSince = null;
+      this.quietPolls = 0;
+      this.schedule(0);
+    } else {
+      // Oculta o bloqueada: se deja de preguntar hasta que vuelva.
+      if (this.hiddenSince === null) this.hiddenSince = Date.now();
+      if (this.timer) clearTimeout(this.timer);
+      this.timer = null;
+    }
   };
 
   constructor(options: RealtimeClientOptions = {}) {
@@ -72,6 +102,9 @@ export class RealtimeClient {
     this.fastMs = options.fastMs ?? 2_000;
     this.slowMs = options.slowMs ?? 15_000;
     this.maxBackoffMs = options.maxBackoffMs ?? 15_000;
+    this.quietAfter = options.quietAfter ?? 15;
+    this.quietStepMs = options.quietStepMs ?? 1_000;
+    this.resyncAfterHiddenMs = options.resyncAfterHiddenMs ?? 60_000;
   }
 
   on<E extends keyof AllEvents>(event: E, listener: AllEvents[E]): this {
@@ -109,7 +142,14 @@ export class RealtimeClient {
   connect(): this {
     if (this.active) return this;
     this.active = true;
-    if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onVisible);
+    this.quietPolls = 0;
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", this.onVisible);
+      if (document.visibilityState !== "visible") {
+        this.hiddenSince = Date.now();
+        return this;
+      }
+    }
     this.schedule(0);
     return this;
   }
@@ -138,10 +178,18 @@ export class RealtimeClient {
     this.timer = setTimeout(() => void this.poll(), ms);
   }
 
-  private nextDelay(): number {
+  /** Cuánto esperar para la próxima pregunta; `null` = no preguntar (pantalla oculta). */
+  private nextDelay(): number | null {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return null;
     if (this.failures > 0) return Math.min(this.maxBackoffMs, this.fastMs * 2 ** (this.failures - 1));
-    const hidden = typeof document !== "undefined" && document.visibilityState !== "visible";
-    return hidden ? this.slowMs : this.fastMs;
+    const extra = Math.max(0, this.quietPolls - this.quietAfter) * this.quietStepMs;
+    return Math.min(Math.max(this.slowMs, this.fastMs), this.fastMs + extra);
+  }
+
+  /** Algo pasó aquí (un POST): vuelve al ritmo rápido y pregunta pronto. */
+  private noteActivity(): void {
+    this.quietPolls = 0;
+    if (this.active && this.connected && !this.polling && this.timer && this.nextDelay() !== null) this.schedule(this.fastMs);
   }
 
   private async poll(): Promise<void> {
@@ -179,7 +227,9 @@ export class RealtimeClient {
       const wasConnected = this.connected;
       this.failures = 0;
       if (!listening && this.cursor === null) this.cursor = data.cursor;
-      if (!wasConnected || data.reset) {
+      if (!wasConnected || data.reset || this.forceResync) {
+        this.forceResync = false;
+        this.quietPolls = 0;
         // Primera vez, vuelta tras una caída, o avisos perdidos: las pantallas
         // vuelven a entrar y recargan (su «connect» lo hace).
         // Lo perdido no se repasa aviso por aviso: la pantalla recarga entero.
@@ -187,6 +237,7 @@ export class RealtimeClient {
         this.connected = true;
         this.fire("connect", []);
       } else {
+        this.quietPolls = data.events.length > 0 ? 0 : this.quietPolls + 1;
         for (const { event, args } of data.events) this.fire(event, args);
         if (listening) this.cursor = data.cursor;
       }
@@ -199,12 +250,14 @@ export class RealtimeClient {
       this.fire("connect_error", [err instanceof Error ? err : new Error(String(err))]);
     } finally {
       this.polling = false;
-      this.schedule(this.nextDelay());
+      const delay = this.nextDelay();
+      if (delay !== null) this.schedule(delay);
     }
   }
 
   /** Manda un evento y espera la respuesta del servidor (o falla a los `ms`). */
   private async request(event: string, payload: unknown, ms: number | null): Promise<unknown> {
+    this.noteActivity();
     const controller = new AbortController();
     const timer = ms === null ? null : setTimeout(() => controller.abort(), ms);
     try {

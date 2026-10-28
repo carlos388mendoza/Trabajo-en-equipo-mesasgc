@@ -1648,6 +1648,115 @@ section("Liberar y limpiar: acciones en grupo, primero liberar y luego eliminar,
   await db.delete(waitlistEntries).where(entre(waitlistEntries.id, ["lim-espera-vieja", "lim-listo-viejo", "lim-espera-nueva", "lim-sentado-viejo", "lim-sentado-nuevo", "lim-ajeno"]));
 }
 
+// ---------------------------------------------------------------------------
+section("Ahorros del sondeo");
+// ---------------------------------------------------------------------------
+
+{
+  // Esperas por condición (no por tiempo fijo): la prueba avanza en cuanto se cumple.
+  const waitFor = async (cond: () => boolean, ms = 5000) => {
+    const end = Date.now() + ms;
+    while (!cond() && Date.now() < end) await new Promise((r) => setTimeout(r, 10));
+    return cond();
+  };
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // 1. Los permisos reutilizan el usuario ya cargado en la petición.
+  const { identifyRequest, canJoinRestaurant } = await import("@/lib/realtime/auth");
+  const ident = await identifyRequest(new Headers({ cookie: cookieB }));
+  check("identifyRequest devuelve el usuario ya cargado", ident?.user?.email === "rest1@verify.test");
+  const fantasma = { id: "no-existe", name: "x", email: "x@x.test", active: true, roles: ["admin" as const], restaurantIds: [] as string[] };
+  check("los permisos usan ese usuario sin leerlo otra vez de la base", (await canJoinRestaurant({ userId: "no-existe", user: fantasma }, REST)) === true);
+  check("  sin usuario cargado lo leen de la base (uno que no existe no entra)", (await canJoinRestaurant({ userId: "no-existe" }, REST)) === false);
+
+  // 2. cookieCache: tope de 5 min y cortes inmediatos donde importa.
+  const opts = (getAuth() as unknown as { options: { session?: { cookieCache?: { enabled?: boolean; maxAge?: number } } } }).options;
+  const maxAge = opts.session?.cookieCache?.maxAge ?? Number.POSITIVE_INFINITY;
+  check("cookieCache activa y con tope de 5 minutos o menos", opts.session?.cookieCache?.enabled === true && maxAge <= 300, String(maxAge));
+  const { deleteUser } = await import("@/lib/auth/users");
+  async function fullCookie(email: string) {
+    const id = await createUserWithPassword({ name: email, email, password: PASSWORD, roles: ["restaurante"], restaurantIds: [REST] });
+    const res = await getAuth().api.signInEmail({ body: { email, password: PASSWORD }, returnHeaders: true });
+    return { id, cookie: res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ") };
+  }
+  const c1 = await fullCookie("cache1@verify.test");
+  check("el inicio de sesión deja la cookie de caché", c1.cookie.includes("session_data"));
+  check("  con la cookie completa entra", (await identifyRequest(new Headers({ cookie: c1.cookie })))?.userId === c1.id);
+  await setUserActive(c1.id, false);
+  check("desactivar corta al instante aunque la caché siga vigente", (await identifyRequest(new Headers({ cookie: c1.cookie }))) === null);
+  const c2 = await fullCookie("cache2@verify.test");
+  check("  la cuenta nueva entra con su cookie completa", (await identifyRequest(new Headers({ cookie: c2.cookie })))?.userId === c2.id);
+  await deleteUser(c2.id);
+  check("eliminar la cuenta corta al instante aunque la caché siga vigente", (await identifyRequest(new Headers({ cookie: c2.cookie }))) === null);
+
+  // 3. El cliente: pausa con la pantalla oculta, espaciado sin actividad y vuelta al ritmo rápido.
+  const quietCookie = (await fullCookie("quiet@verify.test")).cookie;
+  const polls: number[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    if (headers.cookie === quietCookie && String(input).includes("desde=")) polls.push(Date.now());
+    return realFetch(input, init);
+  }) as typeof fetch;
+  const visibility = new Set<() => void>();
+  const fakeDocument = {
+    visibilityState: "visible" as "visible" | "hidden",
+    addEventListener: (_: string, l: () => void) => void visibility.add(l),
+    removeEventListener: (_: string, l: () => void) => void visibility.delete(l),
+  };
+  (globalThis as { document?: unknown }).document = fakeDocument;
+  const setVisible = (v: "visible" | "hidden") => {
+    fakeDocument.visibilityState = v;
+    for (const l of [...visibility]) l();
+  };
+  const lastGap = () => (polls.length >= 2 ? polls[polls.length - 1] - polls[polls.length - 2] : 0);
+
+  const q = new RealtimeClient({ baseUrl: url, headers: { cookie: quietCookie }, fastMs: 20, slowMs: 300, quietAfter: 3, quietStepMs: 40, resyncAfterHiddenMs: 150, maxBackoffMs: 200 });
+  await new Promise<void>((res) => {
+    q.once("connect", () => res());
+    q.connect();
+  });
+  check("el cliente de prueba entra a su room", (await ask(q, "restaurant:join", { restaurantId: REST })).ok);
+  let connects = 0;
+  q.on("connect", () => (connects += 1));
+  const remote = counter(q, "waitlist:changed");
+
+  check("sin actividad, el sondeo se espacia poco a poco", await waitFor(() => lastGap() >= 200), `${lastGap()} ms`);
+  const base = remote.length;
+  await ask(hostA, "waitlist:add", { customerName: "Aviso para el cliente tranquilo", partySize: 2, notes: "" });
+  check("  un aviso remoto llega aunque esté espaciado", await waitFor(() => remote.length > base));
+  check("  y tras el aviso vuelve al ritmo rápido", await waitFor(() => lastGap() > 0 && lastGap() <= 120), `${lastGap()} ms`);
+
+  await waitFor(() => lastGap() >= 200);
+  await ask(q, "restaurant:join", { restaurantId: REST });
+  check("  hacer algo aquí (un POST) también vuelve al ritmo rápido", await waitFor(() => lastGap() > 0 && lastGap() <= 120), `${lastGap()} ms`);
+
+  // Oculta: no pregunta.
+  setVisible("hidden");
+  await sleep(100);
+  const parados = polls.length;
+  await sleep(500);
+  check("con la pantalla oculta o bloqueada no pregunta", polls.length === parados, `${polls.length - parados} preguntas`);
+  check("  y aun así puede mandar acciones", (await ask(q, "restaurant:join", { restaurantId: REST })).ok);
+  const antes = connects;
+  setVisible("visible");
+  check("al volver pregunta al instante", await waitFor(() => polls.length > parados, 2000));
+  check("  y tras un rato oculta recarga el estado completo (connect)", await waitFor(() => connects > antes, 3000));
+
+  // Una ausencia corta no recarga todo.
+  const tras = connects;
+  setVisible("hidden");
+  await sleep(20);
+  setVisible("visible");
+  const desde = polls.length;
+  await waitFor(() => polls.length >= desde + 3, 3000);
+  check("  una ausencia corta no recarga entero", connects === tras, `${connects - tras}`);
+
+  q.close();
+  globalThis.fetch = realFetch;
+  delete (globalThis as { document?: unknown }).document;
+}
+
 hostA.close();
 hostB.close();
 otro.close();
