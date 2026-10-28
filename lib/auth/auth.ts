@@ -59,6 +59,16 @@ function createAuth() {
         active: { type: "boolean", required: false, defaultValue: true, input: false },
       },
     },
+    session: {
+      // Caché firmada en una cookie: durante 60 s el sondeo no consulta la sesión
+      // en la base (ahorra 2 de ~10 consultas por pregunta). Costo en seguridad:
+      // lo que revoca la base (cerrar sesión desde otro dispositivo, cambiar o
+      // eliminar la contraseña) puede tardar hasta 60 s en cortar una cookie ya
+      // copiada. Desactivar o eliminar la cuenta corta al instante, porque `active`
+      // y el usuario se leen de la base en cada petición (`identifyRequest`,
+      // `getCurrentUser`). Tope acordado: 5 minutos; no subir de ahí.
+      cookieCache: { enabled: true, maxAge: 60 },
+    },
     databaseHooks: {
       session: {
         create: {

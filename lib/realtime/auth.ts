@@ -11,11 +11,22 @@
 
 import { getAuth } from "@/lib/auth/auth";
 import { can } from "@/lib/auth/rbac";
-import { loadAuthUser } from "@/lib/auth/users";
+import { type AuthUser, loadAuthUser } from "@/lib/auth/users";
 
 export type SocketIdentity = {
   userId: string;
+  /**
+   * El usuario ya cargado en ESTA petición (`identifyRequest`). Los permisos
+   * lo reutilizan en vez de volver a leerlo de la base en cada comprobación
+   * (el sondeo preguntaba por él 2 veces en cada vuelta). Vale solo lo que dura
+   * la petición; sin él, se lee de la base como antes.
+   */
+  user?: AuthUser;
 };
+
+function userOf(identity: SocketIdentity): Promise<AuthUser | null> | AuthUser {
+  return identity.user ?? loadAuthUser(identity.userId);
+}
 
 /**
  * Quién hace una petición de tiempo real (`app/api/tiempo-real`): la misma
@@ -26,7 +37,7 @@ export async function identifyRequest(headers: Headers): Promise<SocketIdentity 
   if (!result) return null;
   const current = await loadAuthUser(result.user.id);
   if (!current || !current.active) return null;
-  return { userId: current.id };
+  return { userId: current.id, user: current };
 }
 
 /**
@@ -37,7 +48,7 @@ export async function canJoinRestaurant(
   identity: SocketIdentity,
   restaurantId: string,
 ): Promise<boolean> {
-  const current = await loadAuthUser(identity.userId);
+  const current = await userOf(identity);
   return can(current, "editor:ver", restaurantId) || can(current, "rapido:ver", restaurantId);
 }
 
@@ -46,7 +57,7 @@ export async function canAssignTables(
   identity: SocketIdentity,
   restaurantId: string,
 ): Promise<boolean> {
-  return can(await loadAuthUser(identity.userId), "mesas:asignar", restaurantId);
+  return can(await userOf(identity), "mesas:asignar", restaurantId);
 }
 
 /**
@@ -55,7 +66,7 @@ export async function canAssignTables(
  * lleve números: son los de TODOS los restaurantes.
  */
 export async function canJoinOverview(identity: SocketIdentity): Promise<boolean> {
-  return can(await loadAuthUser(identity.userId), "mapa:ver");
+  return can(await userOf(identity), "mapa:ver");
 }
 
 /** ¿Puede modificar la lista de espera de este restaurante? */
@@ -63,5 +74,5 @@ export async function canModifyWaitlist(
   identity: SocketIdentity,
   restaurantId: string,
 ): Promise<boolean> {
-  return can(await loadAuthUser(identity.userId), "rapido:modificar", restaurantId);
+  return can(await userOf(identity), "rapido:modificar", restaurantId);
 }
