@@ -20,6 +20,7 @@ function createDatabase() {
     url,
     // Solo las bases remotas de Turso lo necesitan; en local puede ir vacío.
     authToken: process.env.TURSO_AUTH_TOKEN,
+    timeout: 10000,
   });
 
   // `schema` es lo que habilita el API `db.query.*` y las relaciones.
