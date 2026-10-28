@@ -161,10 +161,15 @@ Claude Code se detuvo a mitad de la **Parte 2 (Vercel)** por el límite de uso. 
 - Quitado el aviso rojo al iniciar sesión y su log (`app/login/actions.ts`, `components/layout/app-header.tsx`, cookie y `isPublicDeployment` en `lib/auth/weak-passwords.ts`). Se mantiene «Revisar contraseñas» en /admin y el aviso al guardar una contraseña débil. `verify:auth` ahora comprueba que ya no existe el aviso.
 - Railway eliminado por completo (ver `docs/checklist-salida-railway.md`).
 
-## Pendiente para el viernes
+## Pendientes del viernes: estado (28 de octubre de 2026)
 
-1. Quitar las contraseñas escritas en el repositorio (seed, pruebas y guiones): usar la variable `SEED_PASSWORD`. Después, `PUBLIC_PASSWORDS` de `lib/auth/weak-passwords.ts` y «Revisar contraseñas» tendrán que adaptarse sin perder la revisión.
-2. «Eliminar cuenta» en /admin, con flechita junto a «Desactivar» (confirmación con `ConfirmDialog`, permisos en el servidor, sin borrar datos de otros).
-3. «Eliminar contraseña» en el diálogo de contraseña.
-4. Revisar los issues abiertos.
-5. Revisar el consumo de Turso del sondeo (lecturas por hora de `realtime_events`).
+| # | Pendiente | Estado | PR |
+|---|---|---|---|
+| 1 | Quitar contraseñas escritas en el repo (`SEED_PASSWORD`) | Hecho. El seed la exige en `.env.local`; las pruebas la generan al azar. «Revisar contraseñas» lee `SEED_PASSWORD` y `LEAKED_PASSWORDS` (opcional). **La vieja sigue en el historial de git**: cambiarla en los usuarios reales y ponerla en `LEAKED_PASSWORDS` de Production para que el botón la busque | #113 |
+| 2 | «Eliminar cuenta» con flechita junto a Desactivar | Hecho (pide escribir el correo; no deja eliminarse ni borrar al único admin) | #114 |
+| 3 | «Eliminar contraseña» en el diálogo de contraseña | Hecho (no aparece para uno mismo) | #115 |
+| 4 | Revisar issues abiertos | Hecho: no hay ninguno abierto | — |
+| 5 | Consumo de Turso del sondeo | Revisado en el código: `docs/consumo-turso-sondeo.md` (≈ 10 consultas por pregunta; el límite de Vercel se agota antes que el de Turso). Falta medirlo en `mesasgc-preview` y, si se quiere, aplicar los ahorros 1 y 2 | este PR |
+| 6 | Prueba intermitente de `verify:realtime` | Hecho (ya no depende de tiempos) | #112 |
+
+Todo en `testing`; **nada en `main` todavía**. Falta el «sí, publica» de Carlos.
