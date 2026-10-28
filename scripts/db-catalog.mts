@@ -2,7 +2,7 @@
 //
 //   npm run db:catalog
 //
-// Railway lo corre en el Pre-deploy, justo después de `db:migrate`. Solo crea
+// Vercel lo corre en el build de Production, justo después de `db:migrate`. Solo crea
 // o actualiza las filas de `element_types` por su clave: no toca
 // restaurantes, mesas, clientes ni usuarios, y repetirlo no duplica nada. Usa
 // la base de TURSO_DATABASE_URL, que tiene que tener las migraciones

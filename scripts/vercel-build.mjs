@@ -1,6 +1,6 @@
 // Build en Vercel (`vercel.json` → `buildCommand`).
 //
-// Sustituye al `preDeployCommand` de Railway: en el despliegue de PRODUCCIÓN
+// Sustituye al pre-deploy de Railway (retirado): en el despliegue de PRODUCCIÓN
 // (`VERCEL_ENV=production`) aplica las migraciones pendientes y el catálogo de
 // tipos de elemento ANTES de construir. Si fallan, el build falla y Vercel
 // deja la versión anterior en línea: nunca queda código nuevo con una base
