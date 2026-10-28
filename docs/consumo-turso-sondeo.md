@@ -1,56 +1,105 @@
-# Consumo de Turso del sondeo (28 de octubre de 2026)
+# Consumo del sondeo: Vercel y Turso (actualizado el 28 de octubre de 2026)
 
-Revisión **del código**, sin tocar datos ni medir en producción. Las cifras son
-**estimaciones** a partir de las consultas que hace cada pregunta; los límites del
-plan gratis de Turso y de Vercel cambian, así que confírmalos en sus paneles.
+Revisión **del código**, sin medir en producción ni tocar datos. Las cifras de uso son
+**estimaciones** (marcadas así); los límites de planes se leyeron en las páginas oficiales de
+Vercel, Turso, Pusher y Ably el 28 de octubre de 2026 y cambian: confírmalos antes de decidir.
 
 ## Qué hace cada pregunta (`GET /api/tiempo-real`)
 
-Cada pantalla abierta pregunta cada **2 s** (visible) o **15 s** (en segundo plano).
-Cada pregunta gasta, en `lib/realtime/http.ts`:
+Cada pantalla abierta pregunta al servidor «¿qué hay después del aviso N?». Cada pregunta es
+**1 invocación** de Vercel y varias consultas a Turso.
 
-| Paso | Consultas a Turso |
-|---|---|
-| `getSession` de Better Auth (sin `cookieCache`) | 2 (sesión y usuario) |
-| `identifyRequest` → `loadAuthUser` | 3 (usuario, roles, restaurantes) |
-| `allowedRooms` → `canJoinRestaurant` → `loadAuthUser` otra vez | 3 |
-| `readSince`: mínimo y máximo de `realtime_events` | 1 |
-| `readSince`: avisos nuevos (casi siempre 0 filas) | 1 |
-| **Total** | **≈ 10 por pregunta** |
+| Paso | Antes | Después de los ahorros (PR #118) |
+|---|---|---|
+| Sesión de Better Auth | 2 consultas | 0 casi siempre (`cookieCache` de 60 s) |
+| Usuario, roles y restaurantes (`loadAuthUser`) | 3 + 3 (se cargaba dos veces) | 3 (una sola vez) |
+| Mínimo y máximo de `realtime_events` | 1 | 1 |
+| Avisos nuevos | 1 | 1 |
+| **Consultas por pregunta** | **≈ 10** | **≈ 5** |
+| **Filas leídas por pregunta (est.)** | **12–25** | **5–13** |
 
-Cada consulta lee pocas filas (por llave o índice): ≈ 12–25 filas leídas por pregunta.
-Las **escrituras** son solo las acciones reales (1 fila en `realtime_events` por aviso)
-y el borrado de avisos viejos (5 % de las escrituras, por el índice de fecha).
+Ritmo de preguntas por pantalla (cambia en el mismo PR):
 
-## Estimación
+| Situación | Antes | Después |
+|---|---|---|
+| Pantalla visible con movimiento (avisos al menos cada 30 s) | 1 800 / hora | 1 800 / hora |
+| Poco movimiento (un aviso cada 2–5 min) | 1 800 / hora | ≈ 600 / hora |
+| Sin movimiento | 1 800 / hora | ≈ 240 / hora (una cada 15 s) |
+| Pantalla oculta o bloqueada | 240 / hora (cada 15 s) | **0** |
 
-- Una pantalla visible: 1 800 preguntas/hora → ≈ **18 000 consultas y 22 000–45 000 filas leídas por hora**.
-- Ejemplo: 16 pantallas (8 restaurantes × 2) abiertas 10 h al día, 30 días → ≈ 5 millones de filas al día,
-  **≈ 150 millones al mes**. Si el plan gratis incluye del orden de 500 millones de filas leídas al mes,
-  alcanza con margen, pero no con diez veces más pantallas.
-- El límite que se agota **antes** es el de Vercel Hobby: 1 millón de invocaciones al mes ≈ 550 horas-pantalla
-  (ya anotado en `traspaso-opencode.md`). Con el ejemplo de arriba (4 800 horas-pantalla) **no alcanza**:
-  el sondeo es adecuado para una demo, no para todos los restaurantes todo el día.
-- Pantallas en segundo plano (15 s) gastan ≈ 1/7 y las del mapa general preguntan cada 5 s / 30 s.
+## Escenario: 8 restaurantes × 2–3 tablets × 12 h al día × 30 días
 
-## Dónde se puede ahorrar (sin tocar el comportamiento visible)
+Pantallas: 16 (2 por local), 20 (2,5) o 24 (3). Se usa 20 como central: **7 200 horas-pantalla al mes**
+(5 760–8 640). Día típico supuesto de 12 h: 3 h con mucho movimiento, 5 h con poco, 4 h sin movimiento
+→ **9 360 preguntas por pantalla y día** después (21 600 antes).
 
-1. **Cargar el usuario una sola vez por pregunta.** `identifyRequest` y `canJoinRestaurant` llaman las dos a
-   `loadAuthUser`: pasar el usuario ya cargado ahorra 3 de las 10 consultas.
-2. **`cookieCache` de Better Auth** (1–5 min) ahorra las 2 de `getSession`. Ojo: `identifyRequest` ya
-   vuelve a comprobar `active` en la base, así que un usuario desactivado sigue sin poder usar el sondeo.
-3. **Una sola consulta en `readSince`**: pedir los avisos y, solo si vienen vacíos, el máximo; o guardar el
-   último id en memoria de la instancia con un tope de 1 s.
-4. **Subir el intervalo visible de 2 s a 3–4 s** reduce todo (consultas e invocaciones de Vercel) a la mitad,
-   a costa de 1–2 s más de retraso al ver un cambio de otro dispositivo.
-5. **Pausar el sondeo** de una pantalla sin actividad (p. ej. 10 min sin tocar) y reanudarlo al tocarla.
+| Por mes | Antes | Después, día típico | Después, peor caso (12 h de mucho movimiento) |
+|---|---|---|---|
+| Invocaciones de Vercel (20 pantallas) | **≈ 13,0 M** (10,4–15,6 M) | **≈ 5,6 M** (4,5–6,7 M) | ≈ 13,0 M (el ahorro por pregunta no cambia el conteo) |
+| Filas leídas en Turso | **≈ 155–325 M** | **≈ 28–73 M** | ≈ 65–170 M |
+| Filas escritas en Turso | ≈ 0,2–0,5 M (las acciones reales; no depende del sondeo) | igual | igual |
+| Active CPU de Vercel (est. 10–15 ms por pregunta; las consultas a Turso son espera y no cuentan) | ≈ 36–54 h | ≈ 16–23 h | ≈ 36–54 h |
 
-## Cómo medirlo de verdad (para Carlos)
+Las escrituras salen de ~8 locales × 200 clientes × 4 acciones × 30 días ≈ 190 mil acciones, con su
+aviso en `realtime_events`.
 
-1. En Turso → `mesasgc-preview` (nunca producción) → *Usage*: apunta «rows read» y «rows written».
-2. Deja 2 pantallas del restaurante de prueba abiertas **1 hora** sin tocar nada.
-3. Vuelve a mirar *Usage*. La diferencia ÷ 3 600 preguntas es el costo real por pregunta; compáralo con
-   las 12–25 filas estimadas.
-4. En Vercel → *Usage*: invocaciones de `/api/tiempo-real` en esa hora (esperadas ≈ 3 600).
+## Contra los planes (límites leídos el 28 de octubre de 2026)
 
-Recomendación: aplicar 1 y 2 en una rama aparte (cambio pequeño y seguro) y decidir 4 con la medición.
+| Recurso | Límite | Antes | Después (día típico) | ¿Cabe? |
+|---|---|---|---|---|
+| **Vercel Hobby** invocaciones | 1 M al mes | 13,0 M | 5,6 M | **No**, ni con los ahorros |
+| **Vercel Hobby** Active CPU | 4 h al mes | 36–54 h | 16–23 h | **No** |
+| **Turso gratis** filas leídas | 500 M al mes | 155–325 M | 28–73 M | Sí (antes también, con poco margen en el peor caso) |
+| **Turso gratis** filas escritas | 10 M al mes | ≈ 0,3 M | ≈ 0,3 M | Sí |
+
+- **Cuántas pantallas caben en Hobby** (solo por invocaciones): 1 M ÷ (9 360 × 30) ≈ **3,5 pantallas**.
+  Con 20 pantallas hacen falta ~5,6 veces el límite. Ni todas las pantallas en el ritmo más tranquilo
+  (240/h → 1,7 M al mes) caben.
+- **Vercel Pro** (20 USD por asiento al mes, con un crédito mensual de uso incluido; su monto no lo
+  verifiqué): invocaciones a **0,60 USD por millón**, Active CPU desde **0,128 USD por hora** (regiones
+  de EE. UU.). Estimación del sondeo sin el crédito: antes ≈ 13,0 M × 0,60 + 45 h × 0,128 ≈ **14 USD**;
+  después ≈ 5,6 M × 0,60 + 20 h × 0,128 ≈ **6 USD**; más los 20 USD del asiento → **≈ 26 USD al mes** con
+  los ahorros (≈ 34 antes). El crédito mensual lo reduce.
+- **Turso gratis** alcanza. Plan Developer: 4,99 USD al mes (2,5 mil millones de filas leídas, 25 M escritas)
+  si algún día hiciera falta.
+
+## Hobby es solo para uso no comercial
+
+Las condiciones de Vercel dicen que Hobby se limita a **uso personal y no comercial**
+([plan Hobby](https://vercel.com/docs/plans/hobby), «fair use guidelines»). La app ya la usa Grupo Comidas
+en sus restaurantes: eso es uso comercial. El riesgo no es técnico sino de términos: Vercel puede pausar
+el proyecto o la cuenta. La salida correcta es **Vercel Pro** (o cambiar de proveedor). Es decisión de Carlos y
+de Grupo Comidas, con la cuenta a nombre de la empresa.
+
+## Opción: Pusher o Ably (no implementada)
+
+| | Plan gratis (leído el 28 oct 2026) | Para este escenario |
+|---|---|---|
+| Pusher Channels (Sandbox) | 200 mil mensajes al día, 100 conexiones simultáneas | 20–24 pantallas (+ pestañas del mapa): caben en las conexiones; ≈ 6 400 avisos al día × unas 4 pantallas por aviso ≈ 26 mil mensajes al día |
+| Ably | 6 M de mensajes al mes, 200 conexiones, 200 canales, 500 mensajes por segundo | ≈ 0,8 M de mensajes al mes |
+
+Si se implementara: el servidor publicaría cada aviso a Pusher o Ably justo después de guardarlo
+(una llamada HTTP dentro del mismo POST), y el cliente se suscribiría a un canal por restaurante en vez de
+sondear. Las invocaciones de Vercel bajarían de 5,6 M al mes a las de las acciones reales más la
+autorización de canales: **≈ 0,2–0,3 M al mes (−95 %)**, y las filas leídas en Turso bajarían igual.
+Con eso se cabría en el millón de invocaciones de Hobby, pero Hobby seguiría siendo uso no comercial.
+Cambios de código: `lib/realtime/bus.ts` (publicar), `lib/realtime/client.ts` (suscripción y reconexión
+con recarga), una ruta de autorización de canal privado por restaurante, y mantener `realtime_events` solo
+como respaldo para recuperar avisos perdidos. Antes de decidir hay que revisar en los términos de cada
+servicio si el plan gratis permite uso comercial (no lo verifiqué). Vercel también anuncia soporte
+general de WebSockets en sus funciones; no se evaluó aquí.
+
+## Cómo medirlo de verdad
+
+1. Turso → `mesasgc-preview` (nunca producción) → *Usage*: apunta filas leídas y escritas.
+2. Deja 2 pantallas del restaurante de prueba **1 hora** con la Preview que incluya los ahorros.
+3. Compara con la hora anterior a los ahorros. Esperado con la pantalla sin movimiento: ≈ 240
+   preguntas por pantalla y hora (antes 1 800).
+4. En Vercel → *Usage*: invocaciones de `/api/tiempo-real` en esa hora.
+
+## Lo que cuesta el ahorro (compromisos)
+
+- Un cambio hecho en otro dispositivo puede tardar **hasta 15 s** en verse en una pantalla que lleva rato sin movimiento.
+- Cerrar sesión desde otro dispositivo, cambiar o eliminar la contraseña: una cookie ya copiada puede seguir
+  funcionando hasta **60 s**. Desactivar o eliminar la cuenta corta al instante.
+- Una pantalla oculta o bloqueada no se entera de nada hasta volver; si estuvo oculta 1 min o más, recarga el estado completo.
