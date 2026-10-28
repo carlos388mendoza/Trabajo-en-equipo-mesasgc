@@ -14,61 +14,63 @@
 //  - Por conexión (IP): 30 fallos en 15 minutos, más alto a propósito por las
 //    tablets que comparten IP.
 //
-// En memoria del proceso (`globalThis`, para que la action y la ruta compartan
-// la misma cuenta aunque Next las empaquete por separado): basta para un solo
-// servidor, que es lo que hay en Railway. Si un día hay varias instancias, hay
-// que llevarlo a la base o a Redis.
+// En la base (`login_failures`), no en memoria: en Vercel cada petición puede
+// caer en una instancia distinta y una cuenta en memoria no se compartiría.
+// Una fila por fallo; las de más de 15 minutos se borran de vez en cuando.
+
+import { and, count, eq, gte, lt, min } from "drizzle-orm";
+
+import { db } from "@/lib/db";
+import { loginFailures } from "@/lib/db/schema";
 
 export const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 export const LOGIN_MAX_FAILURES_EMAIL = 5;
 export const LOGIN_MAX_FAILURES_IP = 30;
 
-type Store = Map<string, number[]>;
-const g = globalThis as typeof globalThis & { __twLoginLimit?: Store };
-const store: Store = (g.__twLoginLimit ??= new Map());
-
-function recent(key: string, now: number): number[] {
-  const list = (store.get(key) ?? []).filter((t) => now - t < LOGIN_WINDOW_MS);
-  if (list.length) store.set(key, list);
-  else store.delete(key);
-  return list;
-}
-
-const emailKey = (email: string) => `correo:${email.trim().toLowerCase()}`;
-const ipKey = (ip: string) => `ip:${ip}`;
+const normalize = (email: string) => email.trim().toLowerCase();
 
 export type LoginLimit = { blocked: false } | { blocked: true; message: string };
 
+async function recent(column: typeof loginFailures.email | typeof loginFailures.ip, value: string, now: number) {
+  const [row] = await db
+    .select({ total: count(), oldest: min(loginFailures.createdAt) })
+    .from(loginFailures)
+    .where(and(eq(column, value), gte(loginFailures.createdAt, new Date(now - LOGIN_WINDOW_MS))));
+  return { total: row?.total ?? 0, oldest: row?.oldest ? new Date(row.oldest).getTime() : now };
+}
+
 /** ¿Hay que rechazar este intento antes de mirar la contraseña? */
-export function checkLoginLimit(email: string, ip: string, now = Date.now()): LoginLimit {
-  const byEmail = email ? recent(emailKey(email), now) : [];
-  if (byEmail.length >= LOGIN_MAX_FAILURES_EMAIL) {
-    return { blocked: true, message: `Demasiados intentos fallidos con este correo. Espera ${minutesLeft(byEmail, now)} y vuelve a probar.` };
+export async function checkLoginLimit(email: string, ip: string, now = Date.now()): Promise<LoginLimit> {
+  if (email) {
+    const byEmail = await recent(loginFailures.email, normalize(email), now);
+    if (byEmail.total >= LOGIN_MAX_FAILURES_EMAIL) {
+      return { blocked: true, message: `Demasiados intentos fallidos con este correo. Espera ${minutesLeft(byEmail.oldest, now)} y vuelve a probar.` };
+    }
   }
-  const byIp = recent(ipKey(ip), now);
-  if (byIp.length >= LOGIN_MAX_FAILURES_IP) {
-    return { blocked: true, message: `Demasiados intentos fallidos desde esta conexión. Espera ${minutesLeft(byIp, now)} y vuelve a probar.` };
+  const byIp = await recent(loginFailures.ip, ip, now);
+  if (byIp.total >= LOGIN_MAX_FAILURES_IP) {
+    return { blocked: true, message: `Demasiados intentos fallidos desde esta conexión. Espera ${minutesLeft(byIp.oldest, now)} y vuelve a probar.` };
   }
   return { blocked: false };
 }
 
 /** Un intento con correo o contraseña incorrectos. */
-export function recordLoginFailure(email: string, ip: string, now = Date.now()): void {
-  for (const key of [email ? emailKey(email) : null, ipKey(ip)]) {
-    if (!key) continue;
-    store.set(key, [...recent(key, now), now]);
-  }
+export async function recordLoginFailure(email: string, ip: string, now = Date.now()): Promise<void> {
+  await db.insert(loginFailures).values({ email: normalize(email), ip, createdAt: new Date(now) });
+  // De vez en cuando se borran los que ya no cuentan (la tabla no crece).
+  if (Math.random() < 0.05) await db.delete(loginFailures).where(lt(loginFailures.createdAt, new Date(now - LOGIN_WINDOW_MS)));
 }
 
 /** Entró bien: se olvidan los fallos de ese correo (los de la IP se quedan). */
-export function recordLoginSuccess(email: string): void {
-  if (email) store.delete(emailKey(email));
+export async function recordLoginSuccess(email: string): Promise<void> {
+  if (email) await db.delete(loginFailures).where(eq(loginFailures.email, normalize(email)));
 }
 
 /**
- * La IP del cliente. En Railway llega en `X-Forwarded-For` (la primera es la
- * del cliente). Se valida que parezca una IP para no guardar basura. Aunque
- * alguien la falsee, el límite por CORREO sigue valiendo.
+ * La IP del cliente. En Vercel llega en `X-Forwarded-For` (la primera es la
+ * del cliente; Vercel la sobrescribe, no la añade) y en `X-Real-IP`. Se valida
+ * que parezca una IP para no guardar basura. Aunque alguien la falsee, el
+ * límite por CORREO sigue valiendo.
  */
 export function clientIp(headers: Headers): string {
   const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
@@ -78,13 +80,14 @@ export function clientIp(headers: Headers): string {
   return "desconocida";
 }
 
-function minutesLeft(list: number[], now: number): string {
-  const ms = Math.max(0, list[0] + LOGIN_WINDOW_MS - now);
-  const min = Math.max(1, Math.ceil(ms / 60_000));
-  return min === 1 ? "1 minuto" : `${min} minutos`;
+function minutesLeft(oldest: number, now: number): string {
+  const ms = Math.max(0, oldest + LOGIN_WINDOW_MS - now);
+  const minutes = Math.max(1, Math.ceil(ms / 60_000));
+  return minutes === 1 ? "1 minuto" : `${minutes} minutos`;
 }
 
-/** Solo para las pruebas. */
-export function resetLoginLimitForTests(): void {
-  store.clear();
+/** Solo para las pruebas: borra todos los fallos guardados. */
+export async function resetLoginLimitForTests(): Promise<void> {
+  await db.delete(loginFailures);
 }
+

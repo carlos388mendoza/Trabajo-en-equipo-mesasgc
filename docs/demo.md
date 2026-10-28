@@ -5,7 +5,7 @@ Para presentar **Table Waitlist** entre los dos:
 - **Carlos (Miembro A):** editor, mapa, tiempo real y permisos.
 - **Su compañero (Miembro B):** modo rápido, estadísticas e IA.
 
-Todos los usuarios de prueba entran con la contraseña **`12345abc`**.
+Los usuarios de prueba existen solo en tu computadora (los crea el seed): sus correos y la contraseña de desarrollo están en `scripts/seed.ts` (`TEST_PASSWORD`). No los escribas en diapositivas ni en el chat.
 
 ## 1. Qué es, en dos frases
 
@@ -28,17 +28,17 @@ Los tiempos son orientativos: suman unos 10 minutos.
 - **Di:** «Hay tres roles, y un usuario puede tener varios; los permisos se
   suman»:
 
-  | Correo | Rol | Adónde entra |
+  | Usuario | Rol | Adónde entra |
   |---|---|---|
-  | `admin@grupocomidas.test` | admin | Mapa general, `/admin`, todo |
-  | `chinawok@grupocomidas.test` | restaurante (los 2 China Wok) | Sus dos locales: modo sencillo y plano |
-  | `analitica@grupocomidas.test` | analitica | Estadísticas y mapa, solo lectura |
+  | Administrador | admin | Mapa general, `/admin`, todo |
+  | China Wok | restaurante (los 2 China Wok) | Sus dos locales: modo sencillo y plano |
+  | Analista | analitica | Estadísticas y mapa, solo lectura |
 
 - **Haz:** entra como **admin**. Llega directo a `/mapa`.
 
 ### 2.2 Mapa general (Carlos, 1,5 min)
 
-**Usuario:** `admin@grupocomidas.test`.
+**Usuario:** el administrador.
 
 - **Enseña el mapa radar:** es un dibujo propio de San Pedro Sula y
   Tegucigalpa, con los 8 restaurantes de las 4 marcas (China Wok, Pizza Hut,
@@ -113,7 +113,7 @@ marcador de China Wok Centro cambia sin recargar.
 
 ### 2.5 Modo rápido (compañero, 1,5 min)
 
-**Usuario:** cierra sesión y entra como `chinawok@grupocomidas.test`. En
+**Usuario:** cierra sesión y entra como el usuario de China Wok. En
 `/inicio` elige **China Wok Centro** (o usa «Modo sencillo» de la cabecera) y
 llega a `/restaurante/rest_centro/rapido`.
 
@@ -127,7 +127,7 @@ llega a `/restaurante/rest_centro/rapido`.
 
 ### 2.6 Estadísticas y asistente IA (compañero, 1 min)
 
-**Usuario:** cierra sesión y entra como `analitica@grupocomidas.test`. Llega
+**Usuario:** cierra sesión y entra como el analista. Llega
 a `/analiticas`.
 
 - **Enseña:** los últimos **14 días en hora de Honduras**: grupos sentados,
@@ -143,7 +143,7 @@ a `/analiticas`.
 
 ### 2.7 Permisos (Carlos, 1 min)
 
-**Usuario:** entra como `chinawok@grupocomidas.test`.
+**Usuario:** entra como el usuario de China Wok.
 
 - **Enseña:** en el encabezado solo salen **sus** dos restaurantes (el
   selector) y no hay «Mapa» general: el plano en vivo de cada local está en la
@@ -238,7 +238,7 @@ a `/analiticas`.
 | `demo:host` dice «Esta mesa ya fue asignada» con `sentar` | La mesa ya estaba ocupada. Libérala con `liberar` o usa `tbl_c_2`. |
 | `demo:host` dice que el cliente ya no está en la lista | Ya se sentó antes. Usa otro (`wl_2`, `wl_3`) o haz `npm run seed:reset`. |
 | El mapa no enseña colores de alerta | Las esperas se calculan desde el seed. Haz `npm run seed:reset` y recarga `/mapa`. |
-| No deja entrar con un usuario | Contraseña `12345abc`. Si un admin lo desactivó, `seed:reset` no lo reactiva: hazlo en `/admin`. |
+| No deja entrar con un usuario | Usa la contraseña de desarrollo (`TEST_PASSWORD` en `scripts/seed.ts`). Si un admin lo desactivó, `seed:reset` no lo reactiva: hazlo en `/admin`. |
 | Quedó una sesión abierta de otro usuario | Cierra sesión arriba a la derecha. La cookie es de `localhost`, sirve para cualquier puerto. |
 | Todo va mal | Ten capturas de respaldo, y explica el flujo con el guion mientras alguien reinicia con `npm run seed:reset` y `npm run dev`. |
 

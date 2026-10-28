@@ -12,6 +12,14 @@ const config = [
   ...next,
   ...nextTypescript,
   {
+    rules: {
+      // Nada de `alert`, `confirm` ni `prompt` del navegador (issue #107): no
+      // siguen el tema, salen en inglés en la tablet y bloquean la página. Usa
+      // `components/ui/confirm-dialog.tsx` o un aviso en pantalla.
+      "no-alert": "error",
+    },
+  },
+  {
     ignores: [
       ".next/**",
       // Salida de la app que levanta `npm run verify:auth`.

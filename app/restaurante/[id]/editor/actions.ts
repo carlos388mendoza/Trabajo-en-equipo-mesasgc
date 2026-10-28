@@ -67,12 +67,12 @@ export async function saveLayoutStructure(raw: unknown): Promise<SaveResult> {
   if (result.ok) {
     revalidatePath(`/restaurante/${input.restaurantId}/editor`);
     // Los demás dispositivos con esta zona abierta sabrán que lo suyo es viejo.
-    emitToRestaurant(input.restaurantId, "layout:updated", {
+    await emitToRestaurant(input.restaurantId, "layout:updated", {
       layoutId: input.layoutId,
       version: result.version,
     });
     // Añadir o borrar mesas cambia el total del mapa general.
-    void emitOverview(input.restaurantId);
+    await emitOverview(input.restaurantId);
   }
 
   return result;
@@ -138,8 +138,8 @@ export async function copyStructureToRestaurant(
     revalidatePath(`/restaurante/${parsed.data.targetRestaurantId}/editor`);
     // Solo cambia el destino. Quien copia está en la room del origen, así que
     // no se avisa a sí mismo.
-    emitToRestaurant(parsed.data.targetRestaurantId, "structure:changed");
-    void emitOverview(parsed.data.targetRestaurantId);
+    await emitToRestaurant(parsed.data.targetRestaurantId, "structure:changed");
+    await emitOverview(parsed.data.targetRestaurantId);
   }
 
   return result;
@@ -169,7 +169,7 @@ export async function copyZoneIntoAnother(
   const result = await copyZoneIntoLayout(parsed.data);
   if (result.ok) {
     revalidatePath(`/restaurante/${parsed.data.sourceRestaurantId}/editor`);
-    if (target) void emitOverview(target.restaurantId);
+    if (target) await emitOverview(target.restaurantId);
   }
   return result;
 }

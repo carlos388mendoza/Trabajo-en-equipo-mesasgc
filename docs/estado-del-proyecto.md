@@ -4,8 +4,8 @@ _Actualizado el 5 de octubre de 2026._
 
 **Table Waitlist:** listas de espera en tiempo real para los restaurantes de
 Grupo Comidas.
-- Stack: Next.js 16, React 19, Drizzle y Turso, Better Auth, Socket.IO y
-  TypeScript.
+- Stack: Next.js 16, React 19, Drizzle y Turso, Better Auth, TypeScript.
+  Tiempo real por HTTP con sondeo (sin Socket.IO). Despliegue en Vercel Hobby.
 - Equipo: Miembro A (editor, tiempo real, conflictos y auth) y Miembro B (modo
   rápido, estadísticas e IA).
 
@@ -338,8 +338,8 @@ claves.
 - **Límite del asistente por usuario**, no por IP: la cabecera
   `X-Forwarded-For` la manda el cliente y se podía falsear.
 - **No hay registro público.** Los usuarios los crea un admin en `/admin`, o
-  `npm run create-admin` en producción. Los 5 usuarios de prueba (contraseña
-  `12345abc`) solo se crean en desarrollo.
+  `npm run create-admin` en producción. Los usuarios de prueba (con
+  la contraseña de desarrollo del seed) solo se crean en desarrollo.
 - **Logos.** Están en `public/brand/`:
   - el circular completo, en `/login` (160 px);
   - el circular solo nombre, en el encabezado (36 px) y en el ícono de la
@@ -437,9 +437,8 @@ Pizza Hut Norte), con **dos usuarios, uno por marca** (desde el 1 de octubre;
 antes era uno solo para los 4). China Wok y KFC siguen en el sistema (mapa,
 estadísticas y datos) y entran después.
 
-- [ ] Crear en producción **«Denny's»** (`dennys@grupocomidas.test`, sus 2
-      locales) y **«Pizza Hut»** (`pizzahut@grupocomidas.test`, sus 2
-      locales) con `railway run npm run create-user` (lo corre Carlos: la
+- [ ] Crear en producción **«Denny's»** (sus 2 locales) y **«Pizza Hut»**
+      (sus 2 locales) con `railway run npm run create-user` (lo corre Carlos: la
       contraseña se escribe en su terminal) o desde `/admin`. Comandos en
       `docs/salida-a-produccion.md`, sección 3.1.
 - [ ] Dibujar en el editor (modo completo) el plano real de cada uno de los
@@ -488,6 +487,38 @@ estadísticas y datos) y entran después.
 - **Más de un servidor.** El Deshacer del modo rápido y las salas de Socket.IO
   viven en la memoria del proceso: basta para 8 restaurantes en un solo
   servidor, pero para varios servidores haría falta, por ejemplo, Redis.
+
+## Dónde quedé (27 de octubre de 2026, tarde)
+
+**Ramas.** Se borraron las 30 ramas ya fusionadas en `testing` (en GitHub y en local) y `backup/opencode-issues-86-87-88`. Quedan `main`, `testing` y `docs/capturas-issue-86`, que guarda las imágenes del PR #100.
+
+**Contraseña de desarrollo en producción (PR #104).** El repositorio es público y la contraseña del seed se puede leer en él; los correos de producción son los mismos de ejemplo. La app no la prohíbe, pero avisa en tres sitios:
+
+- en /admin, al guardarla, y con el botón **Revisar contraseñas**;
+- con un aviso rojo después de entrar a producción;
+- con una línea en el log, sin el correo.
+
+Además, los documentos ya no la escriben. Lo explica `docs/seguridad.md` §7, junto con cómo cambiarla en un minuto.
+
+**Mesas de KFC Río Piedras y Pizza Hut Norte: pendiente, lo hace Carlos desde la app.** Desde esta computadora no se puede escribir en producción: la CLI de Railway está bloqueada y `.env.local` apunta a la base local. Por la misma razón no hubo respaldo con `db:respaldo`. Pasos:
+
+1. Entra a producción como admin.
+2. Abre el editor del origen: `/restaurante/rest_tgu_kfc/editor` (KFC Boulevard Morazán). Si la URL no abre, entra desde **Inicio**, en la tarjeta de ese restaurante.
+3. Comprueba que se ve el **Comedor principal** y que no hay cambios sin guardar.
+4. Pulsa **Copiar plano** y busca **KFC Río Piedras** en la lista:
+   - si dice «vacío» o «1 zona(s) · 0 elemento(s)», sigue;
+   - si tiene elementos, **para**: ya tiene mesas.
+5. Elígelo. Si pregunta, confirma **Sí, sustituirlo todo** (solo cuando tenía 0 elementos). La copia lleva **todas** las zonas del origen y conserva cuál es la zona por defecto.
+6. Abre `/restaurante/rest_sps_kfc/editor` (Río Piedras). En **Meseros**:
+   - pulsa **Editar zonas** → **Repartir automáticamente** → **Guardar**;
+   - los colores no cambian, solo qué mesas lleva cada uno;
+   - si no hay ninguna configuración, usa **Meseros activos [+]**: crea una con las mesas ya repartidas.
+7. Repite los pasos 2 a 6 con Pizza Hut Los Próceres (`rest_tgu_pizza`) como origen y Pizza Hut Norte (`rest_norte`) como destino.
+8. Para comprobarlo, en **Copiar plano** de cualquier restaurante, la lista muestra cuántas zonas y elementos tiene cada destino. Al abrir el editor de cada destino debe salir primero el **Comedor principal**.
+
+**Railway.** El 12 de octubre le quedaban 19 días de prueba y 4,49 US$, así que la prueba se acaba **hacia el 31 de octubre de 2026**, o antes si se gasta el crédito. Según la documentación de Railway, luego pasa al plan Free, con 1 US$ al mes. Esta app gasta unos 3 US$ al mes, así que se detendría a mitad de mes. Los datos siguen en Turso y el código en GitHub.
+
+**Hosting gratis.** La recomendación es **Northflank Sandbox**: sin tarjeta, siempre encendido y con WebSockets. Las opciones y el plan paso a paso están en `docs/hosting-gratis.md`. **No se migra** hasta que Carlos diga «sí, migra».
 
 ## Dónde quedé (27 de octubre de 2026)
 

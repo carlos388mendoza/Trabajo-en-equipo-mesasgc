@@ -34,7 +34,7 @@ export default async function AdminPage() {
       <div>
         <h1 className="text-2xl font-bold">Administración</h1>
         <p className="text-sm text-app-muted">Usuarios, roles y acceso; marcas y restaurantes; configuración.</p>
-        <p className="mt-1 text-xs text-app-muted">Última revisión de seguridad: 26 de octubre de 2026.</p>
+        <p className="mt-1 text-xs text-app-muted">Última revisión de seguridad: 27 de octubre de 2026.</p>
       </div>
 
       <AdminUsers

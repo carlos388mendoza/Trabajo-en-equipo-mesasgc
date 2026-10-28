@@ -22,7 +22,7 @@ Cada punto tiene un responsable. «Equipo» es Carlos y su compañero;
 ### 2.1 Usuarios y accesos
 
 - [ ] **(Equipo)** No cargar datos de prueba. En producción no se ejecuta el
-      seed, y los 5 usuarios de prueba (contraseña `12345abc`) solo se crean en
+      seed, y los usuarios de prueba (con la contraseña de desarrollo) solo se crean en
       desarrollo.
 - [ ] **(Equipo)** Si algún usuario de prueba llegó a la base real,
       **desactivarlo** desde `/admin`. La aplicación no borra usuarios: los
@@ -138,8 +138,8 @@ no entran en el piloto.
 
 | Usuario | Nombre | Restaurantes |
 |---|---|---|
-| `dennys@grupocomidas.test` | Denny's | Denny's Las Lomas y Denny's Los Andes |
-| `pizzahut@grupocomidas.test` | Pizza Hut | Pizza Hut Norte y Pizza Hut Los Próceres |
+| `<correo de Denny's>` | Denny's | Denny's Las Lomas y Denny's Los Andes |
+| `<correo de Pizza Hut>` | Pizza Hut | Pizza Hut Norte y Pizza Hut Los Próceres |
 
 Al entrar, cada uno ve una tarjeta por restaurante, con cuántos clientes
 esperan, y cambia de uno a otro con el selector de la cabecera. En cada uno
@@ -194,10 +194,10 @@ comando, oculta, y no pasa por ninguna pantalla compartida). En PowerShell,
 dentro de la carpeta del proyecto y con la CLI de Railway enlazada:
 
 ```powershell
-& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo dennys@grupocomidas.test --nombre "Denny's" --rol restaurante --marca "Denny's"
-& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo pizzahut@grupocomidas.test --nombre "Pizza Hut" --rol restaurante --marca "Pizza Hut"
-& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo kfc@grupocomidas.test --nombre "KFC" --rol restaurante --marca "KFC"
-& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo chinawok@grupocomidas.test --nombre "China Wok" --rol restaurante --marca "China Wok"
+& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo <correo-dennys> --nombre "Denny's" --rol restaurante --marca "Denny's"
+& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo <correo-pizzahut> --nombre "Pizza Hut" --rol restaurante --marca "Pizza Hut"
+& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo <correo-kfc> --nombre "KFC" --rol restaurante --marca "KFC"
+& "$(npm prefix -g)\railway.cmd" run npm run create-user -- --correo <correo-chinawok> --nombre "China Wok" --rol restaurante --marca "China Wok"
 ```
 
 Cada uno muestra la base (solo el host), el resumen con los restaurantes de su marca,
@@ -207,14 +207,14 @@ solo le pone el nombre, el rol y los restaurantes, sin tocar su contraseña.
 *Desde `/admin`* (entrando con el administrador):
 
 1. Abre **Administración** (`/admin`) y pulsa **Nuevo usuario**.
-2. **Nombre:** «Denny's». **Correo:** `dennys@grupocomidas.test`.
+2. **Nombre:** «Denny's». **Correo:** el de la marca (mejor uno real, que no esté en el repositorio).
 3. **Contraseña temporal:** escribe una o pulsa el botón de generar, y
    compártela con el encargado por un canal seguro (no por el chat del grupo).
 4. **Roles:** deja solo **Restaurante**.
 5. **Restaurantes:** en el grupo **Denny's** pulsa **Marcar todos**. Arriba
    tiene que decir «2 de 8».
 6. Pulsa **Crear usuario**. Sale en verde «Usuario … creado».
-7. Repite con «Pizza Hut» (`pizzahut@grupocomidas.test`) y **Marcar todos**
+7. Repite con «Pizza Hut» (su correo) y **Marcar todos**
    en **Pizza Hut**.
 8. Para comprobarlo, entra con cada usuario en otra ventana privada: tiene
    que ver sus 2 tarjetas en **Inicio**, y ninguna de la otra marca.

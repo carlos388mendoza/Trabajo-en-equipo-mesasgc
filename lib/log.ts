@@ -2,7 +2,7 @@
 //
 // Los errores de la base (Drizzle/libSQL) traen la consulta con sus
 // parámetros («Failed query: … params: Ana Torres,0000-…»): impresos tal cual,
-// el nombre o el teléfono de un cliente acabarían en los logs de Railway. Aquí
+// el nombre o el teléfono de un cliente acabarían en los logs de producci\u00f3n. Aquí
 // se imprime solo el tipo de error, su código y un mensaje recortado y limpio:
 //
 //  - sin la parte «params: …» de las consultas;

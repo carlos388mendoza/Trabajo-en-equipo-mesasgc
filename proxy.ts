@@ -15,13 +15,17 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 
 const PUBLIC_PAGES = new Set(["/login"]);
-const PUBLIC_APIS = new Set(["/api/health"]);
+// `/api/cron/retencion` la llama el cron de Vercel sin cookie: se protege ella
+// misma con `CRON_SECRET`.
+const PUBLIC_APIS = new Set(["/api/health", "/api/cron/retencion"]);
 
 // Cabeceras de seguridad aplicadas a todas las respuestas que pasan por el proxy.
 // El CSP además del frame-ancestors: se mantiene deliberadamente permisivo en
 // scripts y estilos porque Next 16 inyecta código en línea para la hidratación
 // y el tema se aplica antes del primer pintado. Lo que se protege aquí es el
-// clickjacking (frame-ancestors) y el sniffing de tipo.
+// clickjacking (frame-ancestors) y el sniffing de tipo. `connect-src 'self'`:
+// el tiempo real ya no abre WebSockets, va por fetch al mismo origen
+// (`/api/tiempo-real`).
 function applySecurityHeaders(response: NextResponse) {
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -30,7 +34,7 @@ function applySecurityHeaders(response: NextResponse) {
   if (!existingCsp || !existingCsp.includes("frame-ancestors")) {
     response.headers.set(
       "Content-Security-Policy",
-      "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' ws: wss:; font-src 'self' data:; frame-ancestors 'self'",
+      "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self'; font-src 'self' data:; frame-ancestors 'self'",
     );
   }
 }
